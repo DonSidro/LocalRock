@@ -8,6 +8,22 @@ LocalRock is a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.
   <img src="docs/screenshots/hero-map.png" alt="LocalRock map and control screen" width="300">
 </p>
 
+<table align="center"><tr>
+  <td valign="middle">
+    <a href="https://play.google.com/store/apps/details?id=com.kodraliu.localrock">
+      <img alt="Get it on Google Play" height="58"
+           src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png">
+    </a>
+  </td>
+  <td valign="middle">
+    <a href="https://apps.apple.com/app/localrock/id6788538720">
+      <img alt="Download on the App Store" height="40"
+           src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg">
+    </a>
+  </td>
+</tr></table>
+
+
 > **Not affiliated with, endorsed by, or sponsored by Roborock.** All product names and trademarks are the property of their respective owners. This is an independent, community project.
 
 ---
