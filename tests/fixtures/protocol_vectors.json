@@ -1,0 +1,84 @@
+{
+  "salt_hex": "5458646675246a795a23545a48736734",
+  "encode_timestamp": [
+    {
+      "ts": 0,
+      "encoded": "00000000"
+    },
+    {
+      "ts": 1,
+      "encoded": "00010000"
+    },
+    {
+      "ts": 19088743,
+      "encoded": "56371204"
+    },
+    {
+      "ts": 2309737967,
+      "encoded": "debf9a8c"
+    },
+    {
+      "ts": 3735928559,
+      "encoded": "eedfeadb"
+    },
+    {
+      "ts": 1710465536,
+      "encoded": "20305f6a"
+    }
+  ],
+  "tokens": [
+    {
+      "local_key": "0123456789abcdef",
+      "ts": 1710465536,
+      "token_hex": "32d050fa0344d54409a480dc01881cfd"
+    },
+    {
+      "local_key": "local_key",
+      "ts": 1,
+      "token_hex": "2dbdc6120e609595eec9432fae91d4bb"
+    },
+    {
+      "local_key": "zzzzzzzzzzzzzzzz",
+      "ts": 270544960,
+      "token_hex": "a544301d156fbfe770cd2faede0135e3"
+    }
+  ],
+  "messages": [
+    {
+      "kind": "mqtt",
+      "local_key": "0123456789abcdef",
+      "ts": 1710465536,
+      "seq": 42,
+      "random": 12345,
+      "protocol": 101,
+      "payload_hex": "7b226964223a312c226d6574686f64223a226765745f737461747573222c22706172616d73223a5b5d7d",
+      "encoded_hex": "312e300000002a0000303965f3a200006500303e1446a698dd03df8245c4c0a4bb077624f06b4838d63be7fddb946e68ec87bfb8f641897d2bf479c7df520ca1ffb25872b4663e",
+      "token_hex": "32d050fa0344d54409a480dc01881cfd",
+      "encoded_ts": "20305f6a"
+    },
+    {
+      "kind": "local",
+      "local_key": "local_key",
+      "ts": 1710465792,
+      "seq": 1,
+      "random": 123,
+      "protocol": 101,
+      "payload_hex": "746573745f7061796c6f6164",
+      "encoded_hex": "00000027312e30000000010000007b65f3a300006500109b8a775a746e2433f2d9088a3496a0deca5abf55",
+      "token_hex": "b20f25649c75a4ec3876099d4189a8f2",
+      "encoded_ts": "30305f6a"
+    },
+    {
+      "kind": "local",
+      "local_key": "0123456789abcdef",
+      "ts": 1710466048,
+      "seq": 7,
+      "random": 99,
+      "protocol": 101,
+      "payload_hex": "7b226964223a322c226d6574686f64223a226170705f7374617274222c22706172616d73223a5b5d7d",
+      "encoded_hex": "00000047312e30000000070000006365f3a4000065003061f54f987001fb90a1aa770f9f4ea78fd519b9852a4c1344dc0f57160365e1affc1957a204b506ef24c2f44fcab0ff4e2c637c05",
+      "token_hex": "6399d07a0f99ea9e9137ff7be97c3b7d",
+      "encoded_ts": "40305f6a"
+    }
+  ]
+}

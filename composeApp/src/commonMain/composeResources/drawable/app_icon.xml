@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="240dp"
+    android:height="240dp"
+    android:viewportWidth="240"
+    android:viewportHeight="240">
+    <!-- teal background -->
+    <path
+        android:fillColor="#006A6A"
+        android:pathData="M0,0h240v240h-240z" />
+    <!-- robot body -->
+    <path
+        android:fillColor="#EAF4F3"
+        android:pathData="M55,120 a65,65 0 1,0 130,0 a65,65 0 1,0 -130,0 Z" />
+    <!-- brush bar -->
+    <path
+        android:fillColor="#006A6A"
+        android:pathData="M82.5,137 h75 a4.5,4.5 0 0 1 4.5,4.5 a4.5,4.5 0 0 1 -4.5,4.5 h-75 a4.5,4.5 0 0 1 -4.5,-4.5 a4.5,4.5 0 0 1 4.5,-4.5 Z" />
+    <!-- camera lens -->
+    <path
+        android:fillColor="#006A6A"
+        android:pathData="M99,95 a21,21 0 1,0 42,0 a21,21 0 1,0 -42,0 Z" />
+    <!-- lens highlight -->
+    <path
+        android:fillColor="#EAF4F3"
+        android:pathData="M111,95 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z" />
+</vector>

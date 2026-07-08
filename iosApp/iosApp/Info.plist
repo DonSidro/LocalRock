@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>LocalRock displays the live video feed from your robot vacuum's built-in camera. It does not access your device's own camera.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>LocalRock plays the audio that accompanies your robot vacuum's live camera feed. It does not record with your device's microphone.</string>
+</dict>
+</plist>

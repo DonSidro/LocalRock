@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the app's dark Material background so there's no white flash on cold start. -->
+    <color name="splash_background">#141218</color>
+    <color name="brand_teal">#4CDADA</color>
+</resources>

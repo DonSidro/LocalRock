@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LocalRock — Privacy Policy</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #5a5a5a;
+    --accent: #2f6b4f;
+    --rule: #e2e2e2;
+    --card: #f7f7f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141218;
+      --fg: #e7e3ea;
+      --muted: #a9a4b0;
+      --accent: #7fd1a6;
+      --rule: #2c2933;
+      --card: #1d1a22;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 4px; }
+  h2 { font-size: 1.2rem; margin: 40px 0 8px; }
+  .updated { color: var(--muted); font-size: 0.9rem; margin: 0 0 24px; }
+  .summary {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin: 24px 0;
+  }
+  a { color: var(--accent); }
+  hr { border: none; border-top: 1px solid var(--rule); margin: 40px 0; }
+  ul { padding-left: 22px; }
+  li { margin: 6px 0; }
+  .disclaimer { color: var(--muted); font-size: 0.9rem; font-style: italic; }
+  code { background: var(--card); padding: 1px 5px; border-radius: 5px; font-size: 0.9em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacy Policy for LocalRock</h1>
+  <p class="updated">Last updated: 7 July 2026</p>
+
+  <p>LocalRock (&ldquo;the app&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) is an open-source
+  application that lets you control Roborock vacuum robots through your <strong>own
+  self-hosted server</strong> (the <code>local_roborock_server</code> project). This policy
+  explains what the app does and does not do with your information.</p>
+
+  <div class="summary">
+    <strong>Summary:</strong> LocalRock does not collect, transmit, or sell your personal
+    data to us or to any third party. The app runs entirely between your device and a
+    server that <strong>you</strong> configure and control. We operate no backend and
+    receive nothing.
+  </div>
+
+  <h2>1. Who is responsible</h2>
+  <p>This app is published by <strong>Sidon Kodraliu</strong> (the &ldquo;developer&rdquo;).
+  For any privacy question you can contact:
+  <strong><a href="mailto:INSERT-CONTACT-EMAIL">sidon@kodraliu.com</a></strong>.</p>
+  <p>Because the app talks only to a server you host and configure yourself, you act as the
+  controller of your own data. The developer does not operate any server that receives,
+  stores, or processes your data.</p>
+
+  <h2>2. Data stored on your device</h2>
+  <p>The app stores the following locally on your device so it can function. This data never
+  leaves your device except to reach the server you configure (see Section 3):</p>
+  <ul>
+    <li><strong>Server address</strong> — the URL of the local server you enter in Settings.</li>
+    <li><strong>Login credentials / authentication token</strong> — the email, login code, and
+    the session token issued by your server, used to stay signed in.</li>
+    <li><strong>Vacuum and home data</strong> — device names, identifiers, cleaning maps,
+    cleaning history, and status information returned by your server and robot.</li>
+    <li><strong>App preferences</strong> — such as whether you have seen the intro screen and a
+    randomly generated installation identifier used to distinguish this app installation to
+    your own server.</li>
+  </ul>
+  <p>This data is held in the app's private storage. Uninstalling the app deletes it. Automatic
+  cloud/device-to-device backup of this data is disabled.</p>
+
+  <h2>3. Data transmitted, and to whom</h2>
+  <p>LocalRock communicates over the network <strong>only with the server you configure</strong>
+  and with the message broker (MQTT) that <strong>your server</strong> designates. This is used to:</p>
+  <ul>
+    <li>authenticate you,</li>
+    <li>list and control your vacuum(s),</li>
+    <li>receive status, maps, and cleaning records, and</li>
+    <li>stream the live camera view (where supported by your robot).</li>
+  </ul>
+  <p>The developer does <strong>not</strong> receive any of this traffic. The app contacts no
+  developer-operated or analytics server.</p>
+  <p>The only other outbound connections are <strong>links you tap yourself</strong>: an optional
+  link to the open-source project page (GitHub) and an optional donation link. These open in your
+  browser and are only visited if you choose to tap them.</p>
+
+  <h2>4. Camera / live view</h2>
+  <p>If your robot supports it, LocalRock can display a live camera stream. This video is streamed
+  directly between your robot/server and your device (via the broker your server designates). It is
+  not recorded by the app and is not sent to the developer.</p>
+
+  <h2>5. Permissions</h2>
+  <p>The app requests only the permissions it needs to function:</p>
+  <ul>
+    <li><strong>Internet / network state</strong> — to reach the server you configure.</li>
+    <li><strong>Wi-Fi state / nearby Wi-Fi devices</strong> — to pair a new vacuum with your Wi-Fi
+    network during setup.</li>
+    <li><strong>Location (Android 12 and below only)</strong> — required by older versions of
+    Android to scan for Wi-Fi networks during vacuum pairing. The app does not use or collect your
+    location, and this permission is not requested on Android 13+.</li>
+  </ul>
+
+  <h2>6. Analytics, advertising, and tracking</h2>
+  <p>LocalRock contains <strong>no</strong> analytics, advertising, crash-reporting, or tracking
+  software. No usage data, identifiers, or device information are collected or shared for these
+  purposes.</p>
+
+  <h2>7. Data sharing and selling</h2>
+  <p>We do not sell, rent, or share your personal data. We never receive it in the first place.</p>
+
+  <h2>8. Children</h2>
+  <p>LocalRock is a utility for controlling home cleaning robots and is not directed at children.
+  It collects no data that could identify a child.</p>
+
+  <h2>9. Your rights (GDPR / EEA and UK users)</h2>
+  <p>Because your data stays on your device and on the server you control, you can exercise the
+  following at any time directly:</p>
+  <ul>
+    <li><strong>Access / portability</strong> — your data resides on your own device and server.</li>
+    <li><strong>Erasure</strong> — uninstall the app to remove all locally stored data; manage
+    server-side data through your own server.</li>
+    <li><strong>Rectification / restriction / objection</strong> — you control both endpoints.</li>
+  </ul>
+  <p>The developer holds no copy of your data and therefore cannot access, export, or delete it on
+  your behalf. If you have questions about how your self-hosted server processes data, please
+  consult that server's documentation.</p>
+
+  <h2>10. Data retention</h2>
+  <p>The app retains data on your device only until you clear the app's data or uninstall it. The
+  developer retains nothing.</p>
+
+  <h2>11. Changes to this policy</h2>
+  <p>If this policy changes, the updated version will be published at this same location with a new
+  &ldquo;Last updated&rdquo; date.</p>
+
+  <h2>12. Contact</h2>
+  <p>For any question about this policy:
+  <strong><a href="mailto:INSERT-CONTACT-EMAIL">sidon@kodraliu.com</a></strong>.</p>
+
+  <hr>
+  <p class="disclaimer">LocalRock is an independent, open-source project and is not affiliated with,
+  endorsed by, or sponsored by Roborock or Beijing Roborock Technology Co., Ltd.</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,676 @@
+{
+  "meta": {
+    "description": "Anonymized iOS app init contract captured from a real Roborock app session and reduced to the minimum stable state needed for replay.",
+    "source_app": "com.roborock.smart/4.59.02_4",
+    "captured_platform": "iPhone16,1; iOS 26.3",
+    "captured_at_utc": "2026-03-28T15:37:36Z"
+  },
+  "frozen_time": 1712345678,
+  "default_headers": {
+    "host": "api-test.anonymized.invalid",
+    "accept-encoding": "gzip, deflate, br",
+    "connection": "keep-alive",
+    "x-iotsdk-version": "3.4.0_1_4",
+    "x-uid": "user-anon",
+    "x-app-name": "com.roborock.smart",
+    "accept": "*/*",
+    "user-agent": "com.roborock.smart/4.59.02_4 (iPhone16,1; iOS 26.3; Scale/3.00)",
+    "authorization": "Hawk id=user-anon,s=session-anon,ts=1712345678,nonce=ANONCE,mac=anonymized-signature",
+    "accept-language": "en-US;q=1",
+    "x-app-version-code": "4.59.02"
+  },
+  "seed": {
+    "inventory": {
+      "home": {
+        "id": 424242,
+        "name": "Anon Home",
+        "rooms": [
+          {
+            "id": 1001,
+            "name": "Living Room"
+          },
+          {
+            "id": 1002,
+            "name": "Kitchen"
+          },
+          {
+            "id": 1003,
+            "name": "Hallway"
+          }
+        ]
+      },
+      "rooms": [
+        {
+          "id": 1001,
+          "name": "Living Room"
+        },
+        {
+          "id": 1002,
+          "name": "Kitchen"
+        },
+        {
+          "id": 1003,
+          "name": "Hallway"
+        }
+      ],
+      "devices": [
+        {
+          "duid": "anon-device-qrevo",
+          "name": "Anon Qrevo MaxV",
+          "local_key": "anon-local-key-qrevo",
+          "product_id": "anon-product-qrevo",
+          "pv": "1.0",
+          "fv": "02.34.04",
+          "timeZoneId": "America/New_York",
+          "online": false,
+          "sn": "RRANONQREVO01",
+          "activeTime": 1712000001,
+          "share": false,
+          "tuyaMigrated": false,
+          "extra": "{\"RRMonitorPrivacyVersion\":\"1\"}",
+          "featureSet": "4499197267967999",
+          "newFeatureSet": "508A977F7EFEFFFF",
+          "deviceStatus": {
+            "121": 10,
+            "122": 99,
+            "123": 103,
+            "124": 202
+          },
+          "silentOtaSwitch": false,
+          "f": false,
+          "createTime": 1711000001,
+          "product_name": "Anon Qrevo MaxV",
+          "model": "roborock.vacuum.a87",
+          "category": "robot.vacuum.cleaner",
+          "capability": 0,
+          "schema": [
+            {
+              "id": 101,
+              "name": "rpc_request",
+              "code": "rpc_request",
+              "mode": "rw",
+              "type": "RAW",
+              "product_property": null,
+              "property": null,
+              "desc": null
+            },
+            {
+              "id": 121,
+              "name": "Device State",
+              "code": "state",
+              "mode": "ro",
+              "type": "ENUM",
+              "product_property": null,
+              "property": "{\"range\":[\"\"]}",
+              "desc": null
+            }
+          ]
+        },
+        {
+          "duid": "anon-device-s7",
+          "name": "Anon S7",
+          "local_key": "anon-local-key-s7",
+          "product_id": "anon-product-s7",
+          "pv": "1.0",
+          "fv": "02.16.12",
+          "timeZoneId": "America/New_York",
+          "online": false,
+          "sn": "RRANONS700001",
+          "activeTime": 1712000002,
+          "share": false,
+          "tuyaMigrated": false,
+          "extra": "{}",
+          "featureSet": "0",
+          "newFeatureSet": "0000000000002000",
+          "deviceStatus": {},
+          "silentOtaSwitch": false,
+          "f": false,
+          "createTime": 1711000002,
+          "product_name": "Anon S7",
+          "model": "roborock.vacuum.a15",
+          "category": "robot.vacuum.cleaner",
+          "capability": 0,
+          "schema": [
+            {
+              "id": 101,
+              "name": "rpc_request",
+              "code": "rpc_request",
+              "mode": "rw",
+              "type": "RAW",
+              "product_property": null,
+              "property": null,
+              "desc": null
+            },
+            {
+              "id": 121,
+              "name": "Device State",
+              "code": "state",
+              "mode": "ro",
+              "type": "ENUM",
+              "product_property": null,
+              "property": "{\"range\":[]}",
+              "desc": null
+            }
+          ]
+        }
+      ],
+      "scenes": [
+        {
+          "id": 900001,
+          "name": "After Dinner",
+          "enabled": true,
+          "type": "WORKFLOW",
+          "device_id": "anon-device-qrevo",
+          "device_name": "Anon Qrevo MaxV",
+          "param": "{\"triggers\":[],\"action\":{\"type\":\"S\",\"items\":[{\"id\":1,\"type\":\"CMD\",\"name\":\"Living Room\",\"entityId\":\"anon-device-qrevo\",\"param\":\"{\\\"id\\\":1,\\\"method\\\":\\\"do_scenes_segments\\\",\\\"params\\\":{\\\"data\\\":[{\\\"tid\\\":\\\"1712345601000\\\",\\\"segs\\\":[{\\\"sid\\\":16}],\\\"map_flag\\\":0,\\\"fan_power\\\":101,\\\"water_box_mode\\\":200,\\\"mop_mode\\\":300,\\\"mop_template_id\\\":300,\\\"repeat\\\":2,\\\"clean_order_mode\\\":1,\\\"auto_dry\\\":1,\\\"auto_dustCollection\\\":1,\\\"region_num\\\":0}],\\\"source\\\":101}}\",\"finishDpIds\":[130]}]},\"matchType\":\"NONE\"}",
+          "extra": null
+        },
+        {
+          "id": 900002,
+          "name": "Morning Refresh",
+          "enabled": true,
+          "type": "WORKFLOW",
+          "device_id": "anon-device-qrevo",
+          "device_name": "Anon Qrevo MaxV",
+          "param": "{\"triggers\":[],\"action\":{\"type\":\"S\",\"items\":[{\"id\":1,\"type\":\"CMD\",\"name\":\"Kitchen Spill Zone\",\"entityId\":\"anon-device-qrevo\",\"param\":\"{\\\"id\\\":1,\\\"method\\\":\\\"do_scenes_zones\\\",\\\"params\\\":{\\\"data\\\":[{\\\"tid\\\":\\\"1712345602000\\\",\\\"zones\\\":[{\\\"zid\\\":8,\\\"repeat\\\":1}],\\\"map_flag\\\":0,\\\"fan_power\\\":103,\\\"water_box_mode\\\":202,\\\"mop_mode\\\":300,\\\"mop_template_id\\\":300,\\\"repeat\\\":1,\\\"clean_order_mode\\\":1,\\\"auto_dry\\\":1,\\\"auto_dustCollection\\\":1,\\\"region_num\\\":0}],\\\"source\\\":101}}\",\"finishDpIds\":[130]}]},\"matchType\":\"NONE\"}",
+          "extra": null
+        }
+      ],
+      "scene_order": [
+        900001,
+        900002
+      ]
+    },
+    "cloud_snapshot": {
+      "home_data": {
+        "id": 424242,
+        "name": "Anon Home",
+        "devices": [
+          {
+            "duid": "anon-device-qrevo",
+            "name": "Anon Qrevo MaxV",
+            "productId": "anon-product-qrevo",
+            "extra": "{\"RRMonitorPrivacyVersion\":\"1\"}",
+            "share": false,
+            "featureSet": "4499197267967999",
+            "newFeatureSet": "508A977F7EFEFFFF",
+            "deviceStatus": {
+              "121": 10,
+              "122": 99,
+              "123": 103,
+              "124": 202
+            },
+            "silentOtaSwitch": false,
+            "f": false,
+            "createTime": 1711000001
+          },
+          {
+            "duid": "anon-device-s7",
+            "name": "Anon S7",
+            "productId": "anon-product-s7",
+            "extra": "{}",
+            "share": false,
+            "featureSet": "0",
+            "newFeatureSet": "0000000000002000",
+            "deviceStatus": {},
+            "silentOtaSwitch": false,
+            "f": false,
+            "createTime": 1711000002
+          }
+        ]
+      }
+    },
+    "runtime_credentials": {
+      "schema_version": 2,
+      "devices": [
+        {
+          "did": "1100000000001",
+          "duid": "anon-device-qrevo",
+          "name": "Anon Qrevo MaxV",
+          "model": "roborock.vacuum.a87",
+          "product_id": "anon-product-qrevo",
+          "localkey": "anon-local-key-qrevo",
+          "local_key_source": "inventory",
+          "device_mqtt_usr": "mqtt-user-qrevo",
+          "updated_at": "2026-03-28T15:37:38+00:00",
+          "last_nc_at": "2026-03-28T15:20:00+00:00",
+          "last_mqtt_seen_at": ""
+        },
+        {
+          "did": "1100000000002",
+          "duid": "anon-device-s7",
+          "name": "Anon S7",
+          "model": "roborock.vacuum.a15",
+          "product_id": "anon-product-s7",
+          "localkey": "anon-local-key-s7",
+          "local_key_source": "inventory",
+          "device_mqtt_usr": "mqtt-user-s7",
+          "updated_at": "2026-03-28T15:37:39+00:00",
+          "last_nc_at": "",
+          "last_mqtt_seen_at": ""
+        }
+      ]
+    },
+    "runtime_presence": [
+      {
+        "conn_id": "qrevo-live",
+        "did": "1100000000001",
+        "mqtt_user": "mqtt-user-qrevo"
+      },
+      {
+        "conn_id": "s7-live",
+        "did": "1100000000002",
+        "mqtt_user": "mqtt-user-s7"
+      }
+    ]
+  },
+  "requests": [
+    {
+      "name": "post_app_info",
+      "method": "POST",
+      "path": "/user/app/info",
+      "headers": {
+        "content-type": "application/x-www-form-urlencoded"
+      },
+      "form": {
+        "channelToken": "anon-app-token-0001",
+        "lang": "en",
+        "locale": "en-US",
+        "osType": "IOS",
+        "pushChannel": "APNS"
+      },
+      "expected_response": {
+        "success": true,
+        "code": 200,
+        "msg": "success",
+        "data": {
+          "stored": true,
+          "pushChannel": "APNS",
+          "channelToken": "anon-app-token-0001",
+          "locale": "en-US",
+          "lang": "en",
+          "osType": "IOS"
+        },
+        "result": {
+          "stored": true,
+          "pushChannel": "APNS",
+          "channelToken": "anon-app-token-0001",
+          "locale": "en-US",
+          "lang": "en",
+          "osType": "IOS"
+        }
+      }
+    },
+    {
+      "name": "get_inbox_latest",
+      "method": "GET",
+      "path": "/user/inbox/latest",
+      "expected_response": {
+        "success": true,
+        "code": 200,
+        "msg": "success",
+        "data": {
+          "count": 0,
+          "hasUnread": false,
+          "latest": null,
+          "updatedAt": 1712345678
+        },
+        "result": {
+          "count": 0,
+          "hasUnread": false,
+          "latest": null,
+          "updatedAt": 1712345678
+        }
+      }
+    },
+    {
+      "name": "get_home_data",
+      "method": "GET",
+      "path": "/v3/user/homes/424242",
+      "expected_response": {
+        "success": true,
+        "code": 200,
+        "msg": "success",
+        "data": {
+          "id": 424242,
+          "name": "Anon Home",
+          "rooms": [
+            {
+              "id": 1001,
+              "name": "Living Room"
+            },
+            {
+              "id": 1002,
+              "name": "Kitchen"
+            },
+            {
+              "id": 1003,
+              "name": "Hallway"
+            }
+          ],
+          "devices": [
+            {
+              "duid": "anon-device-qrevo",
+              "name": "Anon Qrevo MaxV",
+              "localKey": "anon-local-key-qrevo",
+              "productId": "anon-product-qrevo",
+              "fv": "02.34.04",
+              "pv": "1.0",
+              "activeTime": 1712000001,
+              "timeZoneId": "America/New_York",
+              "online": true,
+              "sn": "RRANONQREVO01",
+              "featureSet": "4499197267967999",
+              "newFeatureSet": "508A977F7EFEFFFF",
+              "share": false,
+              "extra": "{\"RRMonitorPrivacyVersion\":\"1\"}",
+              "deviceStatus": {
+                "121": 10,
+                "122": 99,
+                "123": 103,
+                "124": 202
+              },
+              "silentOtaSwitch": false,
+              "f": false,
+              "createTime": 1711000001
+            },
+            {
+              "duid": "anon-device-s7",
+              "name": "Anon S7",
+              "localKey": "anon-local-key-s7",
+              "productId": "anon-product-s7",
+              "fv": "02.16.12",
+              "pv": "1.0",
+              "activeTime": 1712000002,
+              "timeZoneId": "America/New_York",
+              "online": true,
+              "sn": "RRANONS700001",
+              "featureSet": "0",
+              "newFeatureSet": "0000000000002000",
+              "share": false,
+              "extra": "{}",
+              "silentOtaSwitch": false,
+              "f": false,
+              "createTime": 1711000002
+            }
+          ],
+          "receivedDevices": [],
+          "products": [
+            {
+              "id": "anon-product-qrevo",
+              "name": "Anon Qrevo MaxV",
+              "model": "roborock.vacuum.a87",
+              "category": "robot.vacuum.cleaner",
+              "code": "a87",
+              "iconUrl": "",
+              "capability": 0,
+              "schema": [
+                {
+                  "id": 101,
+                  "name": "rpc_request",
+                  "code": "rpc_request",
+                  "mode": "rw",
+                  "type": "RAW",
+                  "product_property": null,
+                  "property": null,
+                  "desc": null
+                },
+                {
+                  "id": 121,
+                  "name": "Device State",
+                  "code": "state",
+                  "mode": "ro",
+                  "type": "ENUM",
+                  "product_property": null,
+                  "property": "{\"range\":[\"\"]}",
+                  "desc": null
+                }
+              ]
+            },
+            {
+              "id": "anon-product-s7",
+              "name": "Anon S7",
+              "model": "roborock.vacuum.a15",
+              "category": "robot.vacuum.cleaner",
+              "code": "a15",
+              "iconUrl": "",
+              "capability": 0,
+              "schema": [
+                {
+                  "id": 101,
+                  "name": "rpc_request",
+                  "code": "rpc_request",
+                  "mode": "rw",
+                  "type": "RAW",
+                  "product_property": null,
+                  "property": null,
+                  "desc": null
+                },
+                {
+                  "id": 121,
+                  "name": "Device State",
+                  "code": "state",
+                  "mode": "ro",
+                  "type": "ENUM",
+                  "product_property": null,
+                  "property": "{\"range\":[]}",
+                  "desc": null
+                }
+              ]
+            }
+          ],
+          "received_devices": []
+        },
+        "result": {
+          "id": 424242,
+          "name": "Anon Home",
+          "rooms": [
+            {
+              "id": 1001,
+              "name": "Living Room"
+            },
+            {
+              "id": 1002,
+              "name": "Kitchen"
+            },
+            {
+              "id": 1003,
+              "name": "Hallway"
+            }
+          ],
+          "devices": [
+            {
+              "duid": "anon-device-qrevo",
+              "name": "Anon Qrevo MaxV",
+              "localKey": "anon-local-key-qrevo",
+              "productId": "anon-product-qrevo",
+              "fv": "02.34.04",
+              "pv": "1.0",
+              "activeTime": 1712000001,
+              "timeZoneId": "America/New_York",
+              "online": true,
+              "sn": "RRANONQREVO01",
+              "featureSet": "4499197267967999",
+              "newFeatureSet": "508A977F7EFEFFFF",
+              "share": false,
+              "extra": "{\"RRMonitorPrivacyVersion\":\"1\"}",
+              "deviceStatus": {
+                "121": 10,
+                "122": 99,
+                "123": 103,
+                "124": 202
+              },
+              "silentOtaSwitch": false,
+              "f": false,
+              "createTime": 1711000001
+            },
+            {
+              "duid": "anon-device-s7",
+              "name": "Anon S7",
+              "localKey": "anon-local-key-s7",
+              "productId": "anon-product-s7",
+              "fv": "02.16.12",
+              "pv": "1.0",
+              "activeTime": 1712000002,
+              "timeZoneId": "America/New_York",
+              "online": true,
+              "sn": "RRANONS700001",
+              "featureSet": "0",
+              "newFeatureSet": "0000000000002000",
+              "share": false,
+              "extra": "{}",
+              "silentOtaSwitch": false,
+              "f": false,
+              "createTime": 1711000002
+            }
+          ],
+          "receivedDevices": [],
+          "products": [
+            {
+              "id": "anon-product-qrevo",
+              "name": "Anon Qrevo MaxV",
+              "model": "roborock.vacuum.a87",
+              "category": "robot.vacuum.cleaner",
+              "code": "a87",
+              "iconUrl": "",
+              "capability": 0,
+              "schema": [
+                {
+                  "id": 101,
+                  "name": "rpc_request",
+                  "code": "rpc_request",
+                  "mode": "rw",
+                  "type": "RAW",
+                  "product_property": null,
+                  "property": null,
+                  "desc": null
+                },
+                {
+                  "id": 121,
+                  "name": "Device State",
+                  "code": "state",
+                  "mode": "ro",
+                  "type": "ENUM",
+                  "product_property": null,
+                  "property": "{\"range\":[\"\"]}",
+                  "desc": null
+                }
+              ]
+            },
+            {
+              "id": "anon-product-s7",
+              "name": "Anon S7",
+              "model": "roborock.vacuum.a15",
+              "category": "robot.vacuum.cleaner",
+              "code": "a15",
+              "iconUrl": "",
+              "capability": 0,
+              "schema": [
+                {
+                  "id": 101,
+                  "name": "rpc_request",
+                  "code": "rpc_request",
+                  "mode": "rw",
+                  "type": "RAW",
+                  "product_property": null,
+                  "property": null,
+                  "desc": null
+                },
+                {
+                  "id": 121,
+                  "name": "Device State",
+                  "code": "state",
+                  "mode": "ro",
+                  "type": "ENUM",
+                  "product_property": null,
+                  "property": "{\"range\":[]}",
+                  "desc": null
+                }
+              ]
+            }
+          ],
+          "received_devices": []
+        }
+      }
+    },
+    {
+      "name": "get_scene_order",
+      "method": "GET",
+      "path": "/user/scene/order",
+      "query": {
+        "homeId": "424242"
+      },
+      "expected_response": {
+        "success": true,
+        "code": 200,
+        "msg": "success",
+        "data": [
+          900001,
+          900002
+        ],
+        "result": [
+          900001,
+          900002
+        ]
+      }
+    },
+    {
+      "name": "get_home_scenes",
+      "method": "GET",
+      "path": "/user/scene/home/424242",
+      "expected_response": {
+        "success": true,
+        "code": 200,
+        "msg": "success",
+        "data": [
+          {
+            "id": 900001,
+            "name": "After Dinner",
+            "enabled": true,
+            "type": "WORKFLOW",
+            "homeId": 424242,
+            "deviceId": "anon-device-qrevo",
+            "deviceName": "Anon Qrevo MaxV",
+            "param": "{\"triggers\":[],\"action\":{\"type\":\"S\",\"items\":[{\"id\":1,\"type\":\"CMD\",\"name\":\"Living Room\",\"entityId\":\"anon-device-qrevo\",\"param\":\"{\\\"id\\\":1,\\\"method\\\":\\\"do_scenes_segments\\\",\\\"params\\\":{\\\"data\\\":[{\\\"tid\\\":\\\"1712345601000\\\",\\\"segs\\\":[{\\\"sid\\\":16}],\\\"map_flag\\\":0,\\\"fan_power\\\":101,\\\"water_box_mode\\\":200,\\\"mop_mode\\\":300,\\\"mop_template_id\\\":300,\\\"repeat\\\":2,\\\"clean_order_mode\\\":1,\\\"auto_dry\\\":1,\\\"auto_dustCollection\\\":1,\\\"region_num\\\":0}],\\\"source\\\":101}}\",\"finishDpIds\":[130]}]},\"matchType\":\"NONE\"}",
+            "extra": null
+          },
+          {
+            "id": 900002,
+            "name": "Morning Refresh",
+            "enabled": true,
+            "type": "WORKFLOW",
+            "homeId": 424242,
+            "deviceId": "anon-device-qrevo",
+            "deviceName": "Anon Qrevo MaxV",
+            "param": "{\"triggers\":[],\"action\":{\"type\":\"S\",\"items\":[{\"id\":1,\"type\":\"CMD\",\"name\":\"Kitchen Spill Zone\",\"entityId\":\"anon-device-qrevo\",\"param\":\"{\\\"id\\\":1,\\\"method\\\":\\\"do_scenes_zones\\\",\\\"params\\\":{\\\"data\\\":[{\\\"tid\\\":\\\"1712345602000\\\",\\\"zones\\\":[{\\\"zid\\\":8,\\\"repeat\\\":1}],\\\"map_flag\\\":0,\\\"fan_power\\\":103,\\\"water_box_mode\\\":202,\\\"mop_mode\\\":300,\\\"mop_template_id\\\":300,\\\"repeat\\\":1,\\\"clean_order_mode\\\":1,\\\"auto_dry\\\":1,\\\"auto_dustCollection\\\":1,\\\"region_num\\\":0}],\\\"source\\\":101}}\",\"finishDpIds\":[130]}]},\"matchType\":\"NONE\"}",
+            "extra": null
+          }
+        ],
+        "result": [
+          {
+            "id": 900001,
+            "name": "After Dinner",
+            "enabled": true,
+            "type": "WORKFLOW",
+            "homeId": 424242,
+            "deviceId": "anon-device-qrevo",
+            "deviceName": "Anon Qrevo MaxV",
+            "param": "{\"triggers\":[],\"action\":{\"type\":\"S\",\"items\":[{\"id\":1,\"type\":\"CMD\",\"name\":\"Living Room\",\"entityId\":\"anon-device-qrevo\",\"param\":\"{\\\"id\\\":1,\\\"method\\\":\\\"do_scenes_segments\\\",\\\"params\\\":{\\\"data\\\":[{\\\"tid\\\":\\\"1712345601000\\\",\\\"segs\\\":[{\\\"sid\\\":16}],\\\"map_flag\\\":0,\\\"fan_power\\\":101,\\\"water_box_mode\\\":200,\\\"mop_mode\\\":300,\\\"mop_template_id\\\":300,\\\"repeat\\\":2,\\\"clean_order_mode\\\":1,\\\"auto_dry\\\":1,\\\"auto_dustCollection\\\":1,\\\"region_num\\\":0}],\\\"source\\\":101}}\",\"finishDpIds\":[130]}]},\"matchType\":\"NONE\"}",
+            "extra": null
+          },
+          {
+            "id": 900002,
+            "name": "Morning Refresh",
+            "enabled": true,
+            "type": "WORKFLOW",
+            "homeId": 424242,
+            "deviceId": "anon-device-qrevo",
+            "deviceName": "Anon Qrevo MaxV",
+            "param": "{\"triggers\":[],\"action\":{\"type\":\"S\",\"items\":[{\"id\":1,\"type\":\"CMD\",\"name\":\"Kitchen Spill Zone\",\"entityId\":\"anon-device-qrevo\",\"param\":\"{\\\"id\\\":1,\\\"method\\\":\\\"do_scenes_zones\\\",\\\"params\\\":{\\\"data\\\":[{\\\"tid\\\":\\\"1712345602000\\\",\\\"zones\\\":[{\\\"zid\\\":8,\\\"repeat\\\":1}],\\\"map_flag\\\":0,\\\"fan_power\\\":103,\\\"water_box_mode\\\":202,\\\"mop_mode\\\":300,\\\"mop_template_id\\\":300,\\\"repeat\\\":1,\\\"clean_order_mode\\\":1,\\\"auto_dry\\\":1,\\\"auto_dustCollection\\\":1,\\\"region_num\\\":0}],\\\"source\\\":101}}\",\"finishDpIds\":[130]}]},\"matchType\":\"NONE\"}",
+            "extra": null
+          }
+        ]
+      }
+    }
+  ]
+}

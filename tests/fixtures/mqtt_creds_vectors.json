@@ -1,0 +1,37 @@
+{
+  "cases": [
+    {
+      "u": "1234567890",
+      "s": "abcdef0123456789abcdef0123456789",
+      "k": "zzzzzzzzzzzzzzzz",
+      "m": "ssl://mqtt-eu-3.roborock.com:8883",
+      "host": "mqtt-eu-3.roborock.com",
+      "port": 8883,
+      "tls": true,
+      "username": "c9cc7cc8",
+      "password": "898bf7dbb1fe7823"
+    },
+    {
+      "u": "42",
+      "s": "0123456789abcdef",
+      "k": "0123456789abcdef",
+      "m": "mqtt://api.roborock.kodraliu.com:1883",
+      "host": "api.roborock.kodraliu.com",
+      "port": 1883,
+      "tls": false,
+      "username": "f7996f89",
+      "password": "99dc9b40748c5354"
+    },
+    {
+      "u": "user-id",
+      "s": "session-secret",
+      "k": "some-key-value",
+      "m": "ssl://broker.local:8884",
+      "host": "broker.local",
+      "port": 8884,
+      "tls": true,
+      "username": "4d905a77",
+      "password": "bdcdeaa264143c7c"
+    }
+  ]
+}

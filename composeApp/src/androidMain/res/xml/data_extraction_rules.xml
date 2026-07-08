@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Keep the stored auth token (rriot session/keys in the "vaclocal" SharedPreferences) out of
+  cloud backups and device-to-device transfers. Backups are already off via allowBackup=false;
+  this also covers the Android 12+ device-transfer path.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="vaclocal.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="vaclocal.xml" />
+    </device-transfer>
+</data-extraction-rules>
