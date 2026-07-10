@@ -17,6 +17,8 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     var charger: ParsedMapPoint? = null
     var robot: ParsedMapPoint? = null
     var path: List<ParsedMapPoint> = emptyList()
+    var noGoZones: List<MapZone> = emptyList()
+    var noMopZones: List<MapZone> = emptyList()
 
     var off = headerLen
     while (off + 8 <= bytes.size) {
@@ -79,6 +81,8 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
                     path = pts
                 }
             }
+            BLOCK_FORBIDDEN_ZONES -> noGoZones = parseQuadZones(bytes, off, ZoneKind.NO_GO)
+            BLOCK_FORBIDDEN_MOP_ZONES -> noMopZones = parseQuadZones(bytes, off, ZoneKind.NO_MOP)
         }
         off += blockHeaderLen + blockDataLen
     }
@@ -127,8 +131,36 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         chargerMm = charger,
         robotMm = robot,
         pathMm = path,
+        noGoZones = noGoZones,
+        noMopZones = noMopZones,
         originalGrid = pixels,
     )
+}
+
+/**
+ * Parse a FORBIDDEN_ZONES (9) or FORBIDDEN_MOP_ZONES (12) block. Layout (little-endian,
+ * per Valetudo's RRMapParser): a `u16` count immediately after the 8-byte common block header
+ * (at `off+8`), then that many quadrilaterals of eight `u16` coordinates (four corners) starting
+ * at `off+12`. Coordinates are in robot millimetres, matching the charger/robot/path blocks.
+ */
+private fun parseQuadZones(bytes: ByteArray, off: Int, kind: ZoneKind): List<MapZone> {
+    if (off + 12 > bytes.size) return emptyList()
+    val count = u16(bytes, off + 8)
+    if (count <= 0) return emptyList()
+    val zones = ArrayList<MapZone>(count)
+    var p = off + 12
+    repeat(count) {
+        if (p + 16 > bytes.size) return zones
+        zones += MapZone(
+            x0 = u16(bytes, p), y0 = u16(bytes, p + 2),
+            x1 = u16(bytes, p + 4), y1 = u16(bytes, p + 6),
+            x2 = u16(bytes, p + 8), y2 = u16(bytes, p + 10),
+            x3 = u16(bytes, p + 12), y3 = u16(bytes, p + 14),
+            kind = kind,
+        )
+        p += 16
+    }
+    return zones
 }
 
 private const val MAGIC_0 = 0x72.toByte()
@@ -138,6 +170,8 @@ private const val BLOCK_CHARGER = 1
 private const val BLOCK_IMAGE = 2
 private const val BLOCK_PATH = 3
 private const val BLOCK_ROBOT_POSITION = 8
+private const val BLOCK_FORBIDDEN_ZONES = 9        // persistent no-go zones
+private const val BLOCK_FORBIDDEN_MOP_ZONES = 12   // persistent no-mop zones
 private const val BLOCK_DIGEST = 1024
 
 private const val LEGACY_PIXEL_RESOLUTION_M = 0.05f

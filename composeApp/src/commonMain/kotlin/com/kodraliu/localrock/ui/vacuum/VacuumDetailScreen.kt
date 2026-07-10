@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Battery6Bar
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.BatteryUnknown
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Gamepad
 import androidx.compose.material.icons.filled.GridView
@@ -173,6 +174,7 @@ fun VacuumDetailScreen(
     onBack: () -> Unit,
     onSettings: () -> Unit,
     onZoneClean: () -> Unit,
+    onMapEdit: () -> Unit,
     onSchedule: () -> Unit,
     onCamera: () -> Unit,
     onRemote: () -> Unit,
@@ -295,6 +297,7 @@ fun VacuumDetailScreen(
                         viewModel.run { it.switchFloor(flag) }
                     },
                     onCamera = onCamera,
+                    onEditZones = onMapEdit,
                 )
 
                 Spacer(Modifier.height(16.dp))
@@ -481,6 +484,7 @@ private fun MapHeroSection(
     onRoomTap: (Int) -> Unit,
     onFloorSwitch: (Int) -> Unit,
     onCamera: () -> Unit,
+    onEditZones: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -520,6 +524,15 @@ private fun MapHeroSection(
             modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
         ) {
             Icon(Icons.Default.Videocam, contentDescription = "Camera live view")
+        }
+
+        if (parsedMap != null) {
+            FilledTonalIconButton(
+                onClick = onEditZones,
+                modifier = Modifier.align(Alignment.CenterEnd).padding(10.dp).size(40.dp),
+            ) {
+                Icon(Icons.Default.Block, contentDescription = "Edit no-go zones", modifier = Modifier.size(20.dp))
+            }
         }
 
         FilledTonalIconButton(

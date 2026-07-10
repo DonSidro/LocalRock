@@ -30,6 +30,7 @@ import com.kodraliu.localrock.ui.vacuum.VacuumPinGoScreen
 import com.kodraliu.localrock.ui.vacuum.VacuumRemoteScreen
 import com.kodraliu.localrock.ui.vacuum.VacuumSettingsScreen
 import com.kodraliu.localrock.ui.vacuum.VacuumViewModel
+import com.kodraliu.localrock.ui.vacuum.MapEditScreen
 import com.kodraliu.localrock.ui.vacuum.ZoneCleanScreen
 
 @Composable
@@ -103,6 +104,7 @@ fun AppNavHost() {
                     onBack = { navController.popBackStack<VacuumGraph>(inclusive = true) },
                     onSettings = { navController.navigate(VacuumSettings) },
                     onZoneClean = { navController.navigate(VacuumZoneClean) },
+                    onMapEdit = { navController.navigate(VacuumMapEdit) },
                     onSchedule = { navController.navigate(VacuumSchedule) },
                     onCamera = { navController.navigate(VacuumCamera) },
                     onRemote = { navController.navigate(VacuumRemote) },
@@ -166,6 +168,16 @@ fun AppNavHost() {
                 val duid = graphEntry.toRoute<VacuumGraph>().duid
                 val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
                 ZoneCleanScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable<VacuumMapEdit> { entry ->
+                val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
+                val duid = graphEntry.toRoute<VacuumGraph>().duid
+                val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
+                MapEditScreen(
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
                 )

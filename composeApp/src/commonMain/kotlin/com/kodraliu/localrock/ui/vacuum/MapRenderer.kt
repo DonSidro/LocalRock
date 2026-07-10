@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import com.kodraliu.localrock.shared.vacuum.map.MapZone
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapPoint
 
@@ -19,6 +20,10 @@ private val FLOOR_COLOR = Color(0xffe0f2f1)
 private val CHARGER_COLOR = Color(0xff2196f3)
 private val ROBOT_COLOR = Color(0xfff44336)
 private val PATH_COLOR = Color(0xffffd54f) // amber, visible over both floor + wall
+private val NO_GO_FILL = Color(0x33f44336)    // translucent red
+private val NO_GO_STROKE = Color(0xccf44336)
+private val NO_MOP_FILL = Color(0x332196f3)   // translucent blue
+private val NO_MOP_STROKE = Color(0xcc2196f3)
 
 // Palette for room coloring; index = room_id & 0x1f. Hand-picked pastels.
 private val ROOM_PALETTE: List<Color> = listOf(
@@ -68,9 +73,34 @@ fun rememberMapBitmap(map: ParsedMap): ImageBitmap = remember(map) {
         }
     }
     if (map.pathMm.size >= 2) drawPath(canvas, map)
+    map.noMopZones.forEach { drawZone(canvas, map, it, NO_MOP_FILL, NO_MOP_STROKE) }
+    map.noGoZones.forEach { drawZone(canvas, map, it, NO_GO_FILL, NO_GO_STROKE) }
     map.chargerMm?.let { drawMarker(canvas, map, it, CHARGER_COLOR, radius = 4f) }
     map.robotMm?.let { drawMarker(canvas, map, it, ROBOT_COLOR, radius = 4f) }
     bitmap
+}
+
+/** Map a robot-mm point to a canvas cell, matching [drawMarker]'s transform (incl. the Y-flip). */
+private fun mmToCell(map: ParsedMap, xMm: Int, yMm: Int): Offset {
+    val cellX = (xMm / 50f) - map.pixelOffsetLeft
+    val cellYBottom = (yMm / 50f) - map.pixelOffsetTop
+    return Offset(cellX, (map.height - 1) - cellYBottom)
+}
+
+private fun drawZone(canvas: Canvas, map: ParsedMap, zone: MapZone, fill: Color, stroke: Color) {
+    val path = Path()
+    val c0 = mmToCell(map, zone.x0, zone.y0)
+    path.moveTo(c0.x, c0.y)
+    val c1 = mmToCell(map, zone.x1, zone.y1); path.lineTo(c1.x, c1.y)
+    val c2 = mmToCell(map, zone.x2, zone.y2); path.lineTo(c2.x, c2.y)
+    val c3 = mmToCell(map, zone.x3, zone.y3); path.lineTo(c3.x, c3.y)
+    path.close()
+    canvas.drawPath(path, Paint().apply { color = fill })
+    canvas.drawPath(path, Paint().apply {
+        color = stroke
+        style = PaintingStyle.Stroke
+        strokeWidth = 1f
+    })
 }
 
 private fun drawPath(canvas: Canvas, map: ParsedMap) {

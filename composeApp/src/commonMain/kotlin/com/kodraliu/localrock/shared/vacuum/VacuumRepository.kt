@@ -5,6 +5,7 @@ import com.kodraliu.localrock.shared.mqtt.MqttClient
 import com.kodraliu.localrock.shared.mqtt.MqttTopics
 import com.kodraliu.localrock.shared.protocol.V1Response
 import com.kodraliu.localrock.shared.protocol.saveDebugBlob
+import com.kodraliu.localrock.shared.vacuum.map.MapZone
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
 import com.kodraliu.localrock.shared.vacuum.map.parseB01Map
@@ -316,6 +317,18 @@ class VacuumRepository(
     suspend fun gotoTarget(x: Int, y: Int) { session.appGotoTarget(x, y) }
 
     suspend fun cleanZones(zones: List<ZoneRect>) { session.appZonedClean(zones) }
+
+    /**
+     * Replace the device's persistent no-go / no-mop zones with exactly [noGoZones] + [noMopZones]
+     * (the full authoritative set), then re-fetch the map so the UI reflects what the robot actually
+     * stored. Optimistically updates [parsedMap] first so the change shows immediately.
+     */
+    suspend fun saveZones(noGoZones: List<MapZone>, noMopZones: List<MapZone>) {
+        if (demo) return
+        _parsedMap.update { it?.copy(noGoZones = noGoZones, noMopZones = noMopZones) }
+        session.saveMap(noGoZones, noMopZones)
+        fetchMap()
+    }
 
     suspend fun fetchTimers() {
         val resp = session.getTimer()

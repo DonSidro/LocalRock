@@ -80,4 +80,71 @@ class LegacyMapTest {
             parseLegacyMap(byteArrayOf(0xab.toByte(), 0xcd.toByte(), 20, 0, 0, 0, 0, 0))
         }
     }
+
+    @Test
+    fun real_sample_has_no_persistent_zones() {
+        // The captured fixture has no no-go/no-mop zones set; the parser must not invent any.
+        val map = parseLegacyMap(raw)
+        assertEquals(emptyList(), map.noGoZones)
+        assertEquals(emptyList(), map.noMopZones)
+    }
+
+    @Test
+    fun parses_forbidden_zone_block() {
+        val map = parseLegacyMap(syntheticMapWithForbiddenZone())
+        assertEquals(1, map.noGoZones.size)
+        assertEquals(emptyList(), map.noMopZones)
+        val z = map.noGoZones.single()
+        assertEquals(ZoneKind.NO_GO, z.kind)
+        // Corners as written into the block, in mm.
+        assertEquals(1000, z.x0); assertEquals(2000, z.y0)
+        assertEquals(3000, z.x1); assertEquals(2000, z.y1)
+        assertEquals(3000, z.x2); assertEquals(4000, z.y2)
+        assertEquals(1000, z.x3); assertEquals(4000, z.y3)
+        assertEquals(1000, z.minXmm); assertEquals(3000, z.maxXmm)
+        assertEquals(2000, z.minYmm); assertEquals(4000, z.maxYmm)
+    }
+
+    /**
+     * Minimal legacy map: 20-byte file header, a 2x2 IMAGE block (required by the parser), then a
+     * FORBIDDEN_ZONES (type 9) block carrying one quad. Layout matches [parseQuadZones]: u16 count
+     * at off+8, quad of 8 u16 at off+12.
+     */
+    private fun syntheticMapWithForbiddenZone(): ByteArray {
+        val b = ByteArray(80)
+        b[0] = 0x72; b[1] = 0x72          // 'rr'
+        putU16(b, 2, 20)                   // file header length
+
+        // IMAGE block at off=20
+        putU16(b, 20, 2)                   // type = IMAGE
+        putU16(b, 22, 28)                  // block header length
+        putU32(b, 24, 4)                   // data length = 2*2 pixels
+        // header body: imageTop@32, imageLeft@36, imageHeight@40, imageWidth@44 (ih = off+8 = 28)
+        putU32(b, 40, 2)                   // height
+        putU32(b, 44, 2)                   // width
+        // pixels at off+28 = 48..52 left as 0 (all "outside")
+
+        // FORBIDDEN_ZONES block at off=52
+        putU16(b, 52, 9)                   // type
+        putU16(b, 54, 8)                   // block header length
+        putU32(b, 56, 20)                  // data length = count word + 1 quad
+        putU16(b, 60, 1)                   // zone count (at off+8)
+        var p = 64                         // quad at off+12
+        intArrayOf(1000, 2000, 3000, 2000, 3000, 4000, 1000, 4000).forEach {
+            putU16(b, p, it); p += 2
+        }
+        return b
+    }
+
+    private fun putU16(b: ByteArray, off: Int, v: Int) {
+        b[off] = (v and 0xff).toByte()
+        b[off + 1] = ((v ushr 8) and 0xff).toByte()
+    }
+
+    private fun putU32(b: ByteArray, off: Int, v: Int) {
+        b[off] = (v and 0xff).toByte()
+        b[off + 1] = ((v ushr 8) and 0xff).toByte()
+        b[off + 2] = ((v ushr 16) and 0xff).toByte()
+        b[off + 3] = ((v ushr 24) and 0xff).toByte()
+    }
 }

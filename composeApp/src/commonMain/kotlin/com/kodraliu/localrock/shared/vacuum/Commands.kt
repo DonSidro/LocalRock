@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.shared.vacuum
 
 import com.kodraliu.localrock.shared.protocol.V1Response
+import com.kodraliu.localrock.shared.vacuum.map.MapZone
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -167,6 +168,42 @@ suspend fun VacuumSession.closeDndTimer(): V1Response = sendCommand("close_dnd_t
 suspend fun VacuumSession.getMultiMapsList(): V1Response = sendCommand("get_multi_maps_list")
 suspend fun VacuumSession.loadMultiMap(mapFlag: Int): V1Response =
     sendCommand("load_multi_map", listOf(JsonPrimitive(mapFlag)))
+
+
+/**
+ * Persist the full set of map restrictions (no-go + no-mop zones) via `save_map`.
+ *
+ * Roborock treats persistent restrictions as one authoritative set: every call replaces the
+ * device's stored zones with exactly what is passed, so callers MUST send the complete list
+ * (there is no incremental add/remove). Coordinates are robot millimetres.
+ *
+ * WIRE FORMAT — PROVISIONAL. The zone type ids and the `{"data": [...]}` envelope below follow
+ * the community/Valetudo Roborock format and still need confirmation against a capture of the
+ * official app writing a zone (Spike 2). If the robot rejects the frame, this single function is
+ * the only thing to adjust: verify (a) the [SAVE_MAP_TYPE_*] ids, (b) whether params is a bare
+ * array vs the `{"data": …}` object, and (c) corner ordering/units.
+ */
+suspend fun VacuumSession.saveMap(noGoZones: List<MapZone>, noMopZones: List<MapZone>): V1Response =
+    sendCommandRaw("save_map", encodeSaveMapParams(noGoZones, noMopZones))
+
+// Provisional restriction type ids used inside the save_map payload. CONFIRM against a capture.
+private const val SAVE_MAP_TYPE_NO_GO = 0
+private const val SAVE_MAP_TYPE_NO_MOP = 2
+
+private fun encodeSaveMapParams(noGoZones: List<MapZone>, noMopZones: List<MapZone>): JsonObject {
+    fun quad(zone: MapZone, type: Int): JsonArray = JsonArray(listOf(
+        JsonPrimitive(type),
+        JsonPrimitive(zone.x0), JsonPrimitive(zone.y0),
+        JsonPrimitive(zone.x1), JsonPrimitive(zone.y1),
+        JsonPrimitive(zone.x2), JsonPrimitive(zone.y2),
+        JsonPrimitive(zone.x3), JsonPrimitive(zone.y3),
+    ))
+    val entries = buildList {
+        noGoZones.forEach { add(quad(it, SAVE_MAP_TYPE_NO_GO)) }
+        noMopZones.forEach { add(quad(it, SAVE_MAP_TYPE_NO_MOP)) }
+    }
+    return JsonObject(mapOf("data" to JsonArray(entries)))
+}
 
 
 suspend fun VacuumSession.checkHomesecPassword(passwordMd5Hex: String): V1Response =

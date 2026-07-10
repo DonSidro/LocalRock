@@ -36,7 +36,10 @@ class DeviceRepository(
             return
         }
         val token = authRepository.token() ?: error("Not logged in")
-        runCatching { deviceApi.ncPrepare() }
+        // NOTE: do NOT call /nc/prepare here. It's an onboarding-only ("network config prepare")
+        // endpoint; calling it on every refresh made local_roborock_server fabricate a phantom
+        // "rr_<id>" runtime-credential device (local_key_source=onboarding_nc) that then showed up
+        // as a ghost vacuum in the device list. The result was discarded anyway.
         val detail = deviceApi.getHomeDetail(token)
         val homeId = detail.resolvedHomeId ?: error("Server did not return a home id")
         val home = deviceApi.getHome(homeId)

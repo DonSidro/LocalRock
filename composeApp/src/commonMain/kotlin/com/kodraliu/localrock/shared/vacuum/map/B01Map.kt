@@ -92,6 +92,8 @@ data class ParsedMap(
     val chargerMm: ParsedMapPoint? = null,
     val robotMm: ParsedMapPoint? = null,
     val pathMm: List<ParsedMapPoint> = emptyList(),
+    val noGoZones: List<MapZone> = emptyList(),
+    val noMopZones: List<MapZone> = emptyList(),
 
     val originalGrid: ByteArray? = null,
 ) {
@@ -102,7 +104,8 @@ data class ParsedMap(
         other is ParsedMap && other.width == width && other.height == height &&
             other.grid.contentEquals(grid) && other.rooms == rooms &&
             other.chargerMm == chargerMm && other.robotMm == robotMm &&
-            other.pathMm == pathMm
+            other.pathMm == pathMm &&
+            other.noGoZones == noGoZones && other.noMopZones == noMopZones
 
     override fun hashCode(): Int {
         var r = width
@@ -112,7 +115,49 @@ data class ParsedMap(
         r = 31 * r + (chargerMm?.hashCode() ?: 0)
         r = 31 * r + (robotMm?.hashCode() ?: 0)
         r = 31 * r + pathMm.hashCode()
+        r = 31 * r + noGoZones.hashCode()
+        r = 31 * r + noMopZones.hashCode()
         return r
+    }
+}
+
+enum class ZoneKind { NO_GO, NO_MOP }
+
+/**
+ * A persistent map restriction: a quadrilateral (four corners) stored in robot **millimetre**
+ * coordinates — the same space as [ParsedMapPoint] (charger/robot/path). Convert a corner to a
+ * local map pixel with `(mm / 50) - pixelOffset`, mirroring the renderer's marker transform.
+ *
+ * The Roborock format allows arbitrary quadrilaterals, but the editor only produces axis-aligned
+ * rectangles, so p0..p3 are corners in clockwise order (top-left, top-right, bottom-right,
+ * bottom-left in robot space).
+ */
+data class MapZone(
+    val x0: Int, val y0: Int,
+    val x1: Int, val y1: Int,
+    val x2: Int, val y2: Int,
+    val x3: Int, val y3: Int,
+    val kind: ZoneKind,
+) {
+    /** Axis-aligned bounds in mm, tolerant of arbitrary corner ordering. */
+    val minXmm: Int get() = minOf(x0, x1, x2, x3)
+    val minYmm: Int get() = minOf(y0, y1, y2, y3)
+    val maxXmm: Int get() = maxOf(x0, x1, x2, x3)
+    val maxYmm: Int get() = maxOf(y0, y1, y2, y3)
+
+    companion object {
+        /** Build an axis-aligned rectangle zone from two opposite corners in mm. */
+        fun rect(axMm: Int, ayMm: Int, bxMm: Int, byMm: Int, kind: ZoneKind): MapZone {
+            val loX = minOf(axMm, bxMm); val hiX = maxOf(axMm, bxMm)
+            val loY = minOf(ayMm, byMm); val hiY = maxOf(ayMm, byMm)
+            return MapZone(
+                x0 = loX, y0 = hiY,   // top-left
+                x1 = hiX, y1 = hiY,   // top-right
+                x2 = hiX, y2 = loY,   // bottom-right
+                x3 = loX, y3 = loY,   // bottom-left
+                kind = kind,
+            )
+        }
     }
 }
 
