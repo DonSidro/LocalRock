@@ -27,6 +27,7 @@ final class VacuumPairingSession: VacuumPairingNative {
     private let queue = DispatchQueue(label: "com.kodraliu.localrock.pairing")
     private var connection: NWConnection?
     private var joinedSsid: String?
+    private var joinedPrefix: String?
 
     // MARK: Joining the vacuum's access point
 
@@ -42,6 +43,11 @@ final class VacuumPairingSession: VacuumPairingNative {
         let config = NEHotspotConfiguration(ssidPrefix: ssidPrefix)
         // Don't leave the vacuum's AP in the user's known-networks list after pairing.
         config.joinOnce = true
+
+        // Remember the prefix even if the join later fails: iOS may already have associated, and
+        // `close()` has to be able to undo that or the phone is stranded on an AP with no route to
+        // the user's server.
+        joinedPrefix = ssidPrefix
 
         queue.asyncAfter(deadline: .now() + .milliseconds(Int(timeoutMs))) {
             guard done.claim() else { return }
@@ -128,11 +134,28 @@ final class VacuumPairingSession: VacuumPairingNative {
     func close() {
         connection?.cancel()
         connection = nil
-        // Put the phone back on its normal network instead of stranding it on the robot's AP.
-        if let ssid = joinedSsid {
-            NEHotspotConfigurationManager.shared.removeConfiguration(forSSID: ssid)
-            joinedSsid = nil
+
+        // Put the phone back on its normal network. A prefix-joined configuration is registered
+        // under the *prefix*, not under the SSID the phone actually landed on, so removing only the
+        // resolved SSID is a silent no-op that strands the phone on the robot's AP — with no DNS and
+        // no route to the user's server. Remove every configuration this session could have created,
+        // and let iOS's own list be the source of truth.
+        let manager = NEHotspotConfigurationManager.shared
+        let ssid = joinedSsid
+        let prefix = joinedPrefix
+
+        if let prefix { manager.removeConfiguration(forSSID: prefix) }
+        if let ssid { manager.removeConfiguration(forSSID: ssid) }
+        manager.getConfiguredSSIDs { configured in
+            for entry in configured {
+                if entry == ssid || entry == prefix || (prefix.map { entry.hasPrefix($0) } ?? false) {
+                    manager.removeConfiguration(forSSID: entry)
+                }
+            }
         }
+
+        joinedSsid = nil
+        joinedPrefix = nil
     }
 
     // MARK: Helpers
