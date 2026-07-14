@@ -62,20 +62,49 @@ final class VacuumPairingSession: VacuumPairingNative {
                 onError(Self.describe(error, ssidPrefix: ssidPrefix))
                 return
             }
-            // `apply` reports success as soon as the association is requested, so confirm which
-            // network we actually landed on before sending anything.
-            NEHotspotNetwork.fetchCurrent { network in
+            // `apply` reports success as soon as iOS accepts the join, not once Wi-Fi has finished
+            // associating, so the current network needs to be sampled until it settles rather than
+            // read once.
+            self.confirmJoined(ssidPrefix: ssidPrefix, done: done, onJoined: onJoined)
+        }
+    }
+
+    /// Polls the current network until it is the vacuum's AP. `fetchCurrent` is unreliable right
+    /// after a join — it can report the previous network, or nothing at all — so a single mismatched
+    /// sample is not treated as failure. If it never confirms, the handshake proceeds anyway and the
+    /// UDP hello timeout becomes the real verdict: a false "you're not on the vacuum's network" is
+    /// worse than a clean handshake timeout, because the former blocks a pairing that would work.
+    private func confirmJoined(
+        ssidPrefix: String,
+        done: CallbackGuard,
+        attempt: Int = 0,
+        onJoined: @escaping () -> Void
+    ) {
+        NEHotspotNetwork.fetchCurrent { network in
+            if let network, network.ssid.hasPrefix(ssidPrefix) {
                 guard done.claim() else { return }
-                guard let network, network.ssid.hasPrefix(ssidPrefix) else {
-                    onError("The phone is not on the vacuum's access point " +
-                            "(expected an SSID starting with \(ssidPrefix)).")
-                    return
-                }
                 self.joinedSsid = network.ssid
                 onJoined()
+                return
+            }
+            guard attempt < Self.joinConfirmAttempts else {
+                guard done.claim() else { return }
+                onJoined() // Unconfirmed, but let the handshake decide.
+                return
+            }
+            self.queue.asyncAfter(deadline: .now() + .milliseconds(Self.joinConfirmIntervalMs)) {
+                self.confirmJoined(
+                    ssidPrefix: ssidPrefix,
+                    done: done,
+                    attempt: attempt + 1,
+                    onJoined: onJoined
+                )
             }
         }
     }
+
+    private static let joinConfirmAttempts = 20      // ~10s of association grace
+    private static let joinConfirmIntervalMs = 500
 
     // MARK: UDP handshake
 
