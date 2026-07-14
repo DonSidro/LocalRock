@@ -221,11 +221,13 @@ tests/                  # protocol/contract fixtures & tests
 | MQTT over TLS | Yes (KMQTT) | Yes (CocoaMQTT bridge) |
 | Camera live view (WebRTC) | Implemented, **untested** | Implemented (WebRTC.framework bridge), **untested** |
 | RSA (onboarding crypto) | Yes | Yes |
-| Phone Wi‑Fi pairing (Add vacuum) | Yes | Not yet implemented |
+| Phone Wi‑Fi pairing (Add vacuum) | Yes | Implemented (NEHotspotConfiguration + NWConnection), **untested** |
 
 **Camera live view note:** the WebRTC live feed is implemented from the protocol reference but has **not been tested or confirmed to work** on real hardware. Treat it as experimental.
 
-**iOS note:** Kotlin/Native iOS targets must be built on macOS. The iOS MQTT and WebRTC integrations rely on Swift Package Manager dependencies ([CocoaMQTT](https://github.com/emqx/CocoaMQTT), [WebRTC](https://github.com/stasel/WebRTC)) that must be added to the `iosApp` Xcode target, and the Swift bridge files (`CocoaMqttTransport.swift`, `WebRtcPeer.swift`) added to the target. Pass `nil` for the WebRTC factory to ship without live view. iOS uses a custom bundle identifier that needs signing/provisioning selected in Xcode.
+**iOS note:** Kotlin/Native iOS targets must be built on macOS. The iOS MQTT and WebRTC integrations rely on Swift Package Manager dependencies ([CocoaMQTT](https://github.com/emqx/CocoaMQTT), [WebRTC](https://github.com/stasel/WebRTC)) that must be added to the `iosApp` Xcode target, and the Swift bridge files (`CocoaMqttTransport.swift`, `WebRtcPeer.swift`, `VacuumPairing.swift`) added to the target. Pass `nil` for the WebRTC factory to ship without live view, or `nil` for the pairing factory to hide the "add vacuum" flow. iOS uses a custom bundle identifier that needs signing/provisioning selected in Xcode.
+
+**iOS pairing entitlement:** joining the robot's access point uses `NEHotspotConfiguration`, which needs the **Hotspot Configuration** capability. It is declared in `iosApp/iosApp.entitlements` and wired into the target, but it only signs once the capability is enabled for the App ID in the Apple Developer portal (Certificates, Identifiers & Profiles → your App ID → Hotspot Configuration). Without it the app fails to sign; with it, the UDP handshake also triggers the local-network prompt backed by `NSLocalNetworkUsageDescription`.
 
 ---
 

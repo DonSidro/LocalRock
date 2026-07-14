@@ -43,8 +43,6 @@ import com.kodraliu.localrock.ui.LocalAppContainer
 
 const val APP_VERSION: String = "1.0.0"
 
-private const val DONATE_URL = "https://buymeacoffee.com/sidon"
-
 private const val PROJECT_URL = "https://github.com/DonSidro/LocalRock/"
 
 private const val PRIVACY_URL = "https://donsidro.github.io/LocalRock/"
@@ -138,20 +136,20 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-            SectionLabel("Support")
+            SectionLabel("Contribute")
             Text(
-                "LocalRock is a free, community project. If it's useful to you, a small donation " +
-                    "helps keep it maintained.",
+                "LocalRock is a free, open-source community project. Issue reports, ideas, and " +
+                    "pull requests are all welcome.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Button(
-                onClick = { uriHandler.openUri(DONATE_URL) },
+                onClick = { uriHandler.openUri(PROJECT_URL) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Default.Favorite, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Donate")
+                Text("Contribute on GitHub")
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -167,10 +165,6 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            OutlinedButton(
-                onClick = { uriHandler.openUri(PROJECT_URL) },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Project page") }
             OutlinedButton(
                 onClick = { uriHandler.openUri(PRIVACY_URL) },
                 modifier = Modifier.fillMaxWidth(),

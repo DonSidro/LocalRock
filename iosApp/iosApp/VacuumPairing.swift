@@ -1,0 +1,216 @@
+import Foundation
+import Network
+import NetworkExtension
+import ComposeApp
+
+// iOS Wi-Fi pairing for LocalRock, implementing the Kotlin `VacuumPairingNative` contract.
+//
+// Pairing works like this: the vacuum, when unprovisioned, exposes an open access point named
+// `roborock-vacuum-<something>`. The phone joins that AP, exchanges a UDP handshake with the robot
+// at 192.168.8.1:55559 (hello -> RSA-wrapped session key -> Wi-Fi config -> ack), and then leaves.
+//
+// Two Apple APIs are needed, neither of which Kotlin/Native can reach:
+//  - NEHotspotConfiguration (NetworkExtension) to join the vacuum's AP. This requires the Hotspot
+//    Configuration entitlement on the app target (`iosApp.entitlements`).
+//  - NWConnection (Network.framework) for the UDP exchange. Talking to a private LAN address makes
+//    iOS show the local-network prompt (NSLocalNetworkUsageDescription in Info.plist).
+//
+// The shared Kotlin `VacuumOnboarder` drives the protocol and the step ordering; this class is just
+// the platform plumbing: join, send, receive, clean up.
+
+final class VacuumPairingFactory: VacuumPairingNativeFactory {
+    func create() -> VacuumPairingNative { VacuumPairingSession() }
+}
+
+final class VacuumPairingSession: VacuumPairingNative {
+
+    private let queue = DispatchQueue(label: "com.kodraliu.localrock.pairing")
+    private var connection: NWConnection?
+    private var joinedSsid: String?
+
+    // MARK: Joining the vacuum's access point
+
+    func joinWifi(
+        ssidPrefix: String,
+        timeoutMs: Int64,
+        onJoined: @escaping () -> Void,
+        onError: @escaping (String) -> Void
+    ) {
+        // The join and the timeout race each other; whichever lands first wins.
+        let done = CallbackGuard()
+
+        let config = NEHotspotConfiguration(ssidPrefix: ssidPrefix)
+        // Don't leave the vacuum's AP in the user's known-networks list after pairing.
+        config.joinOnce = true
+
+        queue.asyncAfter(deadline: .now() + .milliseconds(Int(timeoutMs))) {
+            guard done.claim() else { return }
+            onError("Timed out waiting to join the vacuum's Wi-Fi network (\(ssidPrefix)…). " +
+                    "Make sure the robot is in pairing mode and close to the phone.")
+        }
+
+        NEHotspotConfigurationManager.shared.apply(config) { error in
+            if let error = error as NSError?,
+               error.code != NEHotspotConfigurationError.alreadyAssociated.rawValue {
+                guard done.claim() else { return }
+                onError(Self.describe(error, ssidPrefix: ssidPrefix))
+                return
+            }
+            // `apply` reports success as soon as the association is requested, so confirm which
+            // network we actually landed on before sending anything.
+            NEHotspotNetwork.fetchCurrent { network in
+                guard done.claim() else { return }
+                guard let network, network.ssid.hasPrefix(ssidPrefix) else {
+                    onError("The phone is not on the vacuum's access point " +
+                            "(expected an SSID starting with \(ssidPrefix)).")
+                    return
+                }
+                self.joinedSsid = network.ssid
+                onJoined()
+            }
+        }
+    }
+
+    // MARK: UDP handshake
+
+    func send(
+        host: String,
+        port: Int32,
+        data: KotlinByteArray,
+        onSent: @escaping () -> Void,
+        onError: @escaping (String) -> Void
+    ) {
+        let payload = Data(data.toUInt8())
+        withReadyConnection(host: host, port: port, onError: onError) { connection in
+            connection.send(content: payload, completion: .contentProcessed { error in
+                if let error {
+                    onError("UDP send failed: \(error.localizedDescription)")
+                } else {
+                    onSent()
+                }
+            })
+        }
+    }
+
+    func receive(
+        timeoutMs: Int64,
+        onReceived: @escaping (KotlinByteArray?) -> Void,
+        onError: @escaping (String) -> Void
+    ) {
+        guard let connection else {
+            onError("Cannot receive before sending: no UDP socket is open.")
+            return
+        }
+
+        // The robot answers to the source port of our datagram, so the same NWConnection is reused
+        // for the whole exchange rather than opened per message.
+        let done = CallbackGuard()
+
+        queue.asyncAfter(deadline: .now() + .milliseconds(Int(timeoutMs))) {
+            guard done.claim() else { return }
+            onReceived(nil) // A timeout is a normal outcome here, not an error.
+        }
+
+        connection.receiveMessage { data, _, _, error in
+            guard done.claim() else { return }
+            if let error {
+                onError("UDP receive failed: \(error.localizedDescription)")
+                return
+            }
+            guard let data, !data.isEmpty else {
+                onReceived(nil)
+                return
+            }
+            onReceived(KotlinByteArray.from([UInt8](data)))
+        }
+    }
+
+    func close() {
+        connection?.cancel()
+        connection = nil
+        // Put the phone back on its normal network instead of stranding it on the robot's AP.
+        if let ssid = joinedSsid {
+            NEHotspotConfigurationManager.shared.removeConfiguration(forSSID: ssid)
+            joinedSsid = nil
+        }
+    }
+
+    // MARK: Helpers
+
+    /// Opens the UDP socket on first use and calls `body` once it is ready to carry traffic.
+    private func withReadyConnection(
+        host: String,
+        port: Int32,
+        onError: @escaping (String) -> Void,
+        body: @escaping (NWConnection) -> Void
+    ) {
+        if let connection, connection.state == .ready {
+            body(connection)
+            return
+        }
+
+        guard let nwPort = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else {
+            onError("Invalid pairing port: \(port)")
+            return
+        }
+
+        let parameters = NWParameters.udp
+        // The vacuum's AP has no internet, so pin the socket to Wi-Fi and stop iOS from quietly
+        // routing these datagrams over cellular.
+        parameters.requiredInterfaceType = .wifi
+        parameters.prohibitExpensivePaths = false
+
+        let connection = NWConnection(
+            host: NWEndpoint.Host(host),
+            port: nwPort,
+            using: parameters
+        )
+        self.connection = connection
+
+        let done = CallbackGuard()
+        connection.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                guard done.claim() else { return }
+                body(connection)
+            case .failed(let error):
+                guard done.claim() else { return }
+                onError("UDP socket failed: \(error.localizedDescription)")
+            case .cancelled:
+                guard done.claim() else { return }
+                onError("UDP socket was cancelled.")
+            default:
+                break
+            }
+        }
+        connection.start(queue: queue)
+    }
+
+    private static func describe(_ error: NSError, ssidPrefix: String) -> String {
+        switch NEHotspotConfigurationError(rawValue: error.code) {
+        case .userDenied:
+            return "Joining the vacuum's Wi-Fi network was declined."
+        case .invalidSSIDPrefix:
+            return "iOS rejected the vacuum SSID prefix \(ssidPrefix)."
+        case .pending, .systemConfiguration, .unknown, .joinOnceNotSupported:
+            return "iOS could not join the vacuum's Wi-Fi network: \(error.localizedDescription)"
+        default:
+            return "Could not join the vacuum's Wi-Fi network: \(error.localizedDescription)"
+        }
+    }
+}
+
+/// Both the network callback and its timeout can fire; the first one through wins and the loser is
+/// dropped, so the Kotlin continuation is never resumed twice.
+private final class CallbackGuard {
+    private let lock = NSLock()
+    private var used = false
+
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if used { return false }
+        used = true
+        return true
+    }
+}
