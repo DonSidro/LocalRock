@@ -45,7 +45,7 @@ fun WelcomeScreen() {
             fontWeight = FontWeight.Bold,
         )
         Text(
-            "Control your Roborock vacuum over your own network — please read this first.",
+            "Control your robot vacuum over your own network — please read this first.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

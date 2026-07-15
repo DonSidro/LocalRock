@@ -19,7 +19,25 @@ import ComposeApp
 // the platform plumbing: join, send, receive, clean up.
 
 final class VacuumPairingFactory: VacuumPairingNativeFactory {
+
+    /// Drops any hotspot configuration left behind by an earlier session. A pairing attempt that
+    /// died without tearing down leaves the phone on the robot's AP, where the server is
+    /// unreachable — and since pairing talks to the server *before* it joins the robot, a stale
+    /// configuration would sink the next attempt during login, with a DNS error that says nothing
+    /// about Wi-Fi. Cheap to run at launch, so run it at launch.
+    init() {
+        let manager = NEHotspotConfigurationManager.shared
+        manager.getConfiguredSSIDs { configured in
+            for ssid in configured where ssid.hasPrefix(Self.vacuumSsidPrefix) {
+                manager.removeConfiguration(forSSID: ssid)
+            }
+        }
+    }
+
     func create() -> VacuumPairingNative { VacuumPairingSession() }
+
+    // Matches the default in the shared Kotlin `VacuumPairingTransport.joinVacuumWifi`.
+    private static let vacuumSsidPrefix = "roborock-vacuum-"
 }
 
 final class VacuumPairingSession: VacuumPairingNative {
