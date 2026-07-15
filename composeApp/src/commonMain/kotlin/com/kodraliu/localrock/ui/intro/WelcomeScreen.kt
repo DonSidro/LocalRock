@@ -60,7 +60,7 @@ fun WelcomeScreen() {
             "2",
             "Sign in with your server credentials",
             "You'll sign in with the email and login code you configured during server setup — " +
-                "not a new Roborock account.",
+                "not a new cloud account.",
         )
         Point(
             "3",

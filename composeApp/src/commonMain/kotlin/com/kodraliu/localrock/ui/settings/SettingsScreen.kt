@@ -105,7 +105,7 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
                 value = url,
                 onValueChange = { url = it },
                 label = { Text("Server URL") },
-                placeholder = { Text("https://api-roborock.example.com") },
+                placeholder = { Text("https://api-test.example.com") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -160,7 +160,7 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                "Control Roborock vacuums locally through your own server. Not affiliated with, " +
+                "Control vacuums locally through your own server. Not affiliated with, " +
                     "endorsed by, or connected to Roborock. \"Roborock\" is a trademark of its owner.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -213,5 +213,5 @@ private const val ACKNOWLEDGEMENTS =
         "• multiplatform-settings (Apache-2.0) — Russell Wolf\n" +
         "• KotlinCrypto hash & macs (Apache-2.0)\n" +
         "• Okio (Apache-2.0) — Square\n\n" +
-        "And to the Roborock reverse-engineering community — especially the python-roborock " +
+        "And to the reverse-engineering community — especially the python-roborock " +
         "project — whose protocol work made local control possible."
