@@ -16,7 +16,7 @@ LocalRock is a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.
     </a>
   </td>
   <td valign="middle">
-    <a href="https://apps.apple.com/app/localrock/id6788538720">
+    <a href="https://apps.apple.com/dk/app/localrock/id6788538720">
       <img alt="Download on the App Store" height="40"
            src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg">
     </a>
