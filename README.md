@@ -221,7 +221,7 @@ tests/                  # protocol/contract fixtures & tests
 | MQTT over TLS | Yes (KMQTT) | Yes (CocoaMQTT bridge) |
 | Camera live view (WebRTC) | Implemented, **untested** | Implemented (WebRTC.framework bridge), **untested** |
 | RSA (onboarding crypto) | Yes | Yes |
-| Phone Wi‑Fi pairing (Add vacuum) | Yes | Not yet implemented |
+| Phone Wi‑Fi pairing (Add vacuum) | Yes | Yes |
 
 **Camera live view note:** the WebRTC live feed is implemented from the protocol reference but has **not been tested or confirmed to work** on real hardware. Treat it as experimental.
 
