@@ -16,7 +16,7 @@ LocalRock is a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.
     </a>
   </td>
   <td valign="middle">
-    <a href="https://apps.apple.com/app/localrock/id6788538720">
+    <a href="https://apps.apple.com/dk/app/localrock/id6788538720">
       <img alt="Download on the App Store" height="40"
            src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg">
     </a>
@@ -221,7 +221,7 @@ tests/                  # protocol/contract fixtures & tests
 | MQTT over TLS | Yes (KMQTT) | Yes (CocoaMQTT bridge) |
 | Camera live view (WebRTC) | Implemented, **untested** | Implemented (WebRTC.framework bridge), **untested** |
 | RSA (onboarding crypto) | Yes | Yes |
-| Phone Wi‑Fi pairing (Add vacuum) | Yes | Implemented (NEHotspotConfiguration + NWConnection), **untested** |
+| Phone Wi‑Fi pairing (Add vacuum) | Yes | Yes |
 
 **Camera live view note:** the WebRTC live feed is implemented from the protocol reference but has **not been tested or confirmed to work** on real hardware. Treat it as experimental.
 
