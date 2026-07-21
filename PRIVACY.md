@@ -52,9 +52,9 @@ and with the message broker (MQTT) that **your server** designates. This is used
 The developer does **not** receive any of this traffic. The app contacts no
 developer-operated or analytics server.
 
-The only other outbound connections are **links you tap yourself**: an optional
-link to the open-source project page (GitHub) and an optional donation link.
-These open in your browser and are only visited if you choose to tap them.
+The only other outbound connections are **links you tap yourself**: optional links
+to the open-source project page (GitHub) and this privacy policy. These open in
+your browser and are only visited if you choose to tap them.
 
 ## 4. Camera / live view
 
@@ -70,6 +70,8 @@ The app requests only the permissions it needs to function:
 - **Internet / network state** — to reach the server you configure.
 - **Wi-Fi state / nearby Wi-Fi devices** — to pair a new vacuum with your Wi-Fi
   network during setup.
+- **Local network (iOS)** — to reach your server and to exchange the setup
+  handshake with the robot's own access point while pairing it.
 - **Location (Android 12 and below only)** — required by older versions of
   Android to scan for Wi-Fi networks during vacuum pairing. The app does not use
   or collect your location, and this permission is not requested on Android 13+.
