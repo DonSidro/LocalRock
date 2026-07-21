@@ -36,7 +36,7 @@ fun SplashScreen(onTimeout: () -> Unit) {
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                "Local control for Roborock",
+                "Local control for your robot vacuum",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

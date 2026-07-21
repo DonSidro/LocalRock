@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.resources.Res
 import com.kodraliu.localrock.resources.app_icon
 import com.kodraliu.localrock.shared.model.Device
+import com.kodraliu.localrock.shared.onboarding.vacuumPairingSupported
 import com.kodraliu.localrock.ui.AppColors
 import org.jetbrains.compose.resources.painterResource
 
@@ -91,8 +92,10 @@ fun DeviceListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAddVacuum) {
-                Icon(Icons.Default.Add, contentDescription = "Add vacuum")
+            if (vacuumPairingSupported) {
+                FloatingActionButton(onClick = onAddVacuum) {
+                    Icon(Icons.Default.Add, contentDescription = "Add vacuum")
+                }
             }
         },
     ) { padding ->

@@ -43,8 +43,6 @@ import com.kodraliu.localrock.ui.LocalAppContainer
 
 const val APP_VERSION: String = "1.0.0"
 
-private const val DONATE_URL = "https://buymeacoffee.com/sidon"
-
 private const val PROJECT_URL = "https://github.com/DonSidro/LocalRock/"
 
 private const val PRIVACY_URL = "https://donsidro.github.io/LocalRock/"
@@ -107,7 +105,7 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
                 value = url,
                 onValueChange = { url = it },
                 label = { Text("Server URL") },
-                placeholder = { Text("https://api-roborock.example.com") },
+                placeholder = { Text("https://api-test.example.com") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -138,20 +136,20 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-            SectionLabel("Support")
+            SectionLabel("Contribute")
             Text(
-                "LocalRock is a free, community project. If it's useful to you, a small donation " +
-                    "helps keep it maintained.",
+                "LocalRock is a free, open-source community project. Issue reports, ideas, and " +
+                    "pull requests are all welcome.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Button(
-                onClick = { uriHandler.openUri(DONATE_URL) },
+                onClick = { uriHandler.openUri(PROJECT_URL) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Default.Favorite, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Donate")
+                Text("Contribute on GitHub")
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -162,15 +160,11 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                "Control Roborock vacuums locally through your own server. Not affiliated with, " +
+                "Control vacuums locally through your own server. Not affiliated with, " +
                     "endorsed by, or connected to Roborock. \"Roborock\" is a trademark of its owner.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            OutlinedButton(
-                onClick = { uriHandler.openUri(PROJECT_URL) },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Project page") }
             OutlinedButton(
                 onClick = { uriHandler.openUri(PRIVACY_URL) },
                 modifier = Modifier.fillMaxWidth(),
@@ -219,5 +213,5 @@ private const val ACKNOWLEDGEMENTS =
         "• multiplatform-settings (Apache-2.0) — Russell Wolf\n" +
         "• KotlinCrypto hash & macs (Apache-2.0)\n" +
         "• Okio (Apache-2.0) — Square\n\n" +
-        "And to the Roborock reverse-engineering community — especially the python-roborock " +
+        "And to the reverse-engineering community — especially the python-roborock " +
         "project — whose protocol work made local control possible."

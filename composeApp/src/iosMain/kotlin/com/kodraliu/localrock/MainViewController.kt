@@ -4,6 +4,8 @@ import androidx.compose.ui.window.ComposeUIViewController
 import com.russhwolf.settings.NSUserDefaultsSettings
 import com.kodraliu.localrock.shared.AppContainer
 import com.kodraliu.localrock.shared.mqtt.MqttNativeTransport
+import com.kodraliu.localrock.shared.onboarding.IosPairing
+import com.kodraliu.localrock.shared.onboarding.VacuumPairingNativeFactory
 import com.kodraliu.localrock.shared.webrtc.IosRtc
 import com.kodraliu.localrock.shared.webrtc.RtcNativePeerFactory
 import platform.Foundation.NSUserDefaults
@@ -15,12 +17,18 @@ import platform.UIKit.UIViewController
  *  - [rtcPeerFactory]: a WebRTC.framework-backed peer factory (see `WebRtcPeer.swift`). Pass `null`
  *    to disable the camera live view; [com.kodraliu.localrock.shared.webrtc.liveViewSupported]
  *    reflects whether it was provided.
+ *  - [pairingFactory]: a NetworkExtension/Network.framework pairing session factory (see
+ *    `VacuumPairing.swift`). Pass `null` to hide the "add vacuum" flow;
+ *    [com.kodraliu.localrock.shared.onboarding.vacuumPairingSupported] reflects whether it was
+ *    provided. Requires the Hotspot Configuration entitlement on the app target.
  */
 fun MainViewController(
     mqttTransport: MqttNativeTransport,
     rtcPeerFactory: RtcNativePeerFactory?,
+    pairingFactory: VacuumPairingNativeFactory?,
 ): UIViewController {
     IosRtc.factory = rtcPeerFactory
+    IosPairing.factory = pairingFactory
     val defaults = NSUserDefaults(suiteName = "vaclocal") ?: NSUserDefaults.standardUserDefaults
     val container = AppContainer(NSUserDefaultsSettings(defaults), mqttTransport)
     return ComposeUIViewController { App(container) }
