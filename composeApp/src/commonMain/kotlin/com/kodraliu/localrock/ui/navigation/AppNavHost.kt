@@ -21,6 +21,7 @@ import com.kodraliu.localrock.ui.intro.SplashScreen
 import com.kodraliu.localrock.ui.intro.WelcomeScreen
 import com.kodraliu.localrock.ui.login.LoginScreen
 import com.kodraliu.localrock.ui.onboarding.AddVacuumScreen
+import com.kodraliu.localrock.ui.onboarding.ServerSetupScreen
 import com.kodraliu.localrock.ui.settings.SettingsScreen
 import com.kodraliu.localrock.ui.vacuum.CameraLiveViewScreen
 import com.kodraliu.localrock.ui.vacuum.ScheduleScreen
@@ -48,7 +49,7 @@ fun AppNavHost() {
         val destination: Any = when {
             !introSeen -> Welcome
             demoMode -> DeviceList
-            serverUrl.isNullOrBlank() -> AppSettings
+            serverUrl.isNullOrBlank() -> ServerSetup
             userData == null -> Login
             else -> DeviceList
         }
@@ -67,8 +68,21 @@ fun AppNavHost() {
             WelcomeScreen()
         }
 
+        composable<ServerSetup> { entry ->
+            // Reached either as the first-run step (nothing to go back to) or from Login.
+            val canGoBack = remember(entry) { navController.previousBackStackEntry != null }
+            ServerSetupScreen(
+                onDone = {
+                    navController.navigate(Login) {
+                        popUpTo(navController.graph.id) { inclusive = true }
+                    }
+                },
+                onBack = if (canGoBack) ({ navController.popBackStack(); Unit }) else null,
+            )
+        }
+
         composable<Login> {
-            LoginScreen(onSettings = { navController.navigate(AppSettings) })
+            LoginScreen(onServerSetup = { navController.navigate(ServerSetup) })
         }
 
         composable<DeviceList> {

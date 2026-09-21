@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -65,7 +65,7 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
                 navigationIcon = {
                     if (allowCancel) {
                         IconButton(onClick = onDone) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
                 },
@@ -182,7 +182,7 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "Made with ❤️ for the self-hosting community.",
+                "Built for the self-hosting community.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

@@ -7,12 +7,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Column
@@ -33,7 +33,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Air
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Battery1Bar
 import androidx.compose.material.icons.filled.Battery2Bar
 import androidx.compose.material.icons.filled.Battery3Bar
@@ -42,14 +42,18 @@ import androidx.compose.material.icons.filled.Battery5Bar
 import androidx.compose.material.icons.filled.Battery6Bar
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
-import androidx.compose.material.icons.filled.BatteryUnknown
+import androidx.compose.material.icons.automirrored.filled.BatteryUnknown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Dock
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Gamepad
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
@@ -60,24 +64,22 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -104,23 +106,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -129,6 +128,7 @@ import com.kodraliu.localrock.shared.vacuum.DockErrorCodes
 import com.kodraliu.localrock.shared.vacuum.DockSettings
 import com.kodraliu.localrock.shared.vacuum.FloorMap
 import com.kodraliu.localrock.shared.vacuum.MopRoute
+import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumFanPower
 import com.kodraliu.localrock.shared.vacuum.VacuumStateCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumStatus
@@ -191,6 +191,7 @@ fun VacuumDetailScreen(
     var sessionRoomIds by remember { mutableStateOf(emptyList<Int>()) }
     var showDockSheet by remember { mutableStateOf(false) }
     var showRoomsSheet by remember { mutableStateOf(false) }
+    var showMoreSheet by remember { mutableStateOf(false) }
     var showCleaningModeSheet by remember { mutableStateOf(false) }
     var showRecoverSheet by remember { mutableStateOf(false) }
     var recoverLoading by remember { mutableStateOf(false) }
@@ -230,32 +231,10 @@ fun VacuumDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-
-                    val drying = status.dryStatus == 1 || status.state == VacuumStateCodes.DRYING_MOP
-                    val busy = drying || isBusyState(status.state)
-                    val accent = if (drying) MaterialTheme.colorScheme.tertiary else stateTint(status.state)
-                    val label = if (drying) dryingLabel(status.remainingDryTimeSec) else stateLabel(status.state)
-                    Column {
-                        Text(viewModel.deviceName, style = MaterialTheme.typography.titleLarge)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            if (busy) PulsingDot(accent)
-                            Text(
-                                label,
-                                style = if (busy) MaterialTheme.typography.titleSmall
-                                else MaterialTheme.typography.labelMedium,
-                                fontWeight = if (busy) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (busy) accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                },
+                title = { Text(viewModel.deviceName, style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Go back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Go back")
                     }
                 },
                 actions = {
@@ -266,126 +245,83 @@ fun VacuumDetailScreen(
             )
         },
     ) { paddingValues ->
-        BoxWithConstraints(Modifier.fillMaxSize().padding(paddingValues)) {
-            val mapHeight = maxHeight * 0.55f
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                StatusStrip(status = status, lastCleanArea = lastCleanArea, onHistory = onHistory)
-                Spacer(Modifier.height(10.dp))
+        // The map is the screen. Status and controls sit in a fixed band beneath it so the hero
+        // never scrolls out of view and the primary action never moves under the thumb.
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            MapHeroSection(
+                parsedMap = parsedMap,
+                busy = busy,
+                selectedRoomIds = selectedRoomIds,
+                sessionRoomNames = sessionRoomNames,
+                floorMaps = floorMaps,
+                currentFloorFlag = currentFloorFlag,
+                onLoadMap = { viewModel.refreshMap() },
+                onRecover = { showRecoverSheet = true },
+                onRoomTap = { roomId ->
+                    selectedRoomIds = if (roomId in selectedRoomIds)
+                        selectedRoomIds.filter { it != roomId }
+                    else selectedRoomIds + roomId
+                },
+                onFloorSwitch = { flag -> viewModel.run { it.switchFloor(flag) } },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            )
 
-                MapHeroSection(
-                    parsedMap = parsedMap,
-                    height = mapHeight,
-                    busy = busy,
-                    selectedRoomIds = selectedRoomIds,
-                    sessionRoomNames = sessionRoomNames,
-                    floorMaps = floorMaps,
-                    currentFloorFlag = currentFloorFlag,
-                    onLoadMap = { viewModel.refreshMap() },
-                    onRecover = { showRecoverSheet = true },
-                    onRoomTap = { roomId ->
-                        selectedRoomIds = if (roomId in selectedRoomIds)
-                            selectedRoomIds.filter { it != roomId }
-                        else selectedRoomIds + roomId
-                    },
-                    onFloorSwitch = { flag ->
-                        viewModel.run { it.switchFloor(flag) }
-                    },
-                    onCamera = onCamera,
-                )
+            StatusBar(
+                status = status,
+                lastCleanArea = lastCleanArea,
+                onHistory = onHistory,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 10.dp),
+            )
 
-                Spacer(Modifier.height(16.dp))
+            ControlBar(
+                status = status,
+                busy = busy,
+                selectedRoomCount = selectedRoomIds.size,
+                onClean = {
+                    sessionRoomIds = emptyList()
+                    viewModel.run("Cleaning started") { it.clean() }
+                },
+                onCleanRooms = {
+                    val toClean = selectedRoomIds
+                    sessionRoomIds = toClean
+                    selectedRoomIds = emptyList()
+                    viewModel.run { it.cleanRooms(toClean, cleaningCount) }
+                },
+                onClearSelection = { selectedRoomIds = emptyList() },
+                onPause = { viewModel.run { it.pause() } },
+                onStop = {
+                    sessionRoomIds = emptyList()
+                    viewModel.run { it.stopCleaning() }
+                },
+                onDock = {
+                    sessionRoomIds = emptyList()
+                    viewModel.run("Returning to dock") { it.dock() }
+                },
+                onCleaningMode = { showCleaningModeSheet = true },
+                onMore = { showMoreSheet = true },
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            )
+        }
+    }
 
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    QuickActionsRow(
-                        status = status,
-                        busy = busy,
-                        onClean = {
-                            sessionRoomIds = emptyList()
-                            viewModel.run("Cleaning started") { it.clean() }
-                        },
-                        onPause = { viewModel.run { it.pause() } },
-                        onStop = {
-                            sessionRoomIds = emptyList()
-                            viewModel.run { it.stopCleaning() }
-                        },
-                        onRooms = { showRoomsSheet = true },
-                        onZoneClean = onZoneClean,
-                        onSchedule = onSchedule,
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        OutlinedButton(
-                            onClick = {
-                                sessionRoomIds = emptyList()
-                                viewModel.run("Returning to dock") { it.dock() }
-                            },
-                            enabled = !busy,
-                            modifier = Modifier.weight(1f).height(52.dp),
-                            shape = MaterialTheme.shapes.extraLarge,
-                        ) {
-                            Icon(Icons.Default.Home, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Return to dock")
-                        }
-                        val modeLabel = when {
-                            (status.waterBoxCustomMode ?: WaterBoxMode.OFF) != WaterBoxMode.OFF -> "Vac & Mop"
-                            else -> "Vacuum"
-                        }
-                        FilledTonalButton(
-                            onClick = { showCleaningModeSheet = true },
-                            modifier = Modifier.height(52.dp),
-                            shape = MaterialTheme.shapes.extraLarge,
-                        ) {
-                            Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(modeLabel, style = MaterialTheme.typography.labelMedium)
-                        }
-                        FilledTonalIconButton(
-                            onClick = { showDockSheet = true },
-                            modifier = Modifier.size(52.dp),
-                        ) {
-                            Icon(Icons.Default.Info, contentDescription = "Dock")
-                        }
+    if (showMoreSheet) {
+        ModalBottomSheet(onDismissRequest = { showMoreSheet = false }) {
+            MoreActionsSheetContent(
+                onAction = { action ->
+                    showMoreSheet = false
+                    when (action) {
+                        MoreAction.ROOMS -> showRoomsSheet = true
+                        MoreAction.ZONES -> onZoneClean()
+                        MoreAction.PIN_GO -> onPinGo()
+                        MoreAction.REMOTE -> onRemote()
+                        MoreAction.SCHEDULE -> onSchedule()
+                        MoreAction.CAMERA -> onCamera()
+                        MoreAction.DOCK -> showDockSheet = true
+                        MoreAction.HISTORY -> onHistory()
+                        MoreAction.RECOVER_MAP -> showRecoverSheet = true
                     }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        OutlinedButton(
-                            onClick = onRemote,
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            shape = MaterialTheme.shapes.extraLarge,
-                        ) {
-                            Icon(Icons.Default.Gamepad, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Remote control")
-                        }
-                        OutlinedButton(
-                            onClick = onPinGo,
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            shape = MaterialTheme.shapes.extraLarge,
-                        ) {
-                            Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Pin & Go")
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-                }
-            }
+                },
+            )
         }
     }
 
@@ -470,7 +406,6 @@ fun VacuumDetailScreen(
 @Composable
 private fun MapHeroSection(
     parsedMap: ParsedMap?,
-    height: Dp,
     busy: Boolean,
     selectedRoomIds: List<Int>,
     sessionRoomNames: List<String>,
@@ -480,14 +415,19 @@ private fun MapHeroSection(
     onRecover: () -> Unit,
     onRoomTap: (Int) -> Unit,
     onFloorSwitch: (Int) -> Unit,
-    onCamera: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
+    val scheme = MaterialTheme.colorScheme
+    val heroBackground = if (scheme.surface.luminance() < 0.5f) {
+        scheme.surfaceVariant
+    } else {
+        // Near-white, so the tinted rooms advance instead of sinking into a grey slab.
+        scheme.surfaceContainerLowest
+    }
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(height)
+        modifier = modifier
             .clipToBounds()
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(heroBackground),
     ) {
         if (parsedMap != null) {
             VacuumMapImage(
@@ -500,34 +440,15 @@ private fun MapHeroSection(
             MapEmptyState(busy = busy, onLoadMap = onLoadMap, onRecover = onRecover, modifier = Modifier.fillMaxSize())
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth().height(72.dp).align(Alignment.BottomCenter)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.35f)))),
-        )
-
+        // Refresh is the only control that earns a place on top of the map; camera, remote and
+        // map recovery moved into the More sheet so the hero reads as one surface.
         FilledTonalIconButton(
             onClick = onLoadMap,
             enabled = !busy,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp).size(40.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp).size(48.dp),
         ) {
-            if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            else Icon(Icons.Default.Refresh, contentDescription = "Refresh map", modifier = Modifier.size(20.dp))
-        }
-
-        FilledTonalIconButton(
-            onClick = onCamera,
-            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
-        ) {
-            Icon(Icons.Default.Videocam, contentDescription = "Camera live view")
-        }
-
-        FilledTonalIconButton(
-            onClick = onRecover,
-            enabled = !busy,
-            modifier = Modifier.align(Alignment.BottomStart).padding(10.dp).size(40.dp),
-        ) {
-            Icon(Icons.Default.Restore, contentDescription = "Recover saved map", modifier = Modifier.size(20.dp))
+            if (busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            else Icon(Icons.Default.Refresh, contentDescription = "Refresh map", modifier = Modifier.size(22.dp))
         }
 
         Column(
@@ -537,19 +458,21 @@ private fun MapHeroSection(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (floorMaps.size > 1) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     floorMaps.forEach { floor ->
                         val selected = floor.mapFlag == currentFloorFlag
                         Surface(
                             onClick = { if (!selected) onFloorSwitch(floor.mapFlag) },
                             shape = MaterialTheme.shapes.small,
-                            color = if (selected) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.55f),
+                            color = if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceContainerHighest,
                         ) {
                             Text(
                                 text = floor.name,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (selected) MaterialTheme.colorScheme.onPrimary else Color.White,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (selected) MaterialTheme.colorScheme.onPrimary
+                                else MaterialTheme.colorScheme.onSurface,
                             )
                         }
                     }
@@ -598,13 +521,51 @@ private fun VacuumMapImage(
     val aspectRatio = map.width.toFloat() / map.height.toFloat()
     val labelRooms = remember(map.rooms) { map.rooms.filter { it.labelNormX != null && it.labelNormY != null } }
     val textMeasurer = rememberTextMeasurer()
-    val labelStyle = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
-    val bgColor = Color.Black.copy(alpha = 0.5f)
+    // Labels follow the scheme rather than being a fixed black scrim: over a light map a dark
+    // scrim reads as a scattering of heavy blobs and dominates the surface it sits on.
+    val labelStyle = TextStyle(
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
+    )
+    val bgColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
     val selectedBgColor = MaterialTheme.colorScheme.primary
+    // In dark mode `primary` is a bright cyan, so white-on-primary would be unreadable.
+    val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary)
     val currentOnRoomTap by rememberUpdatedState(onRoomTap)
 
-    var mapScale by remember { mutableStateOf(1f) }
-    var mapOffset by remember { mutableStateOf(Offset.Zero) }
+    // A parsed map is mostly blank grid, so open framed on the floor plan rather than on padding.
+    val bounds = remember(map) { map.contentBoundsNorm() }
+    var canvasSize by remember(map) { mutableStateOf(IntSize.Zero) }
+    // Null until the canvas has been measured, so the framing is never applied from a stale size.
+    val fit: Pair<Float, Offset>? = remember(bounds, canvasSize) {
+        if (!bounds.isUsable || canvasSize.width == 0 || canvasSize.height == 0) {
+            null
+        } else {
+            val scale = minOf(1f / bounds.width, 1f / bounds.height).coerceIn(1f, 8f)
+            val w = canvasSize.width.toFloat()
+            val h = canvasSize.height.toFloat()
+            val cx = (bounds.left + bounds.right) / 2f
+            val cy = (bounds.top + bounds.bottom) / 2f
+            val offset = Offset(
+                (w * (0.5f - scale * cx)).coerceIn(-w * (scale - 1f), 0f),
+                (h * (0.5f - scale * cy)).coerceIn(-h * (scale - 1f), 0f),
+            )
+            scale to offset
+        }
+    }
+
+    var mapScale by remember(map) { mutableStateOf(1f) }
+    var mapOffset by remember(map) { mutableStateOf(Offset.Zero) }
+    var framed by remember(map) { mutableStateOf(false) }
+    LaunchedEffect(fit) {
+        val target = fit
+        if (!framed && target != null) {
+            mapScale = target.first
+            mapOffset = target.second
+            framed = true
+        }
+    }
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Canvas(
@@ -612,6 +573,7 @@ private fun VacuumMapImage(
 
                 .aspectRatio(aspectRatio)
                 .clipToBounds()
+                .onSizeChanged { canvasSize = it }
                 .pointerInput(map) {
                     detectTransformGestures { centroid, pan, zoom, _ ->
                         val newScale = (mapScale * zoom).coerceIn(1f, 8f)
@@ -628,9 +590,10 @@ private fun VacuumMapImage(
                 }
                 .pointerInput(map) {
                     detectTapGestures(
+                        // Double tap returns to the framed view, not to the padded whole grid.
                         onDoubleTap = {
-                            mapScale = 1f
-                            mapOffset = Offset.Zero
+                            mapScale = fit?.first ?: 1f
+                            mapOffset = fit?.second ?: Offset.Zero
                         },
                         onTap = { tapOffset ->
                             val mapX = (tapOffset.x - mapOffset.x) / mapScale
@@ -653,38 +616,52 @@ private fun VacuumMapImage(
                     dstSize = IntSize(size.width.toInt(), size.height.toInt()),
                     filterQuality = FilterQuality.None,
                 )
-                for (room in labelRooms) {
-                    val cx = (room.labelNormX ?: continue) * size.width
-                    val cy = (room.labelNormY ?: continue) * size.height
-                    val bg = if (room.id in selectedRoomIds) selectedBgColor else bgColor
-                    val measured = textMeasurer.measure(room.name, labelStyle)
-                    val tw = measured.size.width.toFloat()
-                    val th = measured.size.height.toFloat()
-                    val pad = 3.dp.toPx()
-                    drawRoundRect(
-                        color = bg,
-                        topLeft = Offset(cx - tw / 2 - pad, cy - th / 2 - pad),
-                        size = Size(tw + pad * 2, th + pad * 2),
-                        cornerRadius = CornerRadius(4.dp.toPx()),
-                    )
-                    drawText(
-                        textMeasurer = textMeasurer,
-                        text = room.name,
-                        style = labelStyle,
-                        topLeft = Offset(cx - tw / 2, cy - th / 2),
-                    )
-                }
+            }
+
+            // Labels are drawn outside the zoom transform so they stay a constant, legible size
+            // instead of growing to 8x with the map. Selected rooms carry their cleaning order,
+            // so selection reads without relying on the highlight colour alone.
+            for (room in labelRooms) {
+                val normX = room.labelNormX ?: continue
+                val normY = room.labelNormY ?: continue
+                val cx = mapOffset.x + normX * size.width * mapScale
+                val cy = mapOffset.y + normY * size.height * mapScale
+                if (cx < 0f || cx > size.width || cy < 0f || cy > size.height) continue
+                val order = selectedRoomIds.indexOf(room.id)
+                val selected = order >= 0
+                val text = if (selected) "${order + 1} · ${room.name}" else room.name
+                val style = if (selected) selectedLabelStyle else labelStyle
+                val measured = textMeasurer.measure(text, style)
+                val tw = measured.size.width.toFloat()
+                val th = measured.size.height.toFloat()
+                val padX = 6.dp.toPx()
+                val padY = 3.dp.toPx()
+                drawRoundRect(
+                    color = if (selected) selectedBgColor else bgColor,
+                    topLeft = Offset(cx - tw / 2 - padX, cy - th / 2 - padY),
+                    size = Size(tw + padX * 2, th + padY * 2),
+                    cornerRadius = CornerRadius(6.dp.toPx()),
+                )
+                drawText(
+                    textMeasurer = textMeasurer,
+                    text = text,
+                    style = style,
+                    topLeft = Offset(cx - tw / 2, cy - th / 2),
+                )
             }
         }
 
-        if (mapScale > 1.05f) {
+        // Zoom is reported relative to the framed view, which is now the resting state.
+        val baseScale = fit?.first ?: 1f
+        val relativeZoom = if (baseScale > 0f) mapScale / baseScale else mapScale
+        if (relativeZoom > 1.05f) {
             Surface(
                 modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
                 color = Color.Black.copy(alpha = 0.6f),
                 shape = MaterialTheme.shapes.small,
             ) {
                 Text(
-                    "${(mapScale * 100).toInt()}%",
+                    "${(relativeZoom * 100).toInt()}%",
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White,
@@ -721,23 +698,50 @@ private fun MapEmptyState(busy: Boolean, onLoadMap: () -> Unit, onRecover: () ->
 
 
 @Composable
-private fun StatusStrip(status: VacuumStatus, lastCleanArea: Long?, onHistory: () -> Unit) {
+private fun StatusBar(
+    status: VacuumStatus,
+    lastCleanArea: Long?,
+    onHistory: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     // clean_area is reported in mm²; show m² with one decimal.
     val area = lastCleanArea?.let { mm2 ->
         val tenths = mm2 / 100_000
-        "${tenths / 10}.${tenths % 10}"
-    } ?: "—"
-    val time = status.cleanTime?.let { s ->
+        "${tenths / 10}.${tenths % 10} m²"
+    }
+    val time = status.cleanTime?.takeIf { it > 0 }?.let { s ->
         val m = s / 60
         if (m < 60) "${m}m" else "${m / 60}h ${m % 60}m"
-    } ?: "—"
+    }
+
+    val errorCode = status.errorCode ?: 0
+    val drying = status.dryStatus == 1 || status.state == VacuumStateCodes.DRYING_MOP
+    val active = drying || isBusyState(status.state)
+    // The robot's own error is the most important thing it can tell you, so it replaces the state
+    // label in place rather than only living in the app-wide banner.
+    val headline = when {
+        errorCode != 0 -> VacuumErrorCodes.describe(errorCode)
+        drying -> dryingLabel(status.remainingDryTimeSec)
+        else -> stateLabel(status.state)
+    }
+    val headlineColor = when {
+        errorCode != 0 -> MaterialTheme.colorScheme.error
+        drying -> MaterialTheme.colorScheme.tertiary
+        active -> stateTint(status.state)
+        else -> MaterialTheme.colorScheme.onSurface
+    }
 
     val cleaningNow = status.state in ACTIVE_CLEANING_STATES
+    val detail = buildList {
+        if (area != null) add(if (cleaningNow) "$area so far" else "$area last clean")
+        if (time != null) add(time)
+    }.joinToString(" · ").ifEmpty { "No cleaning recorded yet" }
+
     val charging = status.chargeStatus == 1 || status.state == VacuumStateCodes.CHARGING
     val battery = status.battery
     val batteryIcon = when {
         charging -> Icons.Default.BatteryChargingFull
-        battery == null -> Icons.Default.BatteryUnknown
+        battery == null -> Icons.AutoMirrored.Filled.BatteryUnknown
         battery >= 95 -> Icons.Default.BatteryFull
         battery >= 80 -> Icons.Default.Battery6Bar
         battery >= 65 -> Icons.Default.Battery5Bar
@@ -747,128 +751,246 @@ private fun StatusStrip(status: VacuumStatus, lastCleanArea: Long?, onHistory: (
         else -> Icons.Default.Battery1Bar
     }
 
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        StatCard(
-            modifier = Modifier.weight(1f),
-            icon = batteryIcon,
-            iconTint = batteryColor(battery),
-            value = battery?.let { "$it%" } ?: "—",
-            label = if (charging) "Charging" else "Battery",
-        )
-        StatCard(
-            modifier = Modifier.weight(1f),
-            icon = Icons.Default.SelectAll,
-            iconTint = MaterialTheme.colorScheme.primary,
-            value = area,
-            label = if (cleaningNow) "Cleaning now" else "Last clean",
-            unit = "m²",
-            onClick = onHistory,
-        )
-        StatCard(
-            modifier = Modifier.weight(1f),
-            icon = Icons.Default.Timer,
-            iconTint = MaterialTheme.colorScheme.tertiary,
-            value = time,
-            label = if (cleaningNow) "Elapsed" else "Duration",
-            onClick = onHistory,
-        )
-    }
-}
-
-@Composable
-private fun StatCard(
-    modifier: Modifier,
-    icon: ImageVector,
-    iconTint: Color,
-    value: String,
-    label: String,
-    unit: String? = null,
-    onClick: (() -> Unit)? = null,
-) {
-    val unitColor = MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
-        onClick = onClick ?: {},
-        enabled = onClick != null,
-        modifier = modifier,
+        onClick = onHistory,
+        modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = iconTint)
-            Text(
-                text = buildAnnotatedString {
-                    append(value)
-                    if (unit != null) {
-                        withStyle(SpanStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, color = unitColor)) {
-                            append(" $unit")
-                        }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    when {
+                        errorCode != 0 -> Icon(
+                            Icons.Default.Error,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                        active -> PulsingDot(headlineColor)
                     }
-                },
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-            )
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        headline,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = headlineColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    batteryIcon,
+                    contentDescription = if (charging) "Battery, charging" else "Battery",
+                    modifier = Modifier.size(20.dp),
+                    tint = batteryColor(battery),
+                )
+                Text(
+                    battery?.let { "$it%" } ?: "—",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
         }
     }
 }
 
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun QuickActionsRow(
+private fun ControlBar(
     status: VacuumStatus,
     busy: Boolean,
+    selectedRoomCount: Int,
     onClean: () -> Unit,
+    onCleanRooms: () -> Unit,
+    onClearSelection: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
-    onRooms: () -> Unit,
-    onZoneClean: () -> Unit,
-    onSchedule: () -> Unit,
+    onDock: () -> Unit,
+    onCleaningMode: () -> Unit,
+    onMore: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val isCleaning = status.state in ACTIVE_CLEANING_STATES
     val isPaused = status.state == VacuumStateCodes.PAUSED
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        QuickActionButton(Modifier.weight(1f), if (isCleaning) Icons.Default.Pause else Icons.Default.PlayArrow,
-            if (isCleaning) "Pause" else if (isPaused) "Resume" else "Clean", !busy, primary = true) {
-            if (isCleaning) onPause() else onClean()
+    val mopping = (status.waterBoxCustomMode ?: WaterBoxMode.OFF) != WaterBoxMode.OFF
+
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AssistChip(
+                onClick = onCleaningMode,
+                label = { Text(if (mopping) "Vac & Mop" else "Vacuum") },
+                leadingIcon = {
+                    Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+                },
+            )
+            // Tapping rooms on the map used to have no visible consequence. The selection now
+            // surfaces here and retargets the primary action.
+            if (selectedRoomCount > 0) {
+                InputChip(
+                    selected = true,
+                    onClick = onClearSelection,
+                    label = {
+                        Text(if (selectedRoomCount == 1) "1 room" else "$selectedRoomCount rooms")
+                    },
+                    trailingIcon = {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Clear room selection",
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                )
+            }
         }
-        if (isCleaning || isPaused) {
-            QuickActionButton(Modifier.weight(1f), Icons.Default.Stop, "Stop", !busy, onClick = onStop)
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // One prominent button per view: its label and target follow the robot's state.
+            val primaryLabel = when {
+                isCleaning -> "Pause"
+                selectedRoomCount > 0 -> "Clean rooms"
+                isPaused -> "Resume"
+                else -> "Clean"
+            }
+            Button(
+                onClick = {
+                    when {
+                        isCleaning -> onPause()
+                        selectedRoomCount > 0 -> onCleanRooms()
+                        else -> onClean()
+                    }
+                },
+                enabled = !busy,
+                modifier = Modifier.weight(1f).height(56.dp),
+                shape = MaterialTheme.shapes.extraLarge,
+            ) {
+                Icon(
+                    if (isCleaning) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    primaryLabel,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (isCleaning || isPaused) {
+                FilledTonalIconButton(
+                    onClick = onStop,
+                    enabled = !busy,
+                    modifier = Modifier.size(56.dp),
+                ) {
+                    Icon(Icons.Default.Stop, contentDescription = "Stop cleaning", modifier = Modifier.size(24.dp))
+                }
+            }
+            FilledTonalIconButton(
+                onClick = onDock,
+                enabled = !busy,
+                modifier = Modifier.size(56.dp),
+            ) {
+                Icon(Icons.Default.Home, contentDescription = "Return to dock", modifier = Modifier.size(24.dp))
+            }
+            FilledTonalIconButton(onClick = onMore, modifier = Modifier.size(56.dp)) {
+                Icon(Icons.Default.MoreHoriz, contentDescription = "More actions", modifier = Modifier.size(24.dp))
+            }
         }
-        QuickActionButton(Modifier.weight(1f), Icons.Default.GridView, "Rooms", !busy, onClick = onRooms)
-        QuickActionButton(Modifier.weight(1f), Icons.Default.SelectAll, "Zones", !busy, onClick = onZoneClean)
-        QuickActionButton(Modifier.weight(1f), Icons.Default.Schedule, "Routine", !busy, onClick = onSchedule)
+    }
+}
+
+
+private enum class MoreAction { ROOMS, ZONES, PIN_GO, REMOTE, SCHEDULE, CAMERA, DOCK, HISTORY, RECOVER_MAP }
+
+@Composable
+private fun MoreActionsSheetContent(onAction: (MoreAction) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            "More actions",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MoreActionItem(Modifier.weight(1f), Icons.Default.GridView, "Rooms", MaterialTheme.colorScheme.primary) { onAction(MoreAction.ROOMS) }
+            MoreActionItem(Modifier.weight(1f), Icons.Default.SelectAll, "Zone clean", AppColors.AccentIndigo) { onAction(MoreAction.ZONES) }
+            MoreActionItem(Modifier.weight(1f), Icons.Default.Place, "Pin & Go", AppColors.AccentPurple) { onAction(MoreAction.PIN_GO) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MoreActionItem(Modifier.weight(1f), Icons.Default.Gamepad, "Remote", AppColors.AccentCyan) { onAction(MoreAction.REMOTE) }
+            MoreActionItem(Modifier.weight(1f), Icons.Default.Schedule, "Schedule", AppColors.Water) { onAction(MoreAction.SCHEDULE) }
+            MoreActionItem(Modifier.weight(1f), Icons.Default.Videocam, "Camera", AppColors.AccentRed) { onAction(MoreAction.CAMERA) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MoreActionItem(Modifier.weight(1f), Icons.Default.Dock, "Dock & care", AppColors.Good) { onAction(MoreAction.DOCK) }
+            MoreActionItem(Modifier.weight(1f), Icons.Default.History, "History", MaterialTheme.colorScheme.tertiary) { onAction(MoreAction.HISTORY) }
+            MoreActionItem(Modifier.weight(1f), Icons.Default.Restore, "Recover map", AppColors.Warn) { onAction(MoreAction.RECOVER_MAP) }
+        }
     }
 }
 
 @Composable
-private fun QuickActionButton(
-    modifier: Modifier = Modifier,
+private fun MoreActionItem(
+    modifier: Modifier,
     icon: ImageVector,
     label: String,
-    enabled: Boolean,
-    primary: Boolean = false,
+    iconTint: Color,
     onClick: () -> Unit,
 ) {
-    Column(modifier, Arrangement.spacedBy(8.dp), Alignment.CenterHorizontally) {
-        FilledIconButton(
-            onClick = onClick, enabled = enabled, modifier = Modifier.size(60.dp),
-            colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = when { !enabled -> MaterialTheme.colorScheme.surfaceVariant; primary -> MaterialTheme.colorScheme.primary; else -> MaterialTheme.colorScheme.secondaryContainer },
-                contentColor = when { !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f); primary -> MaterialTheme.colorScheme.onPrimary; else -> MaterialTheme.colorScheme.onSecondaryContainer },
-                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-            ),
-        ) { Icon(icon, label, Modifier.size(26.dp)) }
-        Text(label, style = MaterialTheme.typography.labelSmall,
-            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            textAlign = TextAlign.Center)
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 16.dp, horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Surface(shape = CircleShape, color = iconTint.copy(alpha = 0.15f), modifier = Modifier.size(40.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = iconTint)
+                }
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -927,10 +1049,10 @@ private fun CleaningModeSheetContent(
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 val suction = @Composable {
-                    ModeOptionSelector("Suction Power", FAN_OPTIONS.map { it.second }, FAN_OPTIONS.indexOfFirst { it.first == currentFanPower }.coerceAtLeast(0), !busy) { onFanPowerSelected(FAN_OPTIONS[it].first) }
+                    ModeOptionSelector("Suction power", FAN_OPTIONS.map { it.second }, FAN_OPTIONS.indexOfFirst { it.first == currentFanPower }.coerceAtLeast(0), !busy) { onFanPowerSelected(FAN_OPTIONS[it].first) }
                 }
                 val water = @Composable {
-                    ModeOptionSelector("Water Flow", WATER_OPTIONS.map { it.second }, WATER_OPTIONS.indexOfFirst { it.first == currentWaterMode }.coerceAtLeast(0), !busy) { onWaterModeSelected(WATER_OPTIONS[it].first) }
+                    ModeOptionSelector("Water flow", WATER_OPTIONS.map { it.second }, WATER_OPTIONS.indexOfFirst { it.first == currentWaterMode }.coerceAtLeast(0), !busy) { onWaterModeSelected(WATER_OPTIONS[it].first) }
                 }
                 val route = @Composable {
                     ModeOptionSelector("Route", ROUTE_OPTIONS.map { it.second }, ROUTE_OPTIONS.indexOfFirst { it.first == currentRoute }.coerceAtLeast(0), !busy) { onRouteSelected(ROUTE_OPTIONS[it].first) }
@@ -1152,10 +1274,10 @@ private fun DockSettingsTab(
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DockSettingCard(Modifier.weight(1f), Icons.Default.Repeat, AppColors.Water, "Mop Wash Frequency", washFreqOptions.getOrElse(dockSettings.washFreq) { "Every trip" }) { dialogTarget = "wash_freq" }
-            DockSettingCard(Modifier.weight(1f), Icons.Default.WaterDrop, AppColors.Water, "Washing Mode", washModeOptions.getOrElse(dockSettings.washMode) { "Standard" }) { dialogTarget = "wash_mode" }
+            DockSettingCard(Modifier.weight(1f), Icons.Default.Repeat, AppColors.Water, "Mop wash frequency", washFreqOptions.getOrElse(dockSettings.washFreq) { "Every trip" }) { dialogTarget = "wash_freq" }
+            DockSettingCard(Modifier.weight(1f), Icons.Default.WaterDrop, AppColors.Water, "Washing mode", washModeOptions.getOrElse(dockSettings.washMode) { "Standard" }) { dialogTarget = "wash_mode" }
         }
-        DockSettingCard(Modifier.fillMaxWidth(), Icons.Default.Delete, MaterialTheme.colorScheme.primary, "Auto-Empty Mode", autoEmptyOptions.getOrElse(dockSettings.autoEmptyMode) { "Smart" }) { dialogTarget = "auto_empty" }
+        DockSettingCard(Modifier.fillMaxWidth(), Icons.Default.Delete, MaterialTheme.colorScheme.primary, "Auto-empty mode", autoEmptyOptions.getOrElse(dockSettings.autoEmptyMode) { "Smart" }) { dialogTarget = "auto_empty" }
     }
 
     when (dialogTarget) {
@@ -1175,7 +1297,7 @@ private fun DockSettingCard(modifier: Modifier, icon: ImageVector, iconTint: Col
             Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
-                Icon(Icons.Default.KeyboardArrowRight, null, Modifier.size(14.dp), MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(14.dp), MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

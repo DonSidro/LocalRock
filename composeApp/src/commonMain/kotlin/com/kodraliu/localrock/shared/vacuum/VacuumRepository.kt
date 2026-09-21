@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -37,9 +39,9 @@ import kotlinx.serialization.json.longOrNull
 class VacuumRepository(
     duid: String,
     localKey: String,
-    private val rriotKey: String,
+    private val rriotKeyProvider: () -> String,
     private val mqttClient: MqttClient,
-    topics: MqttTopics,
+    topicsProvider: () -> MqttTopics,
     private val nowEpochSeconds: () -> Int,
     private val pollIntervalMs: Long = 5_000L,
     private val demo: Boolean = false,
@@ -47,7 +49,7 @@ class VacuumRepository(
     val session: VacuumSession = VacuumSession(
         localKey = localKey,
         mqtt = mqttClient,
-        topics = topics,
+        topicsProvider = topicsProvider,
         nowEpochSeconds = nowEpochSeconds,
         demo = demo,
     )
@@ -128,6 +130,7 @@ class VacuumRepository(
 
             var consecutiveFailures = 0
             while (isActive) {
+                runCatching { session.ensureSubscribed() }
                 runCatching { session.getStatus() }
                     .onSuccess { fresh ->
                         consecutiveFailures = 0
@@ -142,8 +145,18 @@ class VacuumRepository(
                         consecutiveFailures++
                         println("[VacLocal] get_status FAILED (#$consecutiveFailures): ${e::class.simpleName}: ${e.message}")
                         if (consecutiveFailures >= STALE_LINK_FAILURE_THRESHOLD) {
-                            println("[VacLocal] $consecutiveFailures consecutive poll failures — forcing MQTT reconnect")
-                            runCatching { mqttClient.forceReconnect() }
+                            // A timed-out RPC is not proof of a dead socket: a slow response or a
+                            // big map transfer causes the same symptom, and reconnecting then
+                            // drops every in-flight request and makes it worse. Only tear down
+                            // when the link is reported down or has gone completely silent.
+                            val silentMs = mqttClient.millisSinceLastMessage()
+                            val linkDead = !mqttClient.connected.value || silentMs >= STALE_LINK_SILENCE_MS
+                            if (linkDead) {
+                                println("[VacLocal] $consecutiveFailures poll failures, link silent ${silentMs}ms — forcing MQTT reconnect")
+                                runCatching { mqttClient.forceReconnect() }
+                            } else {
+                                println("[VacLocal] $consecutiveFailures poll failures but link is alive (${silentMs}ms since last message) — not reconnecting")
+                            }
                             consecutiveFailures = 0
                         }
                     }
@@ -511,13 +524,21 @@ class VacuumRepository(
         _mapStatus.value = "Demo mode — live map unavailable"
     }
 
-    suspend fun fetchMap(): MapResponse {
+    private val mapFetchMutex = Mutex()
+
+    /**
+     * Serialised because the poll loop and the user's refresh button both call this, and
+     * [VacuumSession] tracks a single outstanding map request — two at once orphaned the first.
+     */
+    suspend fun fetchMap(): MapResponse = mapFetchMutex.withLock { fetchMapLocked() }
+
+    private suspend fun fetchMapLocked(): MapResponse {
         if (demo) {
             _mapStatus.value = "Demo mode — live map unavailable"
             return MapResponse(requestId = 0, data = ByteArray(0))
         }
         _mapStatus.value = "requesting…"
-        val sd = createSecurityData(rriotKey)
+        val sd = createSecurityData(rriotKeyProvider())
         try {
             val resp = session.fetchMap(sd, timeoutMs = 60_000L)
             _mapBytes.value = resp.data
@@ -553,11 +574,14 @@ class VacuumRepository(
     private companion object {
         val HEX = charArrayOf('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f')
         val ConsumableJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
-        const val MAP_FAST_POLL_MS = 2_000L
-        const val MAP_IDLE_POLL_MS = 30_000L
+        const val MAP_FAST_POLL_MS = 8_000L
+        const val MAP_IDLE_POLL_MS = 60_000L
         const val MAX_HISTORY_RECORDS = 20
 
         const val STALE_LINK_FAILURE_THRESHOLD = 3
+
+        /** Silence that, together with failing polls, means the link really is gone. */
+        const val STALE_LINK_SILENCE_MS = 30_000L
         val ACTIVE_STATES = setOf(
             VacuumStateCodes.STARTING,
             VacuumStateCodes.CLEANING,

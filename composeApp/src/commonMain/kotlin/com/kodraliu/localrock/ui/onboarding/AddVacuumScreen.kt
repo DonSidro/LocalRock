@@ -15,7 +15,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -57,6 +57,7 @@ import com.kodraliu.localrock.shared.AppContainer
 import com.kodraliu.localrock.shared.onboarding.DEFAULT_IANA_TZ
 import com.kodraliu.localrock.shared.onboarding.OnboardingDevice
 import com.kodraliu.localrock.shared.onboarding.OnboardingInput
+import com.kodraliu.localrock.shared.onboarding.OnboardingSession
 import com.kodraliu.localrock.shared.onboarding.VacuumOnboarder
 import com.kodraliu.localrock.shared.onboarding.countryDomainFromIana
 import com.kodraliu.localrock.shared.onboarding.posixTzFromIana
@@ -158,13 +159,22 @@ private class AddVacuumModel(
 
                 // 3. Poll the session until the vacuum reports in.
                 _serverStatus.value = "Wi-Fi sent. Waiting for the vacuum to reach the server…"
-                val connected = pollSession(sessionId)
-                _result.value = if (connected) {
-                    "Vacuum connected to the server. It should now appear in your device list."
-                } else {
-                    val guidance = session.guidance?.takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
-                    "Wi-Fi was sent, but the vacuum hasn't reported to the server within the wait window. " +
-                        "Keep it powered near the dock — it can take a few minutes, then re-check the device list.$guidance"
+                val guidance = session.guidance?.takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
+                when (val outcome = pollSession(sessionId)) {
+                    PairOutcome.Complete -> _result.value =
+                        "Vacuum connected and its public key was recovered. " +
+                            "It should now appear in your device list."
+                    PairOutcome.ConnectedNoKey -> _error.value =
+                        "The vacuum reached the server, but its public key was never recovered, so " +
+                            "it will appear in the list with no data. Factory-reset the vacuum and " +
+                            "run onboarding again, keeping it next to the dock.$guidance"
+                    is PairOutcome.Conflict -> _error.value =
+                        "The server reported an identity conflict — this vacuum is already registered " +
+                            "under different credentials. Remove it on the server, then retry." +
+                            (outcome.guidance?.takeIf { it.isNotBlank() }?.let { " $it" } ?: "")
+                    PairOutcome.TimedOut -> _result.value =
+                        "Wi-Fi was sent, but the vacuum hasn't reported to the server within the wait window. " +
+                            "Keep it powered near the dock — it can take a few minutes, then re-check the device list.$guidance"
                 }
             } catch (e: Throwable) {
                 _error.value = describe(e)
@@ -174,27 +184,45 @@ private class AddVacuumModel(
         }
     }
 
-    private suspend fun pollSession(sessionId: String): Boolean {
+    private suspend fun pollSession(sessionId: String): PairOutcome {
+        var last: OnboardingSession? = null
         repeat(POLL_ATTEMPTS) {
             val snap = runCatching { adminApi.getSession(sessionId) }.getOrNull()
             if (snap != null) {
+                last = snap
                 _serverStatus.value = buildString {
                     append("samples=${snap.querySamples}")
                     append(" • public key ${if (snap.hasPublicKey) "recovered" else "pending"}")
                     snap.publicKeyState?.takeIf { it.isNotBlank() }?.let { append(" ($it)") }
                     append(" • ${if (snap.connected) "connected" else "waiting"}")
+                    snap.status?.takeIf { it.isNotBlank() }?.let { append(" • $it") }
                 }
-                if (snap.connected) return true
+                if (snap.status == STATUS_CONFLICT) return PairOutcome.Conflict(snap.guidance)
+                // The server defines success as connected AND the public key recovered. Without the
+                // key the MQTT bridge cannot work, which surfaces later as "paired but no data".
+                if (snap.complete || (snap.connected && snap.hasPublicKey)) return PairOutcome.Complete
             }
             delay(POLL_INTERVAL_MS)
         }
-        return false
+        return if (last?.connected == true) PairOutcome.ConnectedNoKey else PairOutcome.TimedOut
     }
 
     private companion object {
         const val POLL_INTERVAL_MS = 5_000L
         const val POLL_ATTEMPTS = 60 // ~5 minutes
+        const val STATUS_CONFLICT = "conflict"
     }
+}
+
+private sealed interface PairOutcome {
+    /** Connected and the public key was recovered — the vacuum is usable. */
+    data object Complete : PairOutcome
+    /** Reached the server, but no public key: it will show up with no data. */
+    data object ConnectedNoKey : PairOutcome
+    /** Server reports the vacuum is already registered under other credentials. */
+    data class Conflict(val guidance: String?) : PairOutcome
+    /** Never reported in within the wait window. */
+    data object TimedOut : PairOutcome
 }
 
 private fun describe(e: Throwable): String = "${e::class.simpleName}: ${e.message ?: "Unknown error"}"
@@ -229,7 +257,7 @@ fun AddVacuumScreen(onBack: () -> Unit) {
                 title = { Text("Add Vacuum") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
             )
