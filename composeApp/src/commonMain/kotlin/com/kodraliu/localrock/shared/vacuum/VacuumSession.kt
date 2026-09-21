@@ -34,7 +34,7 @@ class VacuumException(message: String, cause: Throwable? = null) : RuntimeExcept
 class VacuumSession(
     private val localKey: String,
     private val mqtt: MqttClient,
-    private val topics: MqttTopics,
+    private val topicsProvider: () -> MqttTopics,
     private val nowEpochSeconds: () -> Int,
     private val random: Random = Random.Default,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
@@ -52,13 +52,20 @@ class VacuumSession(
     private var security: SecurityData? = null
     private var pendingMap: CompletableDeferred<MapResponse>? = null
 
+    /** The topic we are actually subscribed to, which can lag [topicsProvider] after a re-login. */
+    private var subscribedTopic: String? = null
+
+    private val topics: MqttTopics get() = topicsProvider()
+
     suspend fun start() {
         if (demo) return
         check(collectorJob == null) { "Session already started" }
-        mqtt.subscribe(topics.subscribeTopic)
+        val topic = topics.subscribeTopic
+        mqtt.subscribe(topic)
+        subscribedTopic = topic
         collectorJob = scope.launch {
             mqtt.messages.collect { msg ->
-                if (msg.topic == topics.subscribeTopic) {
+                if (msg.topic == subscribedTopic) {
                     println("[VacLocal] mqtt in: topic=${msg.topic} bytes=${msg.payload.size}")
                     handleIncoming(msg.payload)
                 } else {
@@ -103,11 +110,27 @@ class VacuumSession(
         }
     }
 
+    /**
+     * Move to the current session's topics if they have changed. Cheap enough to call from the
+     * poll loop, which is what keeps a silently renewed session from publishing into the void.
+     */
+    suspend fun ensureSubscribed() {
+        if (demo || collectorJob == null) return
+        val wanted = topics.subscribeTopic
+        val current = subscribedTopic
+        if (wanted == current) return
+        println("[VacLocal] session topics changed — resubscribing to $wanted")
+        if (current != null) runCatching { mqtt.unsubscribe(current) }
+        mqtt.subscribe(wanted)
+        subscribedTopic = wanted
+    }
+
     suspend fun close() {
         if (demo) return
         collectorJob?.cancelAndJoin()
         collectorJob = null
-        runCatching { mqtt.unsubscribe(topics.subscribeTopic) }
+        subscribedTopic?.let { runCatching { mqtt.unsubscribe(it) } }
+        subscribedTopic = null
         mutex.withLock {
             for ((_, def) in pending) def.cancel()
             pending.clear()

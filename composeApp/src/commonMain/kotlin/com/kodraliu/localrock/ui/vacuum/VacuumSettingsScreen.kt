@@ -20,7 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Air
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Cached
@@ -32,8 +32,8 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Lock
@@ -46,7 +46,7 @@ import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.AlertDialog
@@ -280,7 +280,7 @@ private fun SettingsRootScreen(
                 title = { Text("Settings") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
             )
@@ -291,7 +291,7 @@ private fun SettingsRootScreen(
                 SettingsCategoryRow(
                     icon = Icons.Default.History,
                     iconTint = AppColors.AccentCyan,
-                    title = "Cleaning History",
+                    title = "Cleaning history",
                     subtitle = "Past cleaning sessions and totals",
                     onClick = onHistory,
                 )
@@ -311,7 +311,7 @@ private fun SettingsRootScreen(
                 SettingsCategoryRow(
                     icon = Icons.Default.Home,
                     iconTint = AppColors.Water,
-                    title = "Dock Settings",
+                    title = "Dock settings",
                     subtitle = "Auto-empty, wash and dry options",
                     onClick = onDockSettings,
                 )
@@ -321,7 +321,7 @@ private fun SettingsRootScreen(
                 SettingsCategoryRow(
                     icon = Icons.Default.Settings,
                     iconTint = AppColors.AccentPurple,
-                    title = "Robot Settings",
+                    title = "Robot settings",
                     subtitle = "Volume, child lock and more",
                     onClick = onRobotSettings,
                 )
@@ -394,7 +394,7 @@ private fun DndScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Do Not Disturb") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
             )
         },
     ) { padding ->
@@ -464,12 +464,12 @@ private fun NumberStepper2(label: String, value: Int, range: IntRange, step: Int
                 IconButton(
                     onClick = { val next = value - step; onValueChange(if (next < range.first) range.last - (range.last % step) else next) },
                     modifier = Modifier.size(40.dp),
-                ) { Icon(Icons.Default.KeyboardArrowLeft, null, Modifier.size(20.dp)) }
+                ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null, Modifier.size(20.dp)) }
                 Text(value.toString().padStart(2, '0'), style = MaterialTheme.typography.titleLarge, modifier = Modifier.width(42.dp), textAlign = TextAlign.Center)
                 IconButton(
                     onClick = { val next = value + step; onValueChange(if (next > range.last) range.first else next) },
                     modifier = Modifier.size(40.dp),
-                ) { Icon(Icons.Default.KeyboardArrowRight, null, Modifier.size(20.dp)) }
+                ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(20.dp)) }
             }
         }
     }
@@ -509,7 +509,7 @@ private fun SettingsCategoryRow(
                 )
             }
             Icon(
-                Icons.Default.KeyboardArrowRight,
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -531,7 +531,7 @@ private fun MaintenanceScreen(
             TopAppBar(
                 title = { Text("Maintenance") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
                     IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Refresh") }
@@ -708,7 +708,7 @@ private fun HistoryScreen(
             TopAppBar(
                 title = { Text("History") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
                     IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Refresh") }
@@ -852,7 +852,7 @@ private fun DockSettingsScreen(
             TopAppBar(
                 title = { Text("Dock Settings") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
             )
         },
@@ -874,7 +874,7 @@ private fun DockSettingsScreen(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Default.WaterDrop,
                     iconTint = AppColors.AccentCyan,
-                    title = "Washing Mode",
+                    title = "Washing mode",
                     value = washModeOptions.getOrElse(dockSettings.washMode) { "Standard" },
                     onClick = { dialogTarget = "wash_mode" },
                 )
@@ -883,7 +883,7 @@ private fun DockSettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 icon = Icons.Default.Delete,
                 iconTint = AppColors.Good,
-                title = "Auto-Empty Mode",
+                title = "Auto-empty mode",
                 value = autoEmptyOptions.getOrElse(dockSettings.autoEmptyMode) { "Smart" },
                 onClick = { dialogTarget = "auto_empty" },
             )
@@ -892,21 +892,21 @@ private fun DockSettingsScreen(
 
     when (dialogTarget) {
         "wash_freq" -> SimplePickerDialog(
-            title = "Mop Wash Frequency",
+            title = "Mop wash frequency",
             options = washFreqOptions,
             selected = dockSettings.washFreq,
             onSelect = { onWashFreqChange(it); dialogTarget = null },
             onDismiss = { dialogTarget = null },
         )
         "wash_mode" -> SimplePickerDialog(
-            title = "Washing Mode",
+            title = "Washing mode",
             options = washModeOptions,
             selected = dockSettings.washMode,
             onSelect = { onWashModeChange(it); dialogTarget = null },
             onDismiss = { dialogTarget = null },
         )
         "auto_empty" -> SimplePickerDialog(
-            title = "Auto-Empty Mode",
+            title = "Auto-empty mode",
             options = autoEmptyOptions,
             selected = dockSettings.autoEmptyMode,
             onSelect = { onAutoEmptyModeChange(it); dialogTarget = null },
@@ -958,7 +958,7 @@ private fun DockSettingCard(
                     maxLines = 1,
                 )
                 Icon(
-                    Icons.Default.KeyboardArrowRight,
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     null,
                     Modifier.size(14.dp),
                     MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1027,7 +1027,7 @@ private fun RobotSettingsScreen(
             TopAppBar(
                 title = { Text("Robot Settings") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
             )
         },
@@ -1045,7 +1045,7 @@ private fun RobotSettingsScreen(
             item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
             item {
                 SettingRowClickable(
-                    icon = Icons.Default.VolumeUp,
+                    icon = Icons.AutoMirrored.Filled.VolumeUp,
                     iconTint = AppColors.Water,
                     title = "Volume",
                     subtitle = volumeLabel,
@@ -1129,7 +1129,7 @@ private fun SettingRowClickable(
                 Text(title, style = MaterialTheme.typography.bodyLarge)
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Icon(Icons.Default.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
         }
     }
 }
@@ -1259,7 +1259,7 @@ private fun RemoteControlScreen(
             TopAppBar(
                 title = { Text("Remote Control") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
             )
         },
@@ -1286,7 +1286,7 @@ private fun RemoteControlScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RcButton(Icons.Default.KeyboardArrowLeft, "Turn left") { onMove(0.0, 0.3) }
+                    RcButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Turn left") { onMove(0.0, 0.3) }
                     FilledIconButton(
                         onClick = onStop,
                         modifier = Modifier.size(72.dp),
@@ -1297,7 +1297,7 @@ private fun RemoteControlScreen(
                     ) {
                         Icon(Icons.Default.Stop, "Stop", Modifier.size(32.dp))
                     }
-                    RcButton(Icons.Default.KeyboardArrowRight, "Turn right") { onMove(0.0, -0.3) }
+                    RcButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Turn right") { onMove(0.0, -0.3) }
                 }
                 RcButton(Icons.Default.KeyboardArrowDown, "Backward") { onMove(-0.3, 0.0) }
             }
@@ -1338,7 +1338,7 @@ private fun PinGoScreen(
             TopAppBar(
                 title = { Text("Pin & Go") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
                     if (tapPoint != null && parsedMap != null && !sent) {

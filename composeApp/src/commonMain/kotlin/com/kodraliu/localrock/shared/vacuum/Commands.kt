@@ -190,6 +190,12 @@ suspend fun VacuumSession.startCameraPreview(clientIdHex: String, passwordMd5Hex
 suspend fun VacuumSession.stopCameraPreview(clientIdHex: String): V1Response =
     sendCommandRaw("stop_camera_preview", JsonObject(mapOf("client_id" to JsonPrimitive(clientIdHex))))
 
+/** Camera enable/permission flag the robot checks before allowing a preview (see error -10012). */
+suspend fun VacuumSession.getCameraStatus(): V1Response = sendCommand("get_camera_status")
+
+suspend fun VacuumSession.setCameraStatus(status: Int): V1Response =
+    sendCommand("set_camera_status", listOf(JsonPrimitive(status)))
+
 suspend fun VacuumSession.getTurnServer(): V1Response = sendCommand("get_turn_server")
 
 suspend fun VacuumSession.sendSdpToRobot(appSdpBase64: String): V1Response =

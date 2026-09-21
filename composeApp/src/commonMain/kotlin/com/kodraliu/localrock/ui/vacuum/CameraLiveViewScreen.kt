@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -81,7 +81,7 @@ fun CameraLiveViewScreen(
                 title = { Text(viewModel.deviceName, color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Go back", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Go back", tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -174,30 +174,60 @@ private fun PinEntry(
     onConnect: () -> Unit,
     onSetPinOnRobot: () -> Unit,
 ) {
+    // Newer models draw the camera PIN as a pattern; older ones type it. Default to drawing and
+    // keep the keypad as a fallback so the S8-era flow still works.
+    var typed by remember { mutableStateOf(false) }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.padding(32.dp),
     ) {
         Text(
-            "The live view is protected by a camera PIN stored on the robot. " +
-                "Enter your existing PIN, or pick a new one and register it on the robot.",
+            if (typed) {
+                "The live view is protected by a camera PIN stored on the robot. " +
+                    "Enter your existing PIN, or pick a new one and register it on the robot."
+            } else {
+                "The live view is protected by a camera PIN stored on the robot. " +
+                    "Draw your existing pattern, or draw a new one and register it on the robot."
+            },
             color = Color.White,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
         )
-        OutlinedTextField(
-            value = pin,
-            onValueChange = onPinChange,
-            label = { Text("Camera PIN") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (typed) {
+            OutlinedTextField(
+                value = pin,
+                onValueChange = onPinChange,
+                label = { Text("Camera PIN") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            PatternPinInput(onPattern = onPinChange)
+            Text(
+                if (pin.isBlank()) "Draw a pattern of at least 4 dots" else "Pattern captured",
+                color = Color.White.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         Button(onClick = onConnect, enabled = pin.isNotBlank()) { Text("Start live view") }
         TextButton(onClick = onSetPinOnRobot, enabled = pin.isNotBlank()) {
             Text("Set as new PIN on robot", color = Color.White)
+        }
+        TextButton(
+            onClick = {
+                typed = !typed
+                onPinChange("")
+            },
+        ) {
+            Text(
+                if (typed) "Draw a pattern instead" else "Type a PIN instead",
+                color = Color.White.copy(alpha = 0.7f),
+            )
         }
     }
 }

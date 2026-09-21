@@ -36,7 +36,6 @@ class DeviceRepository(
             return
         }
         val token = authRepository.token() ?: error("Not logged in")
-        runCatching { deviceApi.ncPrepare() }
         val detail = deviceApi.getHomeDetail(token)
         val homeId = detail.resolvedHomeId ?: error("Server did not return a home id")
         val home = deviceApi.getHome(homeId)

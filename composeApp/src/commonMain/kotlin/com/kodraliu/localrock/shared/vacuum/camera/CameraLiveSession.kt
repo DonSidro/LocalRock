@@ -2,12 +2,14 @@ package com.kodraliu.localrock.shared.vacuum.camera
 
 import com.kodraliu.localrock.shared.vacuum.VacuumSession
 import com.kodraliu.localrock.shared.vacuum.checkHomesecPassword
+import com.kodraliu.localrock.shared.vacuum.getCameraStatus
 import com.kodraliu.localrock.shared.vacuum.getDeviceIce
 import com.kodraliu.localrock.shared.vacuum.getDeviceSdp
 import com.kodraliu.localrock.shared.vacuum.getHomesecConnectStatus
 import com.kodraliu.localrock.shared.vacuum.getTurnServer
 import com.kodraliu.localrock.shared.vacuum.resetHomesecPassword
 import com.kodraliu.localrock.shared.vacuum.sendIceToRobot
+import com.kodraliu.localrock.shared.vacuum.setCameraStatus
 import com.kodraliu.localrock.shared.vacuum.setHomesecPassword
 import com.kodraliu.localrock.shared.vacuum.sendSdpToRobot
 import com.kodraliu.localrock.shared.vacuum.startCameraPreview
@@ -91,6 +93,9 @@ class CameraLiveSession(private val session: VacuumSession) {
                     runCatching { session.resetHomesecPassword() }
                     val retry = session.setHomesecPassword(passwordMd5)
                     if (retry.error != null) {
+                        if (errorCode(retry.error) == ERR_PASSWORD_DISABLED) {
+                            throw IllegalStateException(PASSWORD_DISABLED_HINT)
+                        }
                         throw IllegalStateException("Robot refused to set the PIN: ${retry.error}")
                     }
                 }
@@ -130,7 +135,12 @@ class CameraLiveSession(private val session: VacuumSession) {
 
         _state.value = State.Connecting("Checking PIN…")
         val check = session.checkHomesecPassword(passwordMd5)
-        if (check.error != null) throw IllegalStateException("PIN check failed: ${check.error}")
+        if (check.error != null) {
+            if (errorCode(check.error) == ERR_PASSWORD_DISABLED) {
+                throw IllegalStateException(PASSWORD_DISABLED_HINT)
+            }
+            throw IllegalStateException("PIN check failed: ${check.error}")
+        }
         val ok = firstInt(check.result)
         if (ok != null && ok != 1) throw IllegalStateException("Wrong camera PIN")
 
@@ -140,7 +150,9 @@ class CameraLiveSession(private val session: VacuumSession) {
         while (kicks < 5) {
             val status = runCatching { session.getHomesecConnectStatus() }.getOrNull()
             val other = firstObject(status?.result)?.get("client_id")?.jsonPrimitive?.contentOrNull
-            if (other.isNullOrBlank() || other == CLIENT_ID) break
+            // The robot reports the literal "none" when no client holds the camera. Treating that
+            // as a rival made us fire stop_camera_preview five times before every start.
+            if (other.isNullOrBlank() || other == NO_CLIENT || other == CLIENT_ID) break
             runCatching { session.stopCameraPreview(other) }
             delay(1_000)
             kicks++
@@ -149,6 +161,15 @@ class CameraLiveSession(private val session: VacuumSession) {
         _state.value = State.Connecting("Starting camera…")
         val startResp = session.startCameraPreview(CLIENT_ID, passwordMd5)
         if (startResp.error != null) {
+            if (errorCode(startResp.error) == ERR_CAMERA_PREVIEW_DENIED) {
+                val status = runCatching { firstInt(session.getCameraStatus().result) }.getOrNull()
+                throw IllegalStateException(
+                    "Remote viewing is not enabled on this robot (-10012, camera_status=" +
+                        "${status ?: "unknown"}). It can only be enabled from the official Roborock " +
+                        "app while the robot is bound to Roborock's cloud, and the setting is lost " +
+                        "when the robot is moved back to a local server."
+                )
+            }
             throw IllegalStateException("Robot refused camera preview: ${startResp.error}")
         }
 
@@ -256,6 +277,31 @@ class CameraLiveSession(private val session: VacuumSession) {
     private companion object {
         const val CLIENT_ID = "7661636c6f63616c"
         val SignalingJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
+
+        /** Robot error for "password is disable": the homesec feature is off on the device. */
+        const val ERR_PASSWORD_DISABLED = -1007
+
+        /** Robot error for "camera status denied preview": the camera flag forbids streaming. */
+        const val ERR_CAMERA_PREVIEW_DENIED = -10012
+
+        /**
+         * `camera_status` findings for a Qrevo Curv 2 Flow (2026-09-21), kept because they are not
+         * documented anywhere: 259 (0x103) with remote viewing off, 8615 (0x21A7) when Roborock's
+         * cloud enables it. **Bit 2 (0x4) is the authorization and is write-protected** —
+         * `set_camera_status` rejects any value containing it with -10005, while bits 5, 7 and 13
+         * write fine and do not unblock the preview. No RPC on this firmware sets `home_sec_status`.
+         */
+        const val CAMERA_STATUS_OFF = 259
+
+        /** `client_id` the robot returns when the camera is free. */
+        const val NO_CLIENT = "none"
+
+        const val PASSWORD_DISABLED_HINT =
+            "This robot reports the camera PIN feature is disabled (-1007). Enable remote viewing " +
+                "for this vacuum in the official Roborock app once, then try again here."
+
+        private fun errorCode(error: JsonObject?): Int? =
+            error?.get("code")?.jsonPrimitive?.intOrNull
 
         fun md5Hex(input: String): String {
             val digest = MD5().digest(input.encodeToByteArray())
