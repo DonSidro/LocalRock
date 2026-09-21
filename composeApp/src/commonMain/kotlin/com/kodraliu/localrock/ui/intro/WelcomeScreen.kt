@@ -73,7 +73,7 @@ fun WelcomeScreen() {
             Point(
                 Icons.Default.VpnKey,
                 "Sign in with server credentials",
-                "The email and login code come from your own server setup — not a new Roborock account.",
+                "The email and login code come from your own server setup — not a new cloud account.",
             )
             Point(
                 Icons.Default.Wifi,
