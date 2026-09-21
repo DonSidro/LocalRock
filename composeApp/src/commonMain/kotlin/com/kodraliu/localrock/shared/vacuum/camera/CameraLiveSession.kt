@@ -165,9 +165,9 @@ class CameraLiveSession(private val session: VacuumSession) {
                 val status = runCatching { firstInt(session.getCameraStatus().result) }.getOrNull()
                 throw IllegalStateException(
                     "Remote viewing is not enabled on this robot (-10012, camera_status=" +
-                        "${status ?: "unknown"}). It can only be enabled from the official Roborock " +
-                        "app while the robot is bound to Roborock's cloud, and the setting is lost " +
-                        "when the robot is moved back to a local server."
+                        "${status ?: "unknown"}). It can only be switched on from the manufacturer's " +
+                        "own app while the robot is connected to the manufacturer's cloud, and the " +
+                        "setting is lost when the robot is moved back to a local server."
                 )
             }
             throw IllegalStateException("Robot refused camera preview: ${startResp.error}")
@@ -298,7 +298,7 @@ class CameraLiveSession(private val session: VacuumSession) {
 
         const val PASSWORD_DISABLED_HINT =
             "This robot reports the camera PIN feature is disabled (-1007). Enable remote viewing " +
-                "for this vacuum in the official Roborock app once, then try again here."
+                "for this vacuum once in the manufacturer's own app, then try again here."
 
         private fun errorCode(error: JsonObject?): Int? =
             error?.get("code")?.jsonPrimitive?.intOrNull

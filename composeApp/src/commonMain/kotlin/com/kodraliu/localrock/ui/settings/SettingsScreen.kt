@@ -39,9 +39,11 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.settings.ThemeMode
+import com.kodraliu.localrock.shared.platform.donationUrl
+import com.kodraliu.localrock.shared.platform.donationsEnabled
 import com.kodraliu.localrock.ui.LocalAppContainer
 
-const val APP_VERSION: String = "1.0.0"
+const val APP_VERSION: String = "1.1.0"
 
 private const val PROJECT_URL = "https://github.com/DonSidro/LocalRock/"
 
@@ -150,6 +152,19 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
                 Icon(Icons.Default.Favorite, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("Contribute on GitHub")
+            }
+
+            if (donationsEnabled) {
+                Text(
+                    "A small donation helps keep it maintained. It is never required — the app " +
+                        "is and stays free.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = { uriHandler.openUri(donationUrl) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Donate") }
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
