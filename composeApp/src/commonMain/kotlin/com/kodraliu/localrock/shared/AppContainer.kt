@@ -68,6 +68,9 @@ class AppContainer(
     private val mqttMutex = Mutex()
     private var mqttConnected = false
 
+    /** How long an open-but-silent link may sit before a foreground reconnect is worth it. */
+    private val FOREGROUND_STALE_MS = 90_000L
+
     suspend fun ensureMqttConnected() {
         if (isDemo) return
         if (mqttConnected) return
@@ -79,12 +82,37 @@ class AppContainer(
 
             val clientId = "vaclocal-${ud.rruid}-${appSettings.installId}"
             println("[VacLocal] MQTT connecting host=${creds.host}:${creds.port} tls=${creds.tls}")
+            mqttClient.credentialRefresher = ::refreshMqttCredentials
             mqttClient.connect(creds, clientId = clientId)
             println("[VacLocal] MQTT connected")
             mqttConnected = true
             observeMqttConnection()
         }
     }
+
+    /**
+     * Repeated reconnect failures usually mean the server has expired our session rather than that
+     * the network is down, so sign in again and hand back credentials derived from the new session.
+     */
+    private suspend fun refreshMqttCredentials(attempt: Int, error: Throwable) =
+        when {
+            isDemo -> null
+            !authRepository.canReLogin -> {
+                messages.showBanner(
+                    key = MessageCenter.BANNER_MQTT,
+                    text = "Session expired — sign out and sign in again to reconnect.",
+                    severity = MessageSeverity.ERROR,
+                    dismissible = false,
+                )
+                null
+            }
+            else -> {
+                println("[VacLocal] MQTT failed $attempt times (${error.message}) — re-authenticating")
+                // Live VacuumRepositories resolve their topics from userData on every poll, so a
+                // renewed session is picked up without rebuilding them.
+                authRepository.reLogin()?.let { fresh -> deriveMqttCreds(fresh.rriot) }
+            }
+        }
 
     private var observingMqtt = false
 
@@ -113,25 +141,39 @@ class AppContainer(
     }
 
 
+    /**
+     * Coming back to the foreground used to tear down the MQTT session unconditionally, costing a
+     * reconnect and a data gap every time the app was switched away from. Only do it when the link
+     * looks genuinely stuck: reported down, or open but silent for a long time.
+     */
     suspend fun onEnterForeground() {
         if (!mqttConnected) return
+        if (!mqttClient.connected.value) return // the supervisor is already reconnecting
+        val silentMs = mqttClient.millisSinceLastMessage()
+        if (silentMs < FOREGROUND_STALE_MS) return
+        println("[VacLocal] foreground: link silent ${silentMs}ms — reconnecting")
         mqttClient.forceReconnect()
     }
 
     fun vacuumRepositoryFor(device: Device): VacuumRepository {
         val ud = authRepository.userData.value
             ?: error("vacuumRepositoryFor called before login")
-        val creds = deriveMqttCreds(ud.rriot)
-        val topics = mqttTopicsFor(ud.rriot.u, creds.username, device.duid)
+        // Resolved per call rather than captured: a silent re-login mints a new session, and the
+        // topics are derived from it.
+        val topicsProvider = {
+            val current = authRepository.userData.value ?: ud
+            mqttTopicsFor(current.rriot.u, deriveMqttCreds(current.rriot).username, device.duid)
+        }
+        val topics = topicsProvider()
         println("[VacLocal] repo duid=${device.duid} sub=${topics.subscribeTopic} pub=${topics.publishTopic}")
         val localKey = device.localKey
             ?: error("Device ${device.duid} has no localKey — cannot control vacuum")
         return VacuumRepository(
             duid = device.duid,
             localKey = localKey,
-            rriotKey = ud.rriot.k,
+            rriotKeyProvider = { (authRepository.userData.value ?: ud).rriot.k },
             mqttClient = mqttClient,
-            topics = topics,
+            topicsProvider = topicsProvider,
             nowEpochSeconds = { currentEpochSeconds().toInt() },
             demo = isDemo,
         ).apply {

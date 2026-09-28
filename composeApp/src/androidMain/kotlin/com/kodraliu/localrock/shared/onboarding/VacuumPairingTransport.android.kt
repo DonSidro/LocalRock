@@ -119,3 +119,5 @@ actual fun createVacuumPairingTransport(): VacuumPairingTransport {
         ?: throw VacuumPairingException("Android context not initialized; call initVacLocalAndroidContext first")
     return VacuumPairingTransport(ctx)
 }
+
+actual val vacuumPairingSupported: Boolean = true

@@ -15,6 +15,8 @@ private const val KEY_ADMIN_PASSWORD = "admin_password"
 private const val KEY_INSTALL_ID = "install_id"
 private const val KEY_INTRO_SEEN = "intro_seen"
 private const val KEY_DEMO_MODE = "demo_mode"
+private const val KEY_LOGIN_EMAIL = "login_email"
+private const val KEY_LOGIN_CODE = "login_code"
 
 class AppSettings(private val settings: Settings) {
 
@@ -92,5 +94,27 @@ class AppSettings(private val settings: Settings) {
 
     internal fun writeUserDataJson(json: String?) {
         if (json == null) settings.remove(KEY_USER_DATA) else settings.putString(KEY_USER_DATA, json)
+    }
+
+    /**
+     * The server issues a fresh session on every login and rejects MQTT credentials from an
+     * expired one, so the app has to be able to sign in again on its own. The login code is a
+     * static server-config credential, and it lives beside the session secrets already in
+     * [KEY_USER_DATA] rather than anywhere new.
+     */
+    internal fun readLoginCredentials(): Pair<String, String>? {
+        val email = settings.getStringOrNull(KEY_LOGIN_EMAIL) ?: return null
+        val code = settings.getStringOrNull(KEY_LOGIN_CODE) ?: return null
+        return email to code
+    }
+
+    internal fun writeLoginCredentials(email: String?, code: String?) {
+        if (email.isNullOrBlank() || code.isNullOrBlank()) {
+            settings.remove(KEY_LOGIN_EMAIL)
+            settings.remove(KEY_LOGIN_CODE)
+        } else {
+            settings.putString(KEY_LOGIN_EMAIL, email)
+            settings.putString(KEY_LOGIN_CODE, code)
+        }
     }
 }

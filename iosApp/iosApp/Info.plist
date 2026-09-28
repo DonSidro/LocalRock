@@ -4,6 +4,8 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>LocalRock talks directly to your robot vacuum over your local network: to your own self-hosted server, and to the robot's own Wi-Fi access point while you set it up. Nothing is sent to the developer.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>LocalRock displays the live video feed from your robot vacuum's built-in camera. It does not access your device's own camera.</string>
 	<key>NSMicrophoneUsageDescription</key>

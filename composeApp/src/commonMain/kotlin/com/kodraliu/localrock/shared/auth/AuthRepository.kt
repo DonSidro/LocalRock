@@ -24,8 +24,36 @@ class AuthRepository(
     suspend fun login(email: String, code: String): UserData {
         val data = loginApi.login(email, code)
         settings.writeUserDataJson(ProdJson.encodeToString(data))
+        settings.writeLoginCredentials(email, code)
         _userData.value = data
         return data
+    }
+
+    /** True when [reLogin] has something to work with. */
+    val canReLogin: Boolean get() = settings.readLoginCredentials() != null
+
+    /**
+     * Sign in again with the stored credentials to mint a fresh session. The server rejects MQTT
+     * credentials once the session they belong to is evicted, and there is no token-refresh
+     * endpoint, so replaying the login is the only way back.
+     *
+     * Returns null when there is nothing stored or the server refused; the caller is expected to
+     * fall back to asking the user.
+     */
+    suspend fun reLogin(): UserData? {
+        val (email, code) = settings.readLoginCredentials() ?: return null
+        return try {
+            login(email, code)
+        } catch (e: LoginException) {
+            // The stored credentials are no longer valid — drop them so we stop retrying.
+            println("[VacLocal] silent re-login rejected (${e.responseCode}): ${e.message}")
+            settings.writeLoginCredentials(null, null)
+            null
+        } catch (e: Throwable) {
+            // Network trouble: keep the credentials, this is worth retrying later.
+            println("[VacLocal] silent re-login failed: ${e::class.simpleName}: ${e.message}")
+            null
+        }
     }
 
     /**
@@ -35,12 +63,14 @@ class AuthRepository(
     fun enterDemo() {
         val data = DemoData.userData
         settings.writeUserDataJson(ProdJson.encodeToString(data))
+        settings.writeLoginCredentials(null, null)
         settings.setDemoMode(true)
         _userData.value = data
     }
 
     fun logout() {
         settings.writeUserDataJson(null)
+        settings.writeLoginCredentials(null, null)
         settings.setDemoMode(false)
         _userData.value = null
     }

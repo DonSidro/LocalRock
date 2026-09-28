@@ -53,14 +53,14 @@ object DemoData {
     private val products: List<Product> = listOf(
         Product(
             id = "demo-prod-s8",
-            name = "S8 Pro Ultra",
-            model = "roborock.vacuum.a70",
+            name = "Robot Vacuum",
+            model = "Vacuum",
             category = "robot.vacuum.cleaner",
         ),
         Product(
             id = "demo-prod-q7",
-            name = "Q7 Max+",
-            model = "roborock.vacuum.a38",
+            name = "Robot Vacuum",
+            model = "Vacuum",
             category = "robot.vacuum.cleaner",
         ),
     )

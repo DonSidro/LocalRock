@@ -7,9 +7,12 @@ struct ComposeView: UIViewControllerRepresentable {
         // Inject the Swift-backed platform pieces into the shared Kotlin code:
         //  - CocoaMQTT transport for MQTT
         //  - WebRTC.framework peer factory for the camera live view (pass nil to disable it)
+        //  - NetworkExtension/Network.framework session factory for Wi-Fi vacuum pairing
+        //    (pass nil to hide the "add vacuum" flow)
         MainViewControllerKt.MainViewController(
             mqttTransport: CocoaMqttTransport(),
-            rtcPeerFactory: WebRtcNativeFactory()
+            rtcPeerFactory: WebRtcNativeFactory(),
+            pairingFactory: VacuumPairingFactory()
         )
     }
 

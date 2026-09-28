@@ -91,6 +91,10 @@ data class OnboardingSession(
     @SerialName("has_public_key") val hasPublicKey: Boolean = false,
     @SerialName("public_key_state") val publicKeyState: String? = null,
     val connected: Boolean = false,
+    /** Server-side truth: `connected && has_public_key`. Added in local_roborock_server 1.1.0. */
+    val complete: Boolean = false,
+    /** `waiting` | `in_progress` | `complete` | `conflict` (1.1.0+). */
+    val status: String? = null,
     val guidance: String? = null,
     val target: OnboardingTarget? = null,
 )

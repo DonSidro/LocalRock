@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,11 +39,11 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.settings.ThemeMode
+import com.kodraliu.localrock.shared.platform.donationUrl
+import com.kodraliu.localrock.shared.platform.donationsEnabled
 import com.kodraliu.localrock.ui.LocalAppContainer
 
-const val APP_VERSION: String = "1.0.0"
-
-private const val DONATE_URL = "https://buymeacoffee.com/sidon"
+const val APP_VERSION: String = "1.1.0"
 
 private const val PROJECT_URL = "https://github.com/DonSidro/LocalRock/"
 
@@ -67,7 +67,7 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
                 navigationIcon = {
                     if (allowCancel) {
                         IconButton(onClick = onDone) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
                 },
@@ -107,7 +107,7 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
                 value = url,
                 onValueChange = { url = it },
                 label = { Text("Server URL") },
-                placeholder = { Text("https://api-roborock.example.com") },
+                placeholder = { Text("https://api-test.example.com") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -138,20 +138,33 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-            SectionLabel("Support")
+            SectionLabel("Contribute")
             Text(
-                "LocalRock is a free, community project. If it's useful to you, a small donation " +
-                    "helps keep it maintained.",
+                "LocalRock is a free, open-source community project. Issue reports, ideas, and " +
+                    "pull requests are all welcome.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Button(
-                onClick = { uriHandler.openUri(DONATE_URL) },
+                onClick = { uriHandler.openUri(PROJECT_URL) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Default.Favorite, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Donate")
+                Text("Contribute on GitHub")
+            }
+
+            if (donationsEnabled) {
+                Text(
+                    "A small donation helps keep it maintained. It is never required — the app " +
+                        "is and stays free.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = { uriHandler.openUri(donationUrl) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Donate") }
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -162,15 +175,11 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                "Control Roborock vacuums locally through your own server. Not affiliated with, " +
+                "Control vacuums locally through your own server. Not affiliated with, " +
                     "endorsed by, or connected to Roborock. \"Roborock\" is a trademark of its owner.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            OutlinedButton(
-                onClick = { uriHandler.openUri(PROJECT_URL) },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Project page") }
             OutlinedButton(
                 onClick = { uriHandler.openUri(PRIVACY_URL) },
                 modifier = Modifier.fillMaxWidth(),
@@ -188,7 +197,7 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "Made with ❤️ for the self-hosting community.",
+                "Built for the self-hosting community.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -219,5 +228,5 @@ private const val ACKNOWLEDGEMENTS =
         "• multiplatform-settings (Apache-2.0) — Russell Wolf\n" +
         "• KotlinCrypto hash & macs (Apache-2.0)\n" +
         "• Okio (Apache-2.0) — Square\n\n" +
-        "And to the Roborock reverse-engineering community — especially the python-roborock " +
+        "And to the reverse-engineering community — especially the python-roborock " +
         "project — whose protocol work made local control possible."

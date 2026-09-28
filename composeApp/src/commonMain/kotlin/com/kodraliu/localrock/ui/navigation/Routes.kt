@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 // Top-level destinations
 @Serializable data object Splash
 @Serializable data object Welcome
+@Serializable data object ServerSetup
 @Serializable data object Login
 @Serializable data object DeviceList
 @Serializable data object AppSettings
