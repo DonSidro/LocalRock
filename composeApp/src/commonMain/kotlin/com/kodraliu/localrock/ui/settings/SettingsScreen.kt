@@ -44,7 +44,7 @@ import com.kodraliu.localrock.shared.platform.donationUrl
 import com.kodraliu.localrock.shared.platform.donationsEnabled
 import com.kodraliu.localrock.ui.LocalAppContainer
 
-const val APP_VERSION: String = "1.1.0"
+const val APP_VERSION: String = "1.2.0"
 
 private const val PROJECT_URL = "https://github.com/DonSidro/LocalRock/"
 

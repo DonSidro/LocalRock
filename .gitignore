@@ -17,3 +17,9 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
+
+# Local tooling, captures and build outputs that must not be published
+.claude/
+/~/
+graphify-out/
+composeApp/release/
