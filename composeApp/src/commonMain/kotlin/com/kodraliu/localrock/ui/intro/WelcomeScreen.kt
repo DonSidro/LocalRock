@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.ui.LocalAppContainer
+import com.kodraliu.localrock.ui.settings.APP_VERSION
 
 private const val PROJECT_URL = "https://github.com/Python-roborock/local_roborock_server"
 
@@ -100,7 +101,11 @@ fun WelcomeScreen() {
 
         // The way forward stays put at the bottom instead of drifting with the scroll.
         Button(
-            onClick = { container.appSettings.setIntroSeen(true) },
+            onClick = {
+                // A new install starts on the current version, so it gets no What's new.
+                container.appSettings.setLastSeenVersion(APP_VERSION)
+                container.appSettings.setIntroSeen(true)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)

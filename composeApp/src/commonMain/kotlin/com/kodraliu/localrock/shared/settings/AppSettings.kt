@@ -14,6 +14,7 @@ private const val KEY_THEME_MODE = "theme_mode"
 private const val KEY_ADMIN_PASSWORD = "admin_password"
 private const val KEY_INSTALL_ID = "install_id"
 private const val KEY_INTRO_SEEN = "intro_seen"
+private const val KEY_LAST_SEEN_VERSION = "last_seen_version"
 private const val KEY_DEMO_MODE = "demo_mode"
 private const val KEY_LOGIN_EMAIL = "login_email"
 private const val KEY_LOGIN_CODE = "login_code"
@@ -37,6 +38,15 @@ class AppSettings(private val settings: Settings) {
     fun setIntroSeen(value: Boolean) {
         settings.putBoolean(KEY_INTRO_SEEN, value)
         _introSeen.value = value
+    }
+
+    /** App version whose What's new the user has seen; null for anyone who used 1.1.0 or older. */
+    private val _lastSeenVersion = MutableStateFlow(settings.getStringOrNull(KEY_LAST_SEEN_VERSION))
+    val lastSeenVersion: StateFlow<String?> = _lastSeenVersion.asStateFlow()
+
+    fun setLastSeenVersion(version: String) {
+        settings.putString(KEY_LAST_SEEN_VERSION, version)
+        _lastSeenVersion.value = version
     }
 
     /** True while the app is in offline demo mode (no server/MQTT; see DemoData). */

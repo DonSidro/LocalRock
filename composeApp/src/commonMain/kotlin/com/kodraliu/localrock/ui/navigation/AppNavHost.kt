@@ -22,6 +22,7 @@ import com.kodraliu.localrock.ui.intro.WelcomeScreen
 import com.kodraliu.localrock.ui.login.LoginScreen
 import com.kodraliu.localrock.ui.onboarding.AddVacuumScreen
 import com.kodraliu.localrock.ui.onboarding.ServerSetupScreen
+import com.kodraliu.localrock.ui.settings.APP_VERSION
 import com.kodraliu.localrock.ui.settings.SettingsScreen
 import com.kodraliu.localrock.ui.vacuum.CameraLiveViewScreen
 import com.kodraliu.localrock.ui.vacuum.ScheduleScreen
@@ -33,6 +34,9 @@ import com.kodraliu.localrock.ui.vacuum.VacuumSettingsScreen
 import com.kodraliu.localrock.ui.vacuum.VacuumViewModel
 import com.kodraliu.localrock.ui.vacuum.MapEditScreen
 import com.kodraliu.localrock.ui.vacuum.ZoneCleanScreen
+import com.kodraliu.localrock.ui.whatsnew.WhatsNewSheet
+import com.kodraliu.localrock.ui.whatsnew.shouldShowWhatsNew
+import com.kodraliu.localrock.ui.whatsnew.whatsNewFor
 
 @Composable
 fun AppNavHost() {
@@ -42,6 +46,7 @@ fun AppNavHost() {
     val serverUrl by container.appSettings.serverBaseUrl.collectAsState()
     val introSeen by container.appSettings.introSeen.collectAsState()
     val demoMode by container.appSettings.demoMode.collectAsState()
+    val lastSeenVersion by container.appSettings.lastSeenVersion.collectAsState()
     var splashDone by remember { mutableStateOf(false) }
 
 
@@ -94,6 +99,11 @@ fun AppNavHost() {
                 onDeviceClick = { device -> navController.navigate(VacuumGraph(device.duid)) },
                 onAddVacuum = { navController.navigate(AddVacuum) },
             )
+            // Once after an update, over the first screen that is really the app.
+            val release = whatsNewFor(APP_VERSION)
+            if (release != null && shouldShowWhatsNew(introSeen, lastSeenVersion, APP_VERSION)) {
+                WhatsNewSheet(release = release, onDismiss = { container.appSettings.setLastSeenVersion(APP_VERSION) })
+            }
         }
 
         composable<AppSettings> {
