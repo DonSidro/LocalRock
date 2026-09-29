@@ -20,6 +20,7 @@ import com.kodraliu.localrock.shared.AppContainer
 import kotlinx.coroutines.launch
 import com.kodraliu.localrock.shared.settings.ThemeMode
 import com.kodraliu.localrock.ui.LocalAppContainer
+import com.kodraliu.localrock.ui.SystemBarsAppearance
 import com.kodraliu.localrock.ui.VacDarkColorScheme
 import com.kodraliu.localrock.ui.VacLightColorScheme
 import com.kodraliu.localrock.ui.messages.MessageBannerArea
@@ -38,7 +39,7 @@ fun App(container: AppContainer) {
     }
     val colorScheme = platformDynamicColorScheme(useDark)
         ?: if (useDark) VacDarkColorScheme else VacLightColorScheme
-
+    SystemBarsAppearance(useDark)
 
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()

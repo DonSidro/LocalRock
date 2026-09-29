@@ -91,7 +91,8 @@ fun CameraLiveViewScreen(
         },
     ) { paddingValues ->
         Box(
-            modifier = Modifier.fillMaxSize().padding(paddingValues).background(Color.Black),
+            // Black runs under the navigation bar too; only the video area is inset.
+            modifier = Modifier.fillMaxSize().background(Color.Black).padding(paddingValues),
             contentAlignment = Alignment.Center,
         ) {
             if (!liveViewSupported) {

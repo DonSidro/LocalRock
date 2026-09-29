@@ -4,8 +4,10 @@ import com.kodraliu.localrock.shared.auth.Hawk
 import com.kodraliu.localrock.shared.auth.HawkCreds
 import com.kodraliu.localrock.shared.auth.HawkPayload
 import io.ktor.client.plugins.api.createClientPlugin
+import io.ktor.client.request.forms.FormDataContent
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
+import io.ktor.http.Parameters
 import io.ktor.http.Url
 import kotlin.random.Random
 
@@ -41,8 +43,16 @@ val HawkAuth = createClientPlugin("HawkAuth", ::HawkAuthConfig) {
         val path = Url(request.url.buildString()).encodedPath
         if (isHawkPublicPath(path)) return@onRequest
         val creds = credsProvider() ?: return@onRequest
-        check(request.method == HttpMethod.Get) {
-            "HawkAuthPlugin v1 only signs GETs; method ${request.method.value} on $path needs body hashing support"
+        // GETs have no body. The only other body signed is a url-encoded form, hashed as sorted
+        // k=v pairs exactly like local_roborock_server's _process_extra_hawk_values; anything else
+        // would be signed wrongly, so fail instead of sending a request the server will reject.
+        val payload = when {
+            request.method == HttpMethod.Get -> HawkPayload.None
+            request.method == HttpMethod.Post && request.body is FormDataContent ->
+                HawkPayload.Form(formPairs((request.body as FormDataContent).formData))
+            else -> error(
+                "HawkAuthPlugin signs GETs and url-encoded form POSTs only; ${request.method.value} on $path is neither"
+            )
         }
         val query = buildMap {
             request.url.parameters.entries().forEach { (k, v) ->
@@ -55,8 +65,13 @@ val HawkAuth = createClientPlugin("HawkAuth", ::HawkAuthConfig) {
             ts = nowSeconds(),
             nonce = nonceProvider(),
             query = query,
-            payload = HawkPayload.None,
+            payload = payload,
         )
         request.headers[HttpHeaders.Authorization] = header
     }
+}
+
+/** Form fields as the server hashes them: first value per key (a blank value still counts). */
+internal fun formPairs(formData: Parameters): Map<String, String> = buildMap {
+    formData.entries().forEach { (k, v) -> if (v.isNotEmpty()) put(k, v.first()) }
 }

@@ -5,11 +5,14 @@ import com.kodraliu.localrock.shared.model.FirmwareOtaResponse
 import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
 import com.kodraliu.localrock.shared.model.HomeDetail
+import com.kodraliu.localrock.shared.model.Room
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.parameter
+import io.ktor.http.parameters
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.JsonElement
@@ -30,6 +33,19 @@ class DeviceApi(private val client: HttpClient) {
 
     suspend fun getHome(homeId: Long): Home {
         val response: ApiResponse<Home> = client.get("/v3/user/homes/$homeId").body()
+        ensureOk(response)
+        return response.data
+    }
+
+    /**
+     * Create a cloud room, or get the existing one with the same name (the server matches names
+     * case-insensitively). Returns the room id the robot's segment table should point at.
+     */
+    suspend fun createRoom(homeId: Long, name: String): Room {
+        val response: ApiResponse<Room> = client.submitForm(
+            url = "/user/homes/$homeId/rooms",
+            formParameters = parameters { append("name", name) },
+        ).body()
         ensureOk(response)
         return response.data
     }

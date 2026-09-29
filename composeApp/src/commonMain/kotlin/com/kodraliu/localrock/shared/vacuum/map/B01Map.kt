@@ -92,6 +92,26 @@ data class ParsedMap(
     val chargerMm: ParsedMapPoint? = null,
     val robotMm: ParsedMapPoint? = null,
     val pathMm: List<ParsedMapPoint> = emptyList(),
+    val noGoZones: List<MapZone> = emptyList(),
+    val noMopZones: List<MapZone> = emptyList(),
+    val virtualWalls: List<VirtualWall> = emptyList(),
+    /** Segment id -> raw Roborock floor material id (see [FloorMaterial]). Legacy block 24. */
+    val segmentMaterials: Map<Int, Int> = emptyMap(),
+    /** Segment id -> wood direction in degrees (0 or 90). Legacy block 32. */
+    val segmentMaterialDirections: Map<Int, Int> = emptyMap(),
+    /**
+     * Legacy block types that carry map restrictions this app does not model yet (for example
+     * no-vacuum areas or door sills) and hold at least one entry. Editing code checks this before
+     * sending `save_map`, which replaces the robot's whole restriction set.
+     */
+    val unmodeledRestrictionBlocks: Set<Int> = emptySet(),
+    val format: MapFormat = MapFormat.B01,
+    /** Carpet areas (legacy block 22, or block 39 with each carpet's flags when the map has it). */
+    val carpetAreas: List<MapZone> = emptyList(),
+    /** The map stores carpet flags (block 39), so set_carpet_area must send them back. */
+    val carpetFlagsPresent: Boolean = false,
+    /** Thresholds / door sills drawn in the Roborock app (legacy block 28). Shown, not edited. */
+    val thresholds: List<MapZone> = emptyList(),
 
     val originalGrid: ByteArray? = null,
 ) {
@@ -102,7 +122,15 @@ data class ParsedMap(
         other is ParsedMap && other.width == width && other.height == height &&
             other.grid.contentEquals(grid) && other.rooms == rooms &&
             other.chargerMm == chargerMm && other.robotMm == robotMm &&
-            other.pathMm == pathMm
+            other.pathMm == pathMm &&
+            other.noGoZones == noGoZones && other.noMopZones == noMopZones &&
+            other.virtualWalls == virtualWalls &&
+            other.segmentMaterials == segmentMaterials &&
+            other.segmentMaterialDirections == segmentMaterialDirections &&
+            other.unmodeledRestrictionBlocks == unmodeledRestrictionBlocks &&
+            other.format == format &&
+            other.carpetAreas == carpetAreas &&
+            other.thresholds == thresholds
 
     override fun hashCode(): Int {
         var r = width
@@ -112,7 +140,99 @@ data class ParsedMap(
         r = 31 * r + (chargerMm?.hashCode() ?: 0)
         r = 31 * r + (robotMm?.hashCode() ?: 0)
         r = 31 * r + pathMm.hashCode()
+        r = 31 * r + noGoZones.hashCode()
+        r = 31 * r + noMopZones.hashCode()
+        r = 31 * r + virtualWalls.hashCode()
+        r = 31 * r + segmentMaterials.hashCode()
+        r = 31 * r + segmentMaterialDirections.hashCode()
+        r = 31 * r + unmodeledRestrictionBlocks.hashCode()
+        r = 31 * r + format.hashCode()
+        r = 31 * r + carpetAreas.hashCode()
+        r = 31 * r + thresholds.hashCode()
         return r
+    }
+}
+
+/** Which wire format a map came from. Only [LEGACY] maps carry editable restrictions. */
+enum class MapFormat { LEGACY, B01 }
+
+/**
+ * Roborock floor material ids as used by `set_segment_ground_material` and map block 24.
+ * Only the ids seen on the S8 Pro Ultra's map and in captures of the official app are listed
+ * (0 default, 3 wood, 4 tile); the robot may report
+ * others, which callers must show as unknown rather than overwrite.
+ */
+enum class FloorMaterial(val id: Int) {
+    DEFAULT(0),
+    WOOD(3),
+    TILE(4);
+
+    companion object {
+        fun fromId(id: Int): FloorMaterial? = entries.firstOrNull { it.id == id }
+    }
+}
+
+/** A persistent virtual wall: a line segment in robot millimetres (legacy block 10). */
+data class VirtualWall(
+    val x0: Int, val y0: Int,
+    val x1: Int, val y1: Int,
+)
+
+enum class ZoneKind { NO_GO, NO_MOP, CARPET, THRESHOLD }
+
+/*
+ * Carpet flags, captured 2026-09-29 on an S8 Pro Ultra: the official app sent 0x06338000 for a new
+ * round carpet and 0x02338000 for a new rectangular one. Only the round bit is interpreted.
+ */
+const val CARPET_FLAG_ROUND = 0x04000000L
+const val NEW_ROUND_CARPET_FLAGS = 0x06338000L
+const val NEW_RECT_CARPET_FLAGS = 0x02338000L
+
+/**
+ * A persistent map restriction: a quadrilateral (four corners) stored in robot **millimetre**
+ * coordinates — the same space as [ParsedMapPoint] (charger/robot/path). Convert a corner to a
+ * local map pixel with `(mm / 50) - pixelOffset`, mirroring the renderer's marker transform.
+ *
+ * The Roborock format allows arbitrary quadrilaterals (the official app can rotate zones), so the
+ * four corners must be kept exactly as read and never re-derived from the bounds. Zones the editor
+ * creates are axis-aligned rectangles with corners in the order the robot itself uses: top-left,
+ * top-right, bottom-right, bottom-left in robot space (Y grows upwards).
+ */
+data class MapZone(
+    val x0: Int, val y0: Int,
+    val x1: Int, val y1: Int,
+    val x2: Int, val y2: Int,
+    val x3: Int, val y3: Int,
+    val kind: ZoneKind,
+    /**
+     * Carpet flags from map block 39, sent back unchanged in set_carpet_area. The robot fills in
+     * low bits itself (0x06338000 sent was stored as 0x0633E700), so they must not be rebuilt.
+     */
+    val flags: Long? = null,
+) {
+    /** A round carpet: stored as its bounding square with [CARPET_FLAG_ROUND] set. */
+    val isRoundCarpet: Boolean
+        get() = kind == ZoneKind.CARPET && flags != null && (flags and CARPET_FLAG_ROUND) != 0L
+
+    /** Axis-aligned bounds in mm, tolerant of arbitrary corner ordering. */
+    val minXmm: Int get() = minOf(x0, x1, x2, x3)
+    val minYmm: Int get() = minOf(y0, y1, y2, y3)
+    val maxXmm: Int get() = maxOf(x0, x1, x2, x3)
+    val maxYmm: Int get() = maxOf(y0, y1, y2, y3)
+
+    companion object {
+        /** Build an axis-aligned rectangle zone from two opposite corners in mm. */
+        fun rect(axMm: Int, ayMm: Int, bxMm: Int, byMm: Int, kind: ZoneKind): MapZone {
+            val loX = minOf(axMm, bxMm); val hiX = maxOf(axMm, bxMm)
+            val loY = minOf(ayMm, byMm); val hiY = maxOf(ayMm, byMm)
+            return MapZone(
+                x0 = loX, y0 = hiY,   // top-left
+                x1 = hiX, y1 = hiY,   // top-right
+                x2 = hiX, y2 = loY,   // bottom-right
+                x3 = loX, y3 = loY,   // bottom-left
+                kind = kind,
+            )
+        }
     }
 }
 
@@ -232,5 +352,6 @@ fun parseB01Map(bytes: ByteArray): ParsedMap {
         grid = grid,
         rooms = rooms,
         resolution = head.resolution,
+        format = MapFormat.B01,
     )
 }

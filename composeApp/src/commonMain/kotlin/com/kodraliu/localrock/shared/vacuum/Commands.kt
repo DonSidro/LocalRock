@@ -165,8 +165,6 @@ suspend fun VacuumSession.closeDndTimer(): V1Response = sendCommand("close_dnd_t
 
 
 suspend fun VacuumSession.getMultiMapsList(): V1Response = sendCommand("get_multi_maps_list")
-suspend fun VacuumSession.loadMultiMap(mapFlag: Int): V1Response =
-    sendCommand("load_multi_map", listOf(JsonPrimitive(mapFlag)))
 
 
 suspend fun VacuumSession.checkHomesecPassword(passwordMd5Hex: String): V1Response =

@@ -13,8 +13,21 @@ import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.luminance
+import com.kodraliu.localrock.shared.vacuum.map.MapZone
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapPoint
+import com.kodraliu.localrock.shared.vacuum.map.VirtualWall
+
+// Zone overlays are translucent, so one pair reads over both the light and dark palettes.
+private val NO_GO_FILL = Color(0x33f44336)    // translucent red
+private val NO_GO_STROKE = Color(0xccf44336)
+private val NO_MOP_FILL = Color(0x332196f3)   // translucent blue
+private val NO_MOP_STROKE = Color(0xcc2196f3)
+private val WALL_STROKE = Color(0xffe53935)     // solid red, drawn as a line
+private val CARPET_FILL = Color(0x40a1887f)     // translucent brown
+private val CARPET_STROKE = Color(0xcca1887f)
+private val THRESHOLD_FILL = Color(0x66ffb300)  // amber, small strips across doorways
+private val THRESHOLD_STROKE = Color(0xffffb300)
 
 /**
  * The map is the signature surface, so it gets a palette per theme instead of one light bitmap
@@ -67,9 +80,11 @@ private val DarkPalette = MapPalette(
  * the raw system setting, so the map never disagrees with the surface it sits on.
  */
 @Composable
-fun rememberMapBitmap(map: ParsedMap): ImageBitmap {
+fun rememberMapBitmap(map: ParsedMap, drawRestrictions: Boolean = true): ImageBitmap {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return remember(map, dark) { renderMap(map, if (dark) DarkPalette else LightPalette) }
+    return remember(map, dark, drawRestrictions) {
+        renderMap(map, if (dark) DarkPalette else LightPalette, drawRestrictions)
+    }
 }
 
 /**
@@ -110,7 +125,8 @@ fun ParsedMap.contentBoundsNorm(): MapContentBounds {
     )
 }
 
-private fun renderMap(map: ParsedMap, palette: MapPalette): ImageBitmap {
+/** [drawRestrictions] is false for the editor, which draws the shapes it is editing itself. */
+private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean): ImageBitmap {
     val bitmap = ImageBitmap(map.width, map.height)
     val canvas = Canvas(bitmap)
     val wallPaint = Paint().apply { color = palette.wall }
@@ -144,10 +160,49 @@ private fun renderMap(map: ParsedMap, palette: MapPalette): ImageBitmap {
         }
     }
     if (map.pathMm.size >= 2) drawPath(canvas, map, palette)
+    if (drawRestrictions) {
+        map.carpetAreas.forEach { drawZone(canvas, map, it, CARPET_FILL, CARPET_STROKE) }
+        map.thresholds.forEach { drawZone(canvas, map, it, THRESHOLD_FILL, THRESHOLD_STROKE) }
+        map.noMopZones.forEach { drawZone(canvas, map, it, NO_MOP_FILL, NO_MOP_STROKE) }
+        map.noGoZones.forEach { drawZone(canvas, map, it, NO_GO_FILL, NO_GO_STROKE) }
+        map.virtualWalls.forEach { drawWall(canvas, map, it) }
+    }
     // Square dock, round robot: the two markers stay distinguishable without relying on colour.
     map.chargerMm?.let { drawMarker(canvas, map, it, palette.charger, palette.markerRing, square = true) }
     map.robotMm?.let { drawMarker(canvas, map, it, palette.robot, palette.markerRing, square = false) }
     return bitmap
+}
+
+private fun drawZone(canvas: Canvas, map: ParsedMap, zone: MapZone, fill: Color, stroke: Color) {
+    val path = Path()
+    if (zone.isRoundCarpet) {
+        val a = map.mmToCell(zone.minXmm, zone.minYmm)
+        val b = map.mmToCell(zone.maxXmm, zone.maxYmm)
+        path.addOval(Rect(minOf(a.x, b.x), minOf(a.y, b.y), maxOf(a.x, b.x), maxOf(a.y, b.y)))
+    } else {
+        val c0 = map.mmToCell(zone.x0, zone.y0)
+        path.moveTo(c0.x, c0.y)
+        val c1 = map.mmToCell(zone.x1, zone.y1); path.lineTo(c1.x, c1.y)
+        val c2 = map.mmToCell(zone.x2, zone.y2); path.lineTo(c2.x, c2.y)
+        val c3 = map.mmToCell(zone.x3, zone.y3); path.lineTo(c3.x, c3.y)
+        path.close()
+    }
+    canvas.drawPath(path, Paint().apply { color = fill })
+    canvas.drawPath(path, Paint().apply {
+        color = stroke
+        style = PaintingStyle.Stroke
+        strokeWidth = 1f
+    })
+}
+
+private fun drawWall(canvas: Canvas, map: ParsedMap, wall: VirtualWall) {
+    val a = map.mmToCell(wall.x0, wall.y0)
+    val b = map.mmToCell(wall.x1, wall.y1)
+    canvas.drawLine(a, b, Paint().apply {
+        color = WALL_STROKE
+        strokeWidth = 1.5f
+        strokeCap = StrokeCap.Round
+    })
 }
 
 private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {

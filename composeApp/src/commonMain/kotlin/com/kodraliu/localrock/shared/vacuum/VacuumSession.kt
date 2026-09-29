@@ -190,8 +190,12 @@ class VacuumSession(
             runCatching {
                 val resp = V1Envelope.decodeResponse(m.payload)
                 resp.id?.let { id ->
-                    val def = mutex.withLock { pending.remove(id) }
-                    def?.complete(resp)
+                    // Commands sent with need_retry get an immediate ["retry"] and the real
+                    // answer later under the same id, so only the real answer completes them.
+                    if (!resp.isProvisionalRetry()) {
+                        val def = mutex.withLock { pending.remove(id) }
+                        def?.complete(resp)
+                    }
                 }
                 println("[VacLocal] rpc response id=${resp.id} result=${resp.result} error=${resp.error}")
             }
@@ -228,4 +232,16 @@ class VacuumSession(
         const val V1_DPS_REQUEST = 101
         const val V1_DPS_RESPONSE = 102
     }
+}
+
+/**
+ * The robot's "still working" reply to a command sent with `need_retry: 1`: result `["retry"]`
+ * and no error. Seen in a capture of the official app for save_map, name_segment and
+ * split_segment; the final result follows with the same id.
+ */
+internal fun V1Response.isProvisionalRetry(): Boolean {
+    if (error != null) return false
+    val r = result as? kotlinx.serialization.json.JsonArray ?: return false
+    val only = r.singleOrNull() as? kotlinx.serialization.json.JsonPrimitive ?: return false
+    return only.isString && only.content == "retry"
 }

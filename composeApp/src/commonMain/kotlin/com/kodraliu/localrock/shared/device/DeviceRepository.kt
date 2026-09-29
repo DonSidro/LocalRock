@@ -6,6 +6,7 @@ import com.kodraliu.localrock.shared.model.Device
 import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
 import com.kodraliu.localrock.shared.model.Product
+import com.kodraliu.localrock.shared.model.Room
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,6 +37,10 @@ class DeviceRepository(
             return
         }
         val token = authRepository.token() ?: error("Not logged in")
+        // NOTE: do NOT call /nc/prepare here. It's an onboarding-only ("network config prepare")
+        // endpoint; calling it on every refresh made local_roborock_server fabricate a phantom
+        // "rr_<id>" runtime-credential device (local_key_source=onboarding_nc) that then showed up
+        // as a ghost vacuum in the device list. The result was discarded anyway.
         val detail = deviceApi.getHomeDetail(token)
         val homeId = detail.resolvedHomeId ?: error("Server did not return a home id")
         val home = deviceApi.getHome(homeId)
@@ -43,6 +48,13 @@ class DeviceRepository(
         _devicesFlow.value = home.devices
         val productsByDeviceId = home.products.associateBy { it.id }
         _products.value = home.devices.associate { it.duid to productsByDeviceId[it.productId]!! }
+    }
+
+    /** Create (or look up by name) a cloud room in the current home. */
+    suspend fun createRoom(name: String): Room {
+        if (isDemo()) error("Rooms can't be renamed in demo mode")
+        val homeId = _home.value?.id ?: error("Home not loaded")
+        return deviceApi.createRoom(homeId, name)
     }
 
     suspend fun checkFirmwareUpdate(duid: String): FirmwareUpdateInfo? {
