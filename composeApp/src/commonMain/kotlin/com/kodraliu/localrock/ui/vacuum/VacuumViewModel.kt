@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kodraliu.localrock.shared.AppContainer
 import com.kodraliu.localrock.shared.messages.MessageSeverity
+import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -108,6 +109,19 @@ class VacuumViewModel(
     }
 
 
+    /**
+     * Rename a map room the way the Roborock app does: get a cloud room for the name from the
+     * server, point the robot's segment at it with `name_segment`, then reload the home so the new
+     * name resolves. Throws with a user-facing message on any failure.
+     */
+    suspend fun renameRoom(segment: Int, name: String) {
+        val clean = validateRoomName(name)
+        val room = container.deviceRepository.createRoom(clean)
+        repository.assignRoom(segment, room.id)
+        container.deviceRepository.refresh()
+        repository.setHomeRooms(container.deviceRepository.home.value?.rooms ?: emptyList())
+    }
+
     fun run(successMessage: String? = null, action: suspend (VacuumRepository) -> Unit) {
         viewModelScope.launch {
             _busy.value = true
@@ -136,6 +150,24 @@ sealed interface FirmwareUpdateState {
         val force: Boolean,
     ) : FirmwareUpdateState
     data class Unavailable(val reason: String) : FirmwareUpdateState
+}
+
+/**
+ * Longest room name allowed. The name is stored by the server, not the robot, and its real limit
+ * is unknown; 23 keeps names short enough for the room labels on the map.
+ */
+const val MAX_ROOM_NAME_LENGTH = 23
+
+/**
+ * Trimmed name, or [MapEditException] if unusable. A leading `{` or `[` makes the server treat
+ * the form body as JSON and verify the request signature differently, so it is rejected here.
+ */
+fun validateRoomName(name: String): String {
+    val clean = name.trim()
+    if (clean.isEmpty()) throw MapEditException("Enter a room name")
+    if (clean.length > MAX_ROOM_NAME_LENGTH) throw MapEditException("Room names can be at most $MAX_ROOM_NAME_LENGTH characters")
+    if (clean.startsWith("{") || clean.startsWith("[")) throw MapEditException("Room names can't start with { or [")
+    return clean
 }
 
 private fun describe(e: Throwable): String {

@@ -32,8 +32,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.BatteryUnknown
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Air
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Battery1Bar
 import androidx.compose.material.icons.filled.Battery2Bar
 import androidx.compose.material.icons.filled.Battery3Bar
@@ -42,17 +45,17 @@ import androidx.compose.material.icons.filled.Battery5Bar
 import androidx.compose.material.icons.filled.Battery6Bar
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
-import androidx.compose.material.icons.automirrored.filled.BatteryUnknown
-import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dock
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Gamepad
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
@@ -60,20 +63,21 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
@@ -82,13 +86,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -129,15 +136,18 @@ import com.kodraliu.localrock.shared.vacuum.DockErrorCodes
 import com.kodraliu.localrock.shared.vacuum.DockSettings
 import com.kodraliu.localrock.shared.vacuum.FloorMap
 import com.kodraliu.localrock.shared.vacuum.MopRoute
+import com.kodraliu.localrock.shared.vacuum.SWITCH_MAP_MODE_SMART
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumFanPower
 import com.kodraliu.localrock.shared.vacuum.VacuumStateCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumStatus
 import com.kodraliu.localrock.shared.vacuum.WaterBoxMode
+import com.kodraliu.localrock.shared.vacuum.mapNameBlocker
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
 import com.kodraliu.localrock.shared.vacuum.map.roomAtNorm
 import com.kodraliu.localrock.ui.AppColors
+import kotlinx.coroutines.delay
 
 
 private val FAN_OPTIONS = listOf(
@@ -186,6 +196,8 @@ fun VacuumDetailScreen(
     val parsedMap by viewModel.repository.parsedMap.collectAsState()
     val floorMaps by viewModel.repository.floorMaps.collectAsState()
     val currentFloorFlag by viewModel.repository.currentFloorFlag.collectAsState()
+    val maxFloorMaps by viewModel.repository.maxFloorMaps.collectAsState()
+    val unsavedMap by viewModel.repository.unsavedMapPresent.collectAsState()
     val mopMode by viewModel.repository.mopMode.collectAsState()
     val dockSettings by viewModel.repository.dockSettings.collectAsState()
     var selectedRoomIds by remember { mutableStateOf(emptyList<Int>()) }
@@ -198,6 +210,9 @@ fun VacuumDetailScreen(
     var showRecoverSheet by remember { mutableStateOf(false) }
     var recoverLoading by remember { mutableStateOf(false) }
     var recoverTick by remember { mutableIntStateOf(0) }
+    var renamingMap by remember { mutableStateOf<FloorMap?>(null) }
+    var deletingMap by remember { mutableStateOf<FloorMap?>(null) }
+    var choosingMapToKeep by remember { mutableStateOf(false) }
     var lastCleanArea by remember { mutableStateOf<Long?>(null) }
     var cleaningCount by remember { mutableIntStateOf(1) }
 
@@ -214,7 +229,15 @@ fun VacuumDetailScreen(
     LaunchedEffect(status.cleanArea) {
         if ((status.cleanArea ?: 0L) > 0L) lastCleanArea = status.cleanArea
     }
-    LaunchedEffect(Unit) { runCatching { viewModel.repository.fetchFloorMaps() } }
+    // The first request can go out before the robot link is up, so retry until the list arrives.
+    // map_status and lab_status change when a map is saved, deleted or switched (also from the
+    // official app), so the list is read again then and the floor picker stays current.
+    LaunchedEffect(status.mapStatus, status.labStatus) {
+        do {
+            runCatching { viewModel.repository.fetchFloorMaps() }
+            if (!viewModel.repository.floorMapsLoaded.value) delay(MAP_LIST_RETRY_MS)
+        } while (!viewModel.repository.floorMapsLoaded.value)
+    }
     LaunchedEffect(showCleaningModeSheet) {
         if (showCleaningModeSheet) runCatching { viewModel.repository.fetchMopMode() }
     }
@@ -265,6 +288,7 @@ fun VacuumDetailScreen(
                     else selectedRoomIds + roomId
                 },
                 onFloorSwitch = { flag -> viewModel.run { it.switchFloor(flag) } },
+                onEditMap = onMapEdit,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
 
@@ -320,8 +344,8 @@ fun VacuumDetailScreen(
                         MoreAction.CAMERA -> onCamera()
                         MoreAction.DOCK -> showDockSheet = true
                         MoreAction.HISTORY -> onHistory()
-                        MoreAction.RECOVER_MAP -> showRecoverSheet = true
-                        MoreAction.EDIT_ZONES -> onMapEdit()
+                        MoreAction.MAPS -> showRecoverSheet = true
+                        MoreAction.EDIT_MAP -> onMapEdit()
                     }
                 },
             )
@@ -374,18 +398,72 @@ fun VacuumDetailScreen(
 
     if (showRecoverSheet) {
         ModalBottomSheet(onDismissRequest = { showRecoverSheet = false }) {
-            MapRecoverySheetContent(
+            MapsSheetContent(
                 floorMaps = floorMaps,
                 currentFloorFlag = currentFloorFlag,
                 loading = recoverLoading,
                 busy = busy,
+                blockedReason = viewModel.repository.mapManageBlockedReason(status.state),
+                canAddMap = floorMaps.size < (maxFloorMaps ?: 1),
+                unsavedMap = unsavedMap,
+                multiLevel = status.multiLevelEnabled,
+                smartSwitching = status.switchMapMode?.let { it == SWITCH_MAP_MODE_SMART },
+                onMultiLevelChange = { on ->
+                    when {
+                        on -> viewModel.run("Multi-level maps on") { it.setMultiLevel(true, null) }
+                        floorMaps.size > 1 -> choosingMapToKeep = true
+                        else -> viewModel.run("Multi-level maps off") { it.setMultiLevel(false, null) }
+                    }
+                },
+                onSmartSwitchingChange = { smart -> viewModel.run { it.setSmartMapSwitching(smart) } },
                 onLoad = { flag ->
                     showRecoverSheet = false
                     viewModel.run { it.switchFloor(flag) }
                 },
+                onRename = { renamingMap = it },
+                onDelete = { deletingMap = it },
+                onStartMapping = {
+                    showRecoverSheet = false
+                    viewModel.run("Mapping started") { it.startMapping() }
+                },
+                onSaveNewMap = { viewModel.run("New map saved") { it.saveNewMap() } },
                 onRecheck = { recoverTick++ },
             )
         }
+    }
+
+    renamingMap?.let { floor ->
+        RenameMapDialog(
+            floor = floor,
+            onConfirm = { name ->
+                renamingMap = null
+                viewModel.run("Map renamed") { it.renameFloorMap(floor.mapFlag, name) }
+            },
+            onDismiss = { renamingMap = null },
+        )
+    }
+
+    if (choosingMapToKeep && floorMaps.isNotEmpty()) {
+        KeepMapDialog(
+            floorMaps = floorMaps,
+            currentFloorFlag = currentFloorFlag,
+            onConfirm = { keep ->
+                choosingMapToKeep = false
+                viewModel.run("Multi-level maps off") { it.setMultiLevel(false, keep) }
+            },
+            onDismiss = { choosingMapToKeep = false },
+        )
+    }
+
+    deletingMap?.let { floor ->
+        DeleteMapDialog(
+            floor = floor,
+            onConfirm = {
+                deletingMap = null
+                viewModel.run("Map deleted") { it.deleteFloorMap(floor.mapFlag) }
+            },
+            onDismiss = { deletingMap = null },
+        )
     }
 
     if (showCleaningModeSheet) {
@@ -418,6 +496,7 @@ private fun MapHeroSection(
     onRecover: () -> Unit,
     onRoomTap: (Int) -> Unit,
     onFloorSwitch: (Int) -> Unit,
+    onEditMap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -443,8 +522,18 @@ private fun MapHeroSection(
             MapEmptyState(busy = busy, onLoadMap = onLoadMap, onRecover = onRecover, modifier = Modifier.fillMaxSize())
         }
 
-        // Refresh is the only control that earns a place on top of the map; camera, remote and
-        // map recovery moved into the More sheet so the hero reads as one surface.
+        // Refresh and Edit map are the only controls on top of the map; camera, remote and map
+        // recovery live in the More sheet so the hero reads as one surface. Edit sits in the
+        // opposite corner so the two can't be confused, and only once there is a map to edit.
+        if (parsedMap != null) {
+            FilledTonalIconButton(
+                onClick = onEditMap,
+                modifier = Modifier.align(Alignment.BottomStart).padding(12.dp).size(48.dp),
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit map", modifier = Modifier.size(22.dp))
+            }
+        }
+
         FilledTonalIconButton(
             onClick = onLoadMap,
             enabled = !busy,
@@ -461,28 +550,68 @@ private fun MapHeroSection(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (floorMaps.size > 1) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    floorMaps.forEach { floor ->
-                        val selected = floor.mapFlag == currentFloorFlag
-                        Surface(
-                            onClick = { if (!selected) onFloorSwitch(floor.mapFlag) },
-                            shape = MaterialTheme.shapes.small,
-                            color = if (selected) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.surfaceContainerHighest,
-                        ) {
-                            Text(
-                                text = floor.name,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (selected) MaterialTheme.colorScheme.onPrimary
-                                else MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                }
+                FloorPicker(
+                    floorMaps = floorMaps,
+                    currentFloorFlag = currentFloorFlag,
+                    enabled = !busy,
+                    onFloorSwitch = onFloorSwitch,
+                )
             }
             if (sessionRoomNames.isNotEmpty()) {
                 SessionRoomsBadge(roomNames = sessionRoomNames)
+            }
+        }
+    }
+}
+
+/** Loaded map's name over the map; tapping it lists the other saved maps. */
+@Composable
+private fun FloorPicker(
+    floorMaps: List<FloorMap>,
+    currentFloorFlag: Int,
+    enabled: Boolean,
+    onFloorSwitch: (Int) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val current = floorMaps.find { it.mapFlag == currentFloorFlag }
+    Box {
+        Surface(
+            onClick = { expanded = true },
+            enabled = enabled,
+            shape = MaterialTheme.shapes.small,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            modifier = Modifier.widthIn(max = 220.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(
+                    current?.name ?: "Choose map",
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Icon(Icons.Default.ArrowDropDown, contentDescription = "Switch map")
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            floorMaps.forEach { floor ->
+                val selected = floor.mapFlag == currentFloorFlag
+                DropdownMenuItem(
+                    text = { Text(floor.name) },
+                    leadingIcon = {
+                        if (selected) Icon(Icons.Default.Check, contentDescription = "Loaded")
+                        else Spacer(Modifier.size(24.dp))
+                    },
+                    onClick = {
+                        expanded = false
+                        if (!selected) onFloorSwitch(floor.mapFlag)
+                    },
+                )
             }
         }
     }
@@ -694,7 +823,7 @@ private fun MapEmptyState(busy: Boolean, onLoadMap: () -> Unit, onRecover: () ->
         }
         Spacer(Modifier.height(4.dp))
         TextButton(onClick = onRecover, enabled = !busy) {
-            Text("Recover saved map")
+            Text("Saved maps")
         }
     }
 }
@@ -927,13 +1056,15 @@ private fun ControlBar(
 }
 
 
-private enum class MoreAction { ROOMS, ZONES, PIN_GO, REMOTE, SCHEDULE, CAMERA, DOCK, HISTORY, RECOVER_MAP, EDIT_ZONES }
+private enum class MoreAction { ROOMS, ZONES, PIN_GO, REMOTE, SCHEDULE, CAMERA, DOCK, HISTORY, MAPS, EDIT_MAP }
 
 @Composable
 private fun MoreActionsSheetContent(onAction: (MoreAction) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // Scrolls on short screens where the half-expanded sheet can't show every row.
+            .verticalScroll(rememberScrollState())
             .navigationBarsPadding()
             .padding(horizontal = 16.dp)
             .padding(bottom = 16.dp),
@@ -952,17 +1083,13 @@ private fun MoreActionsSheetContent(onAction: (MoreAction) -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MoreActionItem(Modifier.weight(1f), Icons.Default.Gamepad, "Remote", AppColors.AccentCyan) { onAction(MoreAction.REMOTE) }
             MoreActionItem(Modifier.weight(1f), Icons.Default.Schedule, "Schedule", AppColors.Water) { onAction(MoreAction.SCHEDULE) }
-            MoreActionItem(Modifier.weight(1f), Icons.Default.Videocam, "Camera", AppColors.AccentRed) { onAction(MoreAction.CAMERA) }
+            // Camera is hidden for now; MoreAction.CAMERA and the live view screen stay in place.
+            MoreActionItem(Modifier.weight(1f), Icons.Default.Edit, "Edit map", AppColors.AccentRed) { onAction(MoreAction.EDIT_MAP) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MoreActionItem(Modifier.weight(1f), Icons.Default.Dock, "Dock & care", AppColors.Good) { onAction(MoreAction.DOCK) }
             MoreActionItem(Modifier.weight(1f), Icons.Default.History, "History", MaterialTheme.colorScheme.tertiary) { onAction(MoreAction.HISTORY) }
-            MoreActionItem(Modifier.weight(1f), Icons.Default.Restore, "Recover map", AppColors.Warn) { onAction(MoreAction.RECOVER_MAP) }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MoreActionItem(Modifier.weight(1f), Icons.Default.Block, "No-go zones", AppColors.AccentRed) { onAction(MoreAction.EDIT_ZONES) }
-            Spacer(Modifier.weight(1f))
-            Spacer(Modifier.weight(1f))
+            MoreActionItem(Modifier.weight(1f), Icons.Default.Map, "Maps", AppColors.Warn) { onAction(MoreAction.MAPS) }
         }
     }
 }
@@ -1393,28 +1520,79 @@ private fun RoomsSheetContent(
 
 
 @Composable
-private fun MapRecoverySheetContent(
+private fun MapsSheetContent(
     floorMaps: List<FloorMap>,
     currentFloorFlag: Int,
     loading: Boolean,
     busy: Boolean,
+    blockedReason: String?,
+    canAddMap: Boolean,
+    unsavedMap: Boolean,
+    multiLevel: Boolean?,
+    smartSwitching: Boolean?,
+    onMultiLevelChange: (Boolean) -> Unit,
+    onSmartSwitchingChange: (Boolean) -> Unit,
     onLoad: (Int) -> Unit,
+    onRename: (FloorMap) -> Unit,
+    onDelete: (FloorMap) -> Unit,
+    onStartMapping: () -> Unit,
+    onSaveNewMap: () -> Unit,
     onRecheck: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Recover saved map", style = MaterialTheme.typography.headlineSmall)
+        Text("Maps", style = MaterialTheme.typography.headlineSmall)
         Text(
-            "These are the maps still stored on your robot. Loading one re-activates it. " +
-                "If the list is empty, the map can't be restored from here — run a full clean to let the robot rebuild it.",
+            "The maps stored on your robot. Moved the dock somewhere the map doesn't cover? " +
+                "Delete the map, then let the robot map the home again.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (blockedReason != null) {
+            Text(blockedReason, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        }
+        val canManage = !busy && !loading && blockedReason == null
+
+        if (multiLevel != null) {
+            SettingSwitchRow(
+                title = "Multi-level maps",
+                subtitle = "Keep up to one map per floor. Turning this off keeps one map and deletes the rest.",
+                checked = multiLevel,
+                enabled = canManage,
+                onCheckedChange = onMultiLevelChange,
+            )
+            if (multiLevel && smartSwitching != null) {
+                SettingSwitchRow(
+                    title = "Recognise the floor automatically",
+                    subtitle = "Off: you pick the map before cleaning another floor.",
+                    checked = smartSwitching,
+                    enabled = canManage,
+                    onCheckedChange = onSmartSwitchingChange,
+                )
+            }
+            HorizontalDivider()
+        }
+
+        if (unsavedMap) {
+            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("New map not saved", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "The robot has built a new map. Stop the mapping run when it has covered the home, " +
+                            "then save it so it is kept and split into rooms.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Button(onClick = onSaveNewMap, enabled = canManage, modifier = Modifier.fillMaxWidth()) {
+                        Text("Save new map")
+                    }
+                }
+            }
+        }
 
         when {
-            loading -> {
+            loading && floorMaps.isEmpty() -> {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     Text("Checking robot for saved maps…", style = MaterialTheme.typography.bodyMedium)
@@ -1422,11 +1600,16 @@ private fun MapRecoverySheetContent(
             }
 
             floorMaps.isEmpty() -> {
+                Text("No saved maps on the robot.", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "No saved maps found on the robot.",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.error,
+                    "The robot leaves the dock and drives through the home to build a new map. Stop it once " +
+                        "it has covered everything, then save the map here. Open the doors to every room you want on it.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Button(onClick = onStartMapping, enabled = canManage && !unsavedMap, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Map, null); Spacer(Modifier.width(8.dp)); Text("Map the home")
+                }
                 OutlinedButton(onClick = onRecheck, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(8.dp)); Text("Re-check")
                 }
@@ -1437,7 +1620,7 @@ private fun MapRecoverySheetContent(
                     val selected = floor.mapFlag == currentFloorFlag
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -1446,11 +1629,29 @@ private fun MapRecoverySheetContent(
                                 Text("Currently loaded", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             }
                         }
-                        Button(onClick = { onLoad(floor.mapFlag) }, enabled = !busy && !selected) {
-                            Text(if (selected) "Loaded" else "Load")
+                        IconButton(onClick = { onRename(floor) }, enabled = canManage) {
+                            Icon(Icons.Default.Edit, contentDescription = "Rename ${floor.name}")
+                        }
+                        IconButton(onClick = { onDelete(floor) }, enabled = canManage) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete ${floor.name}",
+                                tint = if (canManage) MaterialTheme.colorScheme.error else LocalContentColor.current,
+                            )
+                        }
+                        // Loading only matters when there is another map to switch to.
+                        if (floorMaps.size > 1) {
+                            Button(onClick = { onLoad(floor.mapFlag) }, enabled = !busy && !selected) {
+                                Text(if (selected) "Loaded" else "Load")
+                            }
                         }
                     }
                     HorizontalDivider()
+                }
+                if (canAddMap) {
+                    OutlinedButton(onClick = onStartMapping, enabled = canManage && !unsavedMap, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Map, null); Spacer(Modifier.width(8.dp)); Text("Map another floor")
+                    }
                 }
                 TextButton(onClick = onRecheck, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(8.dp)); Text("Re-check")
@@ -1458,6 +1659,109 @@ private fun MapRecoverySheetContent(
             }
         }
     }
+}
+
+@Composable
+private fun RenameMapDialog(floor: FloorMap, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember(floor) { mutableStateOf(floor.name) }
+    val problem = mapNameBlocker(name.trim())
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename map") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                singleLine = true,
+                label = { Text("Map name") },
+                isError = problem != null && name.isNotEmpty(),
+                supportingText = { if (problem != null && name.isNotEmpty()) Text(problem) },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(name.trim()) }, enabled = problem == null && name.trim() != floor.name) {
+                Text("Rename")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun SettingSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
+}
+
+/** Turning multi-level maps off keeps one map; the robot deletes the others (captured). */
+@Composable
+private fun KeepMapDialog(
+    floorMaps: List<FloorMap>,
+    currentFloorFlag: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var keep by remember(floorMaps) {
+        mutableStateOf(floorMaps.find { it.mapFlag == currentFloorFlag }?.mapFlag ?: floorMaps.first().mapFlag)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Keep which map?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Single-level mode keeps one map. The robot deletes the others with their rooms " +
+                        "and zones. This can't be undone.",
+                )
+                floorMaps.forEach { floor ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = keep == floor.mapFlag, onClick = { keep = floor.mapFlag })
+                        Text(floor.name, style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(keep) },
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) { Text("Keep this map") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun DeleteMapDialog(floor: FloorMap, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text("Delete \"${floor.name}\"?") },
+        text = {
+            Text(
+                "The robot forgets this map and everything on it: rooms, room names, floor types, " +
+                    "no-go zones, walls, carpets and thresholds. This can't be undone.",
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) { Text("Delete map") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 
@@ -1496,7 +1800,6 @@ private fun stateLabel(state: Int?): String = when (state) {
     VacuumStateCodes.GOING_TO_WASH_MOP -> "Going to wash mop"
     VacuumStateCodes.DRYING_MOP -> "Drying mop"
     VacuumStateCodes.RETURNING_TO_DOCK_FOR_DRYING -> "Returning to dock"
-    VacuumStateCodes.RETURNING_TO_WASH_MOP -> "Returning to wash mop"
     else -> "State $state"
 }
 
@@ -1538,7 +1841,7 @@ private fun PulsingDot(color: Color, modifier: Modifier = Modifier) {
 @Composable
 private fun stateTint(state: Int?): Color = when (state) {
     VacuumStateCodes.WASHING_MOP, VacuumStateCodes.GOING_TO_WASH_MOP,
-    VacuumStateCodes.RETURNING_TO_WASH_MOP, VacuumStateCodes.DRYING_MOP,
+    VacuumStateCodes.DRYING_MOP,
     VacuumStateCodes.RETURNING_TO_DOCK_FOR_DRYING -> MaterialTheme.colorScheme.tertiary
     VacuumStateCodes.ERROR, VacuumStateCodes.CHARGING_ERROR -> MaterialTheme.colorScheme.error
     VacuumStateCodes.CLEANING, VacuumStateCodes.SEGMENT_CLEANING,
@@ -1546,6 +1849,6 @@ private fun stateTint(state: Int?): Color = when (state) {
     VacuumStateCodes.STARTING, VacuumStateCodes.MANUAL_MODE,
     VacuumStateCodes.REMOTE_CONTROL_ACTIVE, VacuumStateCodes.PAUSED,
     VacuumStateCodes.RETURNING_HOME, VacuumStateCodes.DOCKING,
-    VacuumStateCodes.GOING_TO_TARGET -> MaterialTheme.colorScheme.primary
+    VacuumStateCodes.GOING_TO_TARGET, VacuumStateCodes.MAPPING -> MaterialTheme.colorScheme.primary
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }

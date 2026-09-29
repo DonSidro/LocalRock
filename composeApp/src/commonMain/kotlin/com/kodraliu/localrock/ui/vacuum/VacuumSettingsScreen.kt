@@ -362,14 +362,19 @@ private fun SettingsRootScreen(
                     value = firmwareVersion ?: "Unknown",
                 )
             }
-            item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
-            item {
-                FirmwareUpdateRow(state = firmwareUpdate, onCheck = onCheckUpdate)
+            // The update check is hidden for now; FirmwareUpdateRow and the view model stay in place.
+            if (SHOW_FIRMWARE_UPDATE_CHECK) {
+                item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+                item {
+                    FirmwareUpdateRow(state = firmwareUpdate, onCheck = onCheckUpdate)
+                }
             }
         }
     }
 }
 
+
+private const val SHOW_FIRMWARE_UPDATE_CHECK = false
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

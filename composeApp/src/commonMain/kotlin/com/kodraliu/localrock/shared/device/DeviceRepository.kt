@@ -6,6 +6,7 @@ import com.kodraliu.localrock.shared.model.Device
 import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
 import com.kodraliu.localrock.shared.model.Product
+import com.kodraliu.localrock.shared.model.Room
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,6 +48,13 @@ class DeviceRepository(
         _devicesFlow.value = home.devices
         val productsByDeviceId = home.products.associateBy { it.id }
         _products.value = home.devices.associate { it.duid to productsByDeviceId[it.productId]!! }
+    }
+
+    /** Create (or look up by name) a cloud room in the current home. */
+    suspend fun createRoom(name: String): Room {
+        if (isDemo()) error("Rooms can't be renamed in demo mode")
+        val homeId = _home.value?.id ?: error("Home not loaded")
+        return deviceApi.createRoom(homeId, name)
     }
 
     suspend fun checkFirmwareUpdate(duid: String): FirmwareUpdateInfo? {

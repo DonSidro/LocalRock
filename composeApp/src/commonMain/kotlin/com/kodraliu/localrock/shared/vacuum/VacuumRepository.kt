@@ -5,9 +5,12 @@ import com.kodraliu.localrock.shared.mqtt.MqttClient
 import com.kodraliu.localrock.shared.mqtt.MqttTopics
 import com.kodraliu.localrock.shared.protocol.V1Response
 import com.kodraliu.localrock.shared.protocol.saveDebugBlob
+import com.kodraliu.localrock.shared.vacuum.map.FloorMaterial
+import com.kodraliu.localrock.shared.vacuum.map.MapFormat
 import com.kodraliu.localrock.shared.vacuum.map.MapZone
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
+import com.kodraliu.localrock.shared.vacuum.map.VirtualWall
 import com.kodraliu.localrock.shared.vacuum.map.parseB01Map
 import com.kodraliu.localrock.shared.vacuum.map.parseLegacyMap
 import kotlinx.coroutines.CoroutineScope
@@ -17,7 +20,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -75,6 +82,13 @@ class VacuumRepository(
     private var homeRoomNames: Map<Long, String> = emptyMap()   // roomId -> name
     private var segmentToRoomId: Map<Int, Long> = emptyMap()     // map segment id -> roomId
 
+    /**
+     * The robot's segment table exactly as `get_room_mapping` returned it: segment, room id (kept
+     * as the raw string) and tag. `name_segment` must be sent the whole table, so entries this app
+     * does not change are written back unchanged.
+     */
+    private var rawSegmentTable: List<SegmentEntry> = emptyList()
+
     private val _consumableStatus = MutableStateFlow<ConsumableStatus?>(null)
     val consumableStatus: StateFlow<ConsumableStatus?> = _consumableStatus
 
@@ -102,13 +116,33 @@ class VacuumRepository(
     private val _floorMaps = MutableStateFlow<List<FloorMap>>(emptyList())
     val floorMaps: StateFlow<List<FloorMap>> = _floorMaps
 
+    /**
+     * True once [floorMaps] holds a real answer from the robot. An empty list alone can't tell
+     * "not loaded yet" from "no saved map", and map edits depend on the difference.
+     */
+    private val _floorMapsLoaded = MutableStateFlow(false)
+    val floorMapsLoaded: StateFlow<Boolean> = _floorMapsLoaded
+
+    /** Largest number of saved maps the robot allows (max_multi_map), once the list is read. */
+    private val _maxFloorMaps = MutableStateFlow<Int?>(null)
+    val maxFloorMaps: StateFlow<Int?> = _maxFloorMaps
+
+    /** Last map this app loaded; only used until the robot's status names the loaded map. */
     private val _currentFloorFlag = MutableStateFlow(0)
-    val currentFloorFlag: StateFlow<Int> = _currentFloorFlag
 
     private val _mopMode = MutableStateFlow<Int?>(null)
     val mopMode: StateFlow<Int?> = _mopMode
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** The loaded map's mapFlag, from the robot's map_status when it reports one. */
+    val currentFloorFlag: StateFlow<Int> = combine(_status, _currentFloorFlag) { status, loadedHere ->
+        status.loadedMapFlag?.takeIf { it != UNSAVED_MAP_FLAG } ?: loadedHere
+    }.stateIn(scope, SharingStarted.Eagerly, 0)
+
+    /** True while the robot holds a newly built map that has not been saved yet. */
+    val unsavedMapPresent: StateFlow<Boolean> = _status.map { it.loadedMapFlag == UNSAVED_MAP_FLAG }
+        .stateIn(scope, SharingStarted.Eagerly, false)
     private var pollJob: Job? = null
     private var dpsJob: Job? = null
     private var mapPollJob: Job? = null
@@ -202,6 +236,14 @@ class VacuumRepository(
         val resp = session.appRooms()
         val result = resp.result
         if (result is JsonArray) {
+            rawSegmentTable = result.mapNotNull { entry ->
+                if (entry is JsonArray && entry.size >= 3) {
+                    val segment = entry[0].jsonPrimitive.intOrNull ?: return@mapNotNull null
+                    val tag = entry[2].jsonPrimitive.intOrNull ?: return@mapNotNull null
+                    SegmentEntry(segment, entry[1].jsonPrimitive.content, tag)
+                } else null
+            }
+            // Names resolve from the first two columns, which every firmware returns.
             val mapping = result.mapNotNull { entry ->
                 if (entry is JsonArray && entry.size >= 2) {
                     val segment = entry[0].jsonPrimitive.intOrNull ?: return@mapNotNull null
@@ -331,16 +373,288 @@ class VacuumRepository(
 
     suspend fun cleanZones(zones: List<ZoneRect>) { session.appZonedClean(zones) }
 
+    private val mapEditMutex = Mutex()
+
+    /** Why the map can't be edited right now, or null when it can. */
+    fun editBlockedReason(map: ParsedMap? = _parsedMap.value, state: Int? = _status.value.state): String? = when {
+        demo -> "Map editing is not available in demo mode"
+        state in ACTIVE_STATES -> "The robot is busy. Dock it or let it finish before editing the map."
+        map == null -> "The map has not loaded yet"
+        map.format != MapFormat.LEGACY -> "Map editing is not supported for this robot's map format yet"
+        else -> null
+    }
+
+    /** Current map, checked to be one this app can edit safely. */
+    private fun editableMap(): ParsedMap {
+        editBlockedReason()?.let { throw MapEditException(it) }
+        return _parsedMap.value ?: throw MapEditException("The map has not loaded yet")
+    }
+
     /**
-     * Replace the device's persistent no-go / no-mop zones with exactly [noGoZones] + [noMopZones]
-     * (the full authoritative set), then re-fetch the map so the UI reflects what the robot actually
-     * stored. Optimistically updates [parsedMap] first so the change shows immediately.
+     * Fetch the map until [check] passes or the attempts run out. The robot rewrites its map after
+     * an edit, so the first map after the command can still be the old one.
      */
-    suspend fun saveZones(noGoZones: List<MapZone>, noMopZones: List<MapZone>) {
-        if (demo) return
-        _parsedMap.update { it?.copy(noGoZones = noGoZones, noMopZones = noMopZones) }
-        session.saveMap(noGoZones, noMopZones)
-        fetchMap()
+    private suspend fun awaitMap(check: (ParsedMap) -> Boolean): ParsedMap? {
+        repeat(READBACK_ATTEMPTS) { attempt ->
+            if (attempt > 0) delay(READBACK_DELAY_MS)
+            runCatching { fetchMap() }
+            val map = _parsedMap.value
+            if (map != null && check(map)) return map
+        }
+        return null
+    }
+
+    /**
+     * Write the edited no-go zones, walls, carpets and thresholds. Each category is its own
+     * full-set command (save_map, set_carpet_area, app_set_smart_door_sill), sent only when that
+     * category changed: whatever a command leaves out is deleted. save_map is refused when the map
+     * holds restrictions this app can't write back ([restrictionSaveBlocker]). Succeeds only when a
+     * fresh map shows every category as sent.
+     */
+    suspend fun saveMapEdits(
+        noGoZones: List<MapZone>,
+        walls: List<VirtualWall>,
+        carpets: List<MapZone>,
+        thresholds: List<MapZone>,
+    ): Unit = mapEditMutex.withLock {
+        val map = editableMap()
+        runCatching { fetchFloorMaps() }
+        if (!_floorMapsLoaded.value) {
+            throw MapEditException("Couldn't read the robot's saved maps, so nothing was saved. Try again.")
+        }
+        val mapIndex = saveMapIndex(_floorMaps.value)
+        mapIndexBlocker(mapIndex)?.let { throw MapEditException(it) }
+        val index = mapIndex!!
+        val restrictionsChanged = !restrictionsMatch(map, noGoZones, map.noMopZones, walls)
+        val carpetsChanged = !sameZones(carpets, map.carpetAreas)
+        val thresholdsChanged = !sameZones(thresholds, map.thresholds)
+        if (!restrictionsChanged && !carpetsChanged && !thresholdsChanged) return@withLock
+        if (restrictionsChanged) restrictionSaveBlocker(map, mapIndex)?.let { throw MapEditException(it) }
+        session.inEditSession {
+            if (restrictionsChanged) session.saveMap(noGoZones, walls, index)
+            if (carpetsChanged) session.setCarpetAreas(carpets, index, map.carpetFlagsPresent)
+            if (thresholdsChanged) session.setThresholds(thresholds, index)
+        }
+        awaitMap { m ->
+            restrictionsMatch(m, noGoZones, map.noMopZones, walls) &&
+                sameZones(carpets, m.carpetAreas) &&
+                m.carpetAreas.count { it.isRoundCarpet } == carpets.count { it.isRoundCarpet } &&
+                sameZones(thresholds, m.thresholds)
+        } ?: throw MapEditException(NOT_CONFIRMED)
+    }
+
+    /**
+     * Split a room along the line A-B (robot mm). The robot is picky about which end comes first
+     * (see [splitLineAttempts]), so a refused line is tried once more reversed. A refused split
+     * changes nothing. The map must gain a room.
+     */
+    suspend fun splitRoom(segment: Int, xA: Int, yA: Int, xB: Int, yB: Int): Unit = mapEditMutex.withLock {
+        val map = editableMap()
+        val before = map.rooms.map { it.id }.toSet()
+        if (segment !in before) throw MapEditException("That room is not on the current map")
+        val attempts = splitLineAttempts(xA to yA, xB to yB)
+        // The official app sent split_segment without start/end_edit_map.
+        for ((i, line) in attempts.withIndex()) {
+            val (a, b) = line
+            try {
+                session.splitSegment(segment, a.first, a.second, b.first, b.second)
+                break
+            } catch (e: RobotCommandException) {
+                if (e.code() != SPLIT_FAILED_CODE || i == attempts.lastIndex) throw e
+                // After refusing a split the robot sends a second, late error for the same
+                // request (~10 s later in the capture). Only try again once that has passed.
+                delay(SPLIT_RETRY_DELAY_MS)
+            }
+        }
+        awaitMap { m -> (m.rooms.map { it.id }.toSet() - before).isNotEmpty() }
+            ?: throw MapEditException(NOT_CONFIRMED)
+        runCatching { rooms() }
+    }
+
+    /** Merge two neighbouring rooms. The map must lose one of the two ids. */
+    suspend fun mergeRooms(segmentA: Int, segmentB: Int): Unit = mapEditMutex.withLock {
+        val map = editableMap()
+        val before = map.rooms.map { it.id }.toSet()
+        if (segmentA == segmentB || segmentA !in before || segmentB !in before) {
+            throw MapEditException("Pick two different rooms on the current map")
+        }
+        // Captured without start/end_edit_map, like split.
+        session.mergeSegment(segmentA, segmentB)
+        awaitMap { m -> m.rooms.map { it.id }.toSet().let { segmentA !in it || segmentB !in it } }
+            ?: throw MapEditException(NOT_CONFIRMED)
+        runCatching { rooms() }
+    }
+
+    /**
+     * Set a room's floor type. Returns false when the command succeeded but this robot's map does
+     * not report floor types, so the change could not be confirmed.
+     */
+    suspend fun setFloorMaterial(segment: Int, material: FloorMaterial, direction: Int?): Boolean =
+        mapEditMutex.withLock {
+            val map = editableMap()
+            if (map.rooms.none { it.id == segment }) throw MapEditException("That room is not on the current map")
+            if (direction != null && material != FloorMaterial.WOOD) {
+                throw MapEditException("Only wood floors have a direction")
+            }
+            session.inEditSession { session.setSegmentGroundMaterial(segment, material.id, direction) }
+            if (map.segmentMaterials.isEmpty()) {
+                runCatching { fetchMap() }
+                return@withLock false
+            }
+            awaitMap { m ->
+                m.segmentMaterials[segment] == material.id &&
+                    (direction == null || m.segmentMaterialDirections[segment] == direction)
+            } ?: throw MapEditException(NOT_CONFIRMED)
+            true
+        }
+
+    /**
+     * Point [segment] at cloud room [roomId] with name_segment, sending the robot's full table with
+     * only this entry changed. The robot may renumber segments in its answer; the check follows
+     * that. Confirmed by reading the table back.
+     */
+    suspend fun assignRoom(segment: Int, roomId: Long): Unit = mapEditMutex.withLock {
+        val map = editableMap()
+        if (map.rooms.none { it.id == segment }) throw MapEditException("That room is not on the current map")
+        rooms()
+        val table = rawSegmentTable
+        if (table.isEmpty()) throw MapEditException("The robot did not return its room table. Nothing was changed.")
+        val existing = table.find { it.segment == segment }
+        val entry = SegmentEntry(segment, roomId.toString(), existing?.tagId ?: NEW_SEGMENT_TAG)
+        val resp = session.nameSegment(table.filter { it.segment != segment } + entry)
+        val finalSegment = parseSegmentRenumbering(resp.result)[segment] ?: segment
+        rooms()
+        if (rawSegmentTable.find { it.segment == finalSegment }?.roomId != roomId.toString()) {
+            throw MapEditException(NOT_CONFIRMED)
+        }
+    }
+
+    /** Why the robot's saved maps can't be renamed, deleted or rebuilt right now, or null. */
+    fun mapManageBlockedReason(state: Int? = _status.value.state): String? = when {
+        demo -> "Managing maps is not available in demo mode"
+        state in ACTIVE_STATES -> "The robot is busy. Dock it or let it finish first."
+        else -> null
+    }
+
+    /** A fresh map list that holds [mapFlag], or an error saying why not. */
+    private suspend fun requireFloorMap(mapFlag: Int): FloorMap {
+        mapManageBlockedReason()?.let { throw MapEditException(it) }
+        runCatching { fetchFloorMaps() }
+        if (!_floorMapsLoaded.value) throw MapEditException("Couldn't read the robot's saved maps. Nothing was changed.")
+        return _floorMaps.value.find { it.mapFlag == mapFlag }
+            ?: throw MapEditException("That map is no longer on the robot")
+    }
+
+    /** Rename a saved map. Confirmed by reading the map list back. */
+    suspend fun renameFloorMap(mapFlag: Int, name: String): Unit = mapEditMutex.withLock {
+        val clean = name.trim()
+        mapNameBlocker(clean)?.let { throw MapEditException(it) }
+        requireFloorMap(mapFlag)
+        session.nameMultiMap(mapFlag, clean)
+        fetchFloorMaps()
+        val saved = _floorMaps.value.find { it.mapFlag == mapFlag }?.name
+        if (saved != clean) throw MapEditException(NOT_CONFIRMED)
+    }
+
+    /**
+     * Delete a saved map. The robot forgets its rooms and everything drawn on it; room names stay
+     * on the server but no longer point anywhere. Confirmed by the map leaving the list.
+     */
+    suspend fun deleteFloorMap(mapFlag: Int): Unit = mapEditMutex.withLock {
+        requireFloorMap(mapFlag)
+        session.deleteMap(mapFlag)
+        fetchFloorMaps()
+        if (_floorMaps.value.any { it.mapFlag == mapFlag }) throw MapEditException(NOT_CONFIRMED)
+        _parsedMap.value = null
+        _mapBytes.value = null
+        _rooms.value = emptyList()
+        rawSegmentTable = emptyList()
+    }
+
+    /**
+     * Send the robot out to map the home from its dock, while the robot has room for another map
+     * (captured with none left on a one-map robot, and with 2 of 4). The new map is kept only
+     * once [saveNewMap] stores it.
+     */
+    suspend fun startMapping(): Unit = mapEditMutex.withLock {
+        mapManageBlockedReason()?.let { throw MapEditException(it) }
+        runCatching { fetchFloorMaps() }
+        if (!_floorMapsLoaded.value) throw MapEditException("Couldn't read the robot's saved maps. Nothing was started.")
+        val max = _maxFloorMaps.value ?: 1
+        if (_floorMaps.value.size >= max) {
+            throw MapEditException(
+                if (max <= 1) "The robot still has a saved map. Delete it first to map the home again."
+                else "The robot already holds $max maps, its limit. Delete one first."
+            )
+        }
+        session.startBuildMap()
+    }
+
+    /**
+     * Turn multi-level maps on or off. Turning them off keeps only [keepMapFlag] and the robot
+     * deletes every other saved map (captured). Confirmed by status and the map list.
+     */
+    suspend fun setMultiLevel(enabled: Boolean, keepMapFlag: Int?): Unit = mapEditMutex.withLock {
+        mapManageBlockedReason()?.let { throw MapEditException(it) }
+        runCatching { refreshStatus() }
+        val lab = _status.value.labStatus
+            ?: throw MapEditException("The robot didn't report its map settings. Nothing was changed.")
+        if (enabled) {
+            session.setLabStatus(lab or LAB_STATUS_MULTI_LEVEL, reserveMap = null)
+            // The official app followed this with manual map selection.
+            session.setSwitchMapMode(SWITCH_MAP_MODE_MANUAL)
+        } else {
+            runCatching { fetchFloorMaps() }
+            if (!_floorMapsLoaded.value) throw MapEditException("Couldn't read the robot's saved maps. Nothing was changed.")
+            val keep = keepMapFlag ?: _floorMaps.value.singleOrNull()?.mapFlag
+                ?: throw MapEditException("Pick the map to keep")
+            if (_floorMaps.value.none { it.mapFlag == keep }) throw MapEditException("That map is no longer on the robot")
+            session.setLabStatus(lab and LAB_STATUS_MULTI_LEVEL.inv(), reserveMap = keep)
+        }
+        if (!awaitStatus { it.multiLevelEnabled == enabled }) throw MapEditException(NOT_CONFIRMED)
+        runCatching { fetchFloorMaps() }
+        if (!enabled) {
+            rawSegmentTable = emptyList()
+            runCatching { fetchMap() }
+            runCatching { rooms() }
+        }
+    }
+
+    /** Recognise the floor automatically, or pick the map by hand. Confirmed by status. */
+    suspend fun setSmartMapSwitching(smart: Boolean): Unit = mapEditMutex.withLock {
+        mapManageBlockedReason()?.let { throw MapEditException(it) }
+        val mode = if (smart) SWITCH_MAP_MODE_SMART else SWITCH_MAP_MODE_MANUAL
+        session.setSwitchMapMode(mode)
+        if (!awaitStatus { it.switchMapMode == mode }) throw MapEditException(NOT_CONFIRMED)
+    }
+
+    /** Status caught up 1-2 s after the robot's "ok" in the capture, so poll briefly. */
+    private suspend fun awaitStatus(check: (VacuumStatus) -> Boolean): Boolean {
+        repeat(STATUS_READBACK_ATTEMPTS) { attempt ->
+            if (attempt > 0) delay(STATUS_READBACK_DELAY_MS)
+            runCatching { refreshStatus() }
+            if (check(_status.value)) return true
+        }
+        return false
+    }
+
+    /**
+     * Save the map the robot just built as a new saved map, as the official app does after a
+     * mapping run is stopped. Confirmed by a new entry in the map list.
+     */
+    suspend fun saveNewMap(): Unit = mapEditMutex.withLock {
+        mapManageBlockedReason()?.let { throw MapEditException(it) }
+        if (!unsavedMapPresent.value) throw MapEditException("There is no new map to save")
+        runCatching { fetchFloorMaps() }
+        val before = _floorMaps.value.map { it.mapFlag }.toSet()
+        session.saveNewMap()
+        fetchFloorMaps()
+        val added = _floorMaps.value.map { it.mapFlag }.toSet() - before
+        if (added.isEmpty()) throw MapEditException(NOT_CONFIRMED)
+        runCatching { refreshStatus() }
+        rawSegmentTable = emptyList()
+        runCatching { fetchMap() }
+        runCatching { rooms() }
     }
 
     suspend fun fetchTimers() {
@@ -502,6 +816,7 @@ class VacuumRepository(
     }
 
 
+    /** Loads the robot's saved-map list into [floorMaps]. */
     suspend fun fetchFloorMaps() {
         val resp = session.getMultiMapsList()
         val obj = resp.result?.let { r ->
@@ -512,17 +827,23 @@ class VacuumRepository(
             }
         } ?: return
         val mapInfoArr = obj["map_info"]?.jsonArray ?: return
+        _maxFloorMaps.value = obj["max_multi_map"]?.jsonPrimitive?.intOrNull
         _floorMaps.value = mapInfoArr.mapNotNull { elem ->
             val o = runCatching { elem.jsonObject }.getOrNull() ?: return@mapNotNull null
-            val name = o["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val flag = o["mapFlag"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            // An unnamed map must still be listed: saving zones relies on the count being right.
+            val name = o["name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: "Map ${flag + 1}"
             FloorMap(name, flag)
         }
+        _floorMapsLoaded.value = true
     }
 
     suspend fun switchFloor(mapFlag: Int) {
+        mapManageBlockedReason()?.let { throw MapEditException(it) }
         session.loadMultiMap(mapFlag)
         _currentFloorFlag.value = mapFlag
+        runCatching { refreshStatus() }
+        rawSegmentTable = emptyList()
         _parsedMap.value = null
         _mapBytes.value = null
         runCatching { fetchMap() }
@@ -591,6 +912,20 @@ class VacuumRepository(
         const val MAP_IDLE_POLL_MS = 60_000L
         const val MAX_HISTORY_RECORDS = 20
 
+        const val READBACK_ATTEMPTS = 4
+        const val READBACK_DELAY_MS = 2_000L
+        const val SPLIT_RETRY_DELAY_MS = 12_000L
+        /**
+         * Tag for a segment that gets its first table entry. In the capture the official app gave
+         * the previously unlisted segment 24 tag 12 when the user named it.
+         */
+        const val NEW_SEGMENT_TAG = 12
+        const val STATUS_READBACK_ATTEMPTS = 6
+        const val STATUS_READBACK_DELAY_MS = 1_000L
+
+        const val NOT_CONFIRMED =
+            "The robot accepted the change, but the map does not show it yet. Refresh the map in a moment to check."
+
         const val STALE_LINK_FAILURE_THRESHOLD = 3
 
         /** Silence that, together with failing polls, means the link really is gone. */
@@ -606,6 +941,7 @@ class VacuumRepository(
             VacuumStateCodes.GOING_TO_TARGET,
             VacuumStateCodes.ZONED_CLEANING,
             VacuumStateCodes.SEGMENT_CLEANING,
+            VacuumStateCodes.MAPPING,
         )
     }
 }
@@ -641,6 +977,9 @@ internal fun VacuumStatus.merge(fresh: VacuumStatus): VacuumStatus = fresh.copy(
     dockErrorStatus = fresh.dockErrorStatus ?: dockErrorStatus,
     dryStatus = fresh.dryStatus ?: dryStatus,
     remainingDryTimeSec = fresh.remainingDryTimeSec ?: remainingDryTimeSec,
+    mapStatus = fresh.mapStatus ?: mapStatus,
+    labStatus = fresh.labStatus ?: labStatus,
+    switchMapMode = fresh.switchMapMode ?: switchMapMode,
 )
 
 
@@ -652,7 +991,6 @@ internal fun VacuumStatus.applyDpsPush(push: Map<Int, JsonElement>): VacuumStatu
     val waterBoxMode = push[124]?.jsonPrimitive?.intOrNull ?: waterBoxCustomMode
     val errorCode = push[120]?.jsonPrimitive?.intOrNull ?: this.errorCode
     val chargeStatus = push[133]?.jsonPrimitive?.intOrNull ?: this.chargeStatus
-    val cleanArea = push[128]?.jsonPrimitive?.longOrNull ?: this.cleanArea
     val dryStatus = push[134]?.jsonPrimitive?.intOrNull ?: this.dryStatus
     return copy(
         state = state,
@@ -661,7 +999,6 @@ internal fun VacuumStatus.applyDpsPush(push: Map<Int, JsonElement>): VacuumStatu
         waterBoxCustomMode = waterBoxMode,
         errorCode = errorCode,
         chargeStatus = chargeStatus,
-        cleanArea = cleanArea,
         dryStatus = dryStatus,
     )
 }

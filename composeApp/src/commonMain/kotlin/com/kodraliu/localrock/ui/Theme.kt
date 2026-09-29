@@ -10,6 +10,14 @@ import androidx.compose.ui.graphics.Color
 @Composable
 expect fun platformDynamicColorScheme(useDark: Boolean): ColorScheme?
 
+/**
+ * Makes the status and navigation bar icons readable over the app's own theme. The app draws
+ * edge to edge, so the bars are transparent over its content; their icon colour must follow
+ * the theme the app chose (Light/Dark/System setting), not the phone's dark mode.
+ */
+@Composable
+expect fun SystemBarsAppearance(darkTheme: Boolean)
+
 // Brand palette generated from a teal seed (#006A6A); neutrals stay at Material defaults.
 
 val VacLightColorScheme = lightColorScheme(

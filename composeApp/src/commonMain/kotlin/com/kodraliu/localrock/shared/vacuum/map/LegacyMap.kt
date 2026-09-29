@@ -19,6 +19,13 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     var path: List<ParsedMapPoint> = emptyList()
     var noGoZones: List<MapZone> = emptyList()
     var noMopZones: List<MapZone> = emptyList()
+    var virtualWalls: List<VirtualWall> = emptyList()
+    var carpetAreas: List<MapZone> = emptyList()
+    var flaggedCarpets: List<MapZone>? = null
+    var thresholds: List<MapZone> = emptyList()
+    var segmentMaterials: Map<Int, Int> = emptyMap()
+    var segmentMaterialDirections: Map<Int, Int> = emptyMap()
+    val unmodeledRestrictionBlocks = mutableSetOf<Int>()
 
     var off = headerLen
     while (off + 8 <= bytes.size) {
@@ -81,11 +88,46 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
                     path = pts
                 }
             }
-            BLOCK_FORBIDDEN_ZONES -> noGoZones = parseQuadZones(bytes, off, ZoneKind.NO_GO)
-            BLOCK_FORBIDDEN_MOP_ZONES -> noMopZones = parseQuadZones(bytes, off, ZoneKind.NO_MOP)
+            BLOCK_FORBIDDEN_ZONES ->
+                noGoZones = parseQuadZones(bytes, off, blockHeaderLen, blockDataLen, ZoneKind.NO_GO)
+            BLOCK_FORBIDDEN_MOP_ZONES ->
+                noMopZones = parseQuadZones(bytes, off, blockHeaderLen, blockDataLen, ZoneKind.NO_MOP)
+            BLOCK_VIRTUAL_WALLS -> virtualWalls = parseWalls(bytes, off, blockHeaderLen, blockDataLen)
+            BLOCK_CARPET_AREAS ->
+                carpetAreas = parseQuadZones(bytes, off, blockHeaderLen, blockDataLen, ZoneKind.CARPET)
+            BLOCK_CARPETS_WITH_FLAGS ->
+                flaggedCarpets = parseFlaggedCarpets(bytes, off, blockHeaderLen, blockDataLen)
+            BLOCK_THRESHOLDS ->
+                thresholds = parseQuadZones(bytes, off, blockHeaderLen, blockDataLen, ZoneKind.THRESHOLD)
+            BLOCK_SEGMENT_MATERIALS -> {
+                // One byte per segment id, indexed from 0 (on the S8 Pro Ultra, segment 21 read 4
+                // and 24 read 3 right after the official app set them to tile and wood).
+                val body = off + blockHeaderLen
+                segmentMaterials = buildMap {
+                    for (i in 0 until blockDataLen) put(i, bytes[body + i].toInt() and 0xff)
+                }
+            }
+            BLOCK_SEGMENT_MATERIAL_DIRECTIONS -> {
+                // Triplets of u8 segment id + u16 direction in degrees.
+                val body = off + blockHeaderLen
+                segmentMaterialDirections = buildMap {
+                    var p = 0
+                    while (p + 3 <= blockDataLen) {
+                        put(bytes[body + p].toInt() and 0xff, u16(bytes, body + p + 1))
+                        p += 3
+                    }
+                }
+            }
+            in UNMODELED_RESTRICTION_BLOCKS ->
+                if (entryCount(bytes, off, blockHeaderLen, blockDataLen) > 0) unmodeledRestrictionBlocks += type
         }
         off += blockHeaderLen + blockDataLen
     }
+
+    // Block 39 repeats block 22's corners and adds each carpet's flags. Use it only when the two
+    // agree on the count, so a map where they differ can never lose carpets.
+    val carpetsFromFlags = flaggedCarpets?.takeIf { it.size == carpetAreas.size }
+    if (carpetsFromFlags != null) carpetAreas = carpetsFromFlags
 
     val pixels = imagePixels ?: throw MapParseException("Legacy map has no IMAGE block")
     val grid = ByteArray(pixels.size)
@@ -133,34 +175,69 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         pathMm = path,
         noGoZones = noGoZones,
         noMopZones = noMopZones,
+        virtualWalls = virtualWalls,
+        segmentMaterials = segmentMaterials,
+        segmentMaterialDirections = segmentMaterialDirections,
+        unmodeledRestrictionBlocks = unmodeledRestrictionBlocks.toSet(),
+        format = MapFormat.LEGACY,
+        carpetAreas = carpetAreas,
+        carpetFlagsPresent = carpetsFromFlags != null,
+        thresholds = thresholds,
         originalGrid = pixels,
     )
 }
 
 /**
- * Parse a FORBIDDEN_ZONES (9) or FORBIDDEN_MOP_ZONES (12) block. Layout (little-endian,
- * per Valetudo's RRMapParser): a `u16` count immediately after the 8-byte common block header
- * (at `off+8`), then that many quadrilaterals of eight `u16` coordinates (four corners) starting
- * at `off+12`. Coordinates are in robot millimetres, matching the charger/robot/path blocks.
+ * Number of entries a restriction block declares. Those blocks use a 12-byte header whose last
+ * field (u16 at `off+8`) is the entry count; python-roborock's map parser reads it
+ * there. A block with a shorter header has no count field, so any payload counts as present.
  */
-private fun parseQuadZones(bytes: ByteArray, off: Int, kind: ZoneKind): List<MapZone> {
-    if (off + 12 > bytes.size) return emptyList()
-    val count = u16(bytes, off + 8)
-    if (count <= 0) return emptyList()
-    val zones = ArrayList<MapZone>(count)
-    var p = off + 12
-    repeat(count) {
-        if (p + 16 > bytes.size) return zones
-        zones += MapZone(
+private fun entryCount(bytes: ByteArray, off: Int, headerLen: Int, dataLen: Int): Int =
+    if (headerLen >= 12) u16(bytes, off + 8) else if (dataLen > 0) 1 else 0
+
+/**
+ * Parse a FORBIDDEN_ZONES (9) or FORBIDDEN_MOP_ZONES (12) block: [entryCount] quadrilaterals of
+ * eight `u16` values (four corners, robot millimetres) starting right after the block header.
+ * Corners are kept in the robot's order so an unedited zone is written back unchanged.
+ */
+private fun parseQuadZones(bytes: ByteArray, off: Int, headerLen: Int, dataLen: Int, kind: ZoneKind): List<MapZone> {
+    val count = minOf(entryCount(bytes, off, headerLen, dataLen), dataLen / 16)
+    val body = off + headerLen
+    return List(count) { i ->
+        val p = body + i * 16
+        MapZone(
             x0 = u16(bytes, p), y0 = u16(bytes, p + 2),
             x1 = u16(bytes, p + 4), y1 = u16(bytes, p + 6),
             x2 = u16(bytes, p + 8), y2 = u16(bytes, p + 10),
             x3 = u16(bytes, p + 12), y3 = u16(bytes, p + 14),
             kind = kind,
         )
-        p += 16
     }
-    return zones
+}
+
+/**
+ * Parse the carpet block with flags (39): [entryCount] quadrilaterals like block 22, followed by
+ * one `u32` flags value per carpet in the same order.
+ */
+private fun parseFlaggedCarpets(bytes: ByteArray, off: Int, headerLen: Int, dataLen: Int): List<MapZone>? {
+    val count = entryCount(bytes, off, headerLen, dataLen)
+    if (count * 20 > dataLen) return null
+    val quads = parseQuadZones(bytes, off, headerLen, dataLen, ZoneKind.CARPET)
+    val flagsStart = off + headerLen + count * 16
+    return quads.mapIndexed { i, z -> z.copy(flags = u32(bytes, flagsStart + i * 4).toLong() and 0xFFFFFFFFL) }
+}
+
+/** Parse a VIRTUAL_WALLS (10) block: [entryCount] lines of four `u16` values (robot mm). */
+private fun parseWalls(bytes: ByteArray, off: Int, headerLen: Int, dataLen: Int): List<VirtualWall> {
+    val count = minOf(entryCount(bytes, off, headerLen, dataLen), dataLen / 8)
+    val body = off + headerLen
+    return List(count) { i ->
+        val p = body + i * 8
+        VirtualWall(
+            x0 = u16(bytes, p), y0 = u16(bytes, p + 2),
+            x1 = u16(bytes, p + 4), y1 = u16(bytes, p + 6),
+        )
+    }
 }
 
 private const val MAGIC_0 = 0x72.toByte()
@@ -171,7 +248,26 @@ private const val BLOCK_IMAGE = 2
 private const val BLOCK_PATH = 3
 private const val BLOCK_ROBOT_POSITION = 8
 private const val BLOCK_FORBIDDEN_ZONES = 9        // persistent no-go zones
+private const val BLOCK_VIRTUAL_WALLS = 10
 private const val BLOCK_FORBIDDEN_MOP_ZONES = 12   // persistent no-mop zones
+private const val BLOCK_SEGMENT_MATERIALS = 24
+
+// Identified on an S8 Pro Ultra by adding one of each with the official app and finding the exact
+// captured corners in these blocks (2026-09-28).
+private const val BLOCK_CARPET_AREAS = 22   // set_carpet_area
+private const val BLOCK_THRESHOLDS = 28     // app_set_smart_door_sill
+private const val BLOCK_SEGMENT_MATERIAL_DIRECTIONS = 32
+
+// Found 2026-09-29 by saving a round and a rectangular carpet with the official app: block 22 got
+// the corners, block 39 the same corners plus one u32 of flags per carpet.
+private const val BLOCK_CARPETS_WITH_FLAGS = 39
+
+/**
+ * Restriction blocks that are not parsed: 19 no-carpet areas, 23 no-vacuum areas, 30 cliff areas,
+ * 31 smart door-sill areas (block ids known from community Roborock map parsers). They are
+ * only detected, never rewritten.
+ */
+internal val UNMODELED_RESTRICTION_BLOCKS = setOf(19, 23, 30, 31)
 private const val BLOCK_DIGEST = 1024
 
 private const val LEGACY_PIXEL_RESOLUTION_M = 0.05f

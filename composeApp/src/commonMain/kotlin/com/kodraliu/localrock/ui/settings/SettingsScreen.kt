@@ -1,5 +1,6 @@
 package com.kodraliu.localrock.ui.settings
 
+import com.kodraliu.localrock.ui.exceptBottom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -77,8 +78,10 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding.exceptBottom())
                 .verticalScroll(rememberScrollState())
+                // Edge to edge: the content scrolls behind the navigation bar and ends above it.
+                .padding(bottom = padding.calculateBottomPadding())
                 .padding(horizontal = 24.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {

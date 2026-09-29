@@ -1,5 +1,6 @@
 package com.kodraliu.localrock.ui.devices
 
+import com.kodraliu.localrock.ui.exceptBottom
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -112,7 +113,7 @@ fun DeviceListScreen(
         PullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = viewModel::refresh,
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier.fillMaxSize().padding(padding.exceptBottom()),
         ) {
             when {
                 refreshing && devices.isEmpty() && error == null -> {
@@ -133,7 +134,13 @@ fun DeviceListScreen(
                 else -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
+                        // Edge to edge: the list scrolls behind the navigation bar and ends above it.
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            top = 16.dp,
+                            end = 16.dp,
+                            bottom = 16.dp + padding.calculateBottomPadding(),
+                        ),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         error?.let { msg ->

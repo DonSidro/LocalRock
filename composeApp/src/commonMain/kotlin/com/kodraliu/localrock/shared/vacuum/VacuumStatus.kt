@@ -19,7 +19,28 @@ data class VacuumStatus(
     @SerialName("dock_error_status") val dockErrorStatus: Int? = null,
     @SerialName("dry_status") val dryStatus: Int? = null,
     @SerialName("rdt") val remainingDryTimeSec: Long? = null,
-)
+    /** Loaded map in the upper bits (see [loadedMapFlag]). */
+    @SerialName("map_status") val mapStatus: Int? = null,
+    /** Bit [LAB_STATUS_MULTI_LEVEL] set while multi-level maps are on (captured 3 on, 1 off). */
+    @SerialName("lab_status") val labStatus: Int? = null,
+    /** 0 = recognise the floor automatically, 1 = pick the map by hand (captured). */
+    @SerialName("switch_map_mode") val switchMapMode: Int? = null,
+) {
+    val multiLevelEnabled: Boolean? get() = labStatus?.let { it and LAB_STATUS_MULTI_LEVEL != 0 }
+
+    /**
+     * mapFlag of the map the robot has loaded: map_status >> 2 (captured 2026-09-29: 7 with map 1
+     * loaded, 11 with map 2), or [UNSAVED_MAP_FLAG] while a new map is being built and not saved.
+     */
+    val loadedMapFlag: Int? get() = mapStatus?.let { it shr 2 }
+}
+
+const val LAB_STATUS_MULTI_LEVEL = 2
+const val SWITCH_MAP_MODE_SMART = 0
+const val SWITCH_MAP_MODE_MANUAL = 1
+
+/** loadedMapFlag during and after a mapping run until the map is saved (map_status 252-255). */
+const val UNSAVED_MAP_FLAG = 63
 
 
 object DockErrorCodes {
@@ -52,13 +73,13 @@ object VacuumStateCodes {
     const val GOING_TO_TARGET = 16
     const val ZONED_CLEANING = 17
     const val SEGMENT_CLEANING = 18
-    const val MAPPING = 22
     const val NOT_CHARGING = 24
     const val WASHING_MOP = 23
     const val GOING_TO_WASH_MOP = 26
     const val DRYING_MOP = 27
     const val RETURNING_TO_DOCK_FOR_DRYING = 28
-    const val RETURNING_TO_WASH_MOP = 29
+    /** Captured 2026-09-29: the robot reports 29 for the whole app_start_build_map run. */
+    const val MAPPING = 29
 }
 
 object VacuumErrorCodes {
