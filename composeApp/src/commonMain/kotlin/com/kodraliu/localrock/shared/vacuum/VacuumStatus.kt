@@ -33,14 +33,23 @@ data class VacuumStatus(
      * loaded, 11 with map 2), or [UNSAVED_MAP_FLAG] while a new map is being built and not saved.
      */
     val loadedMapFlag: Int? get() = mapStatus?.let { it shr 2 }
+
+    /**
+     * True while the robot holds a newly built map that has not been saved. Bit 0 of map_status
+     * follows map_present: 253 after a mapping run, 252 on a robot with no map at all.
+     */
+    val unsavedMapPresent: Boolean
+        get() = loadedMapFlag == UNSAVED_MAP_FLAG && mapStatus?.and(MAP_STATUS_PRESENT) != 0
 }
 
 const val LAB_STATUS_MULTI_LEVEL = 2
 const val SWITCH_MAP_MODE_SMART = 0
 const val SWITCH_MAP_MODE_MANUAL = 1
 
-/** loadedMapFlag during and after a mapping run until the map is saved (map_status 252-255). */
+/** loadedMapFlag when no saved map is loaded: after a mapping run, or with no map at all (map_status 252-255). */
 const val UNSAVED_MAP_FLAG = 63
+/** map_status bit set while the robot holds any map (0 with map_present 0). */
+const val MAP_STATUS_PRESENT = 1
 
 
 object DockErrorCodes {

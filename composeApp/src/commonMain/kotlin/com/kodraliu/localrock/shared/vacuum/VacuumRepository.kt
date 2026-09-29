@@ -141,7 +141,7 @@ class VacuumRepository(
     }.stateIn(scope, SharingStarted.Eagerly, 0)
 
     /** True while the robot holds a newly built map that has not been saved yet. */
-    val unsavedMapPresent: StateFlow<Boolean> = _status.map { it.loadedMapFlag == UNSAVED_MAP_FLAG }
+    val unsavedMapPresent: StateFlow<Boolean> = _status.map { it.unsavedMapPresent }
         .stateIn(scope, SharingStarted.Eagerly, false)
     private var pollJob: Job? = null
     private var dpsJob: Job? = null
