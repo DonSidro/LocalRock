@@ -281,6 +281,15 @@ class MapEditCommandsTest {
     }
 
     @Test
+    fun unsaved_map_needs_a_map_present() {
+        // Captured: 253 with unsave_map_reason 4 after a mapping run; 252 with map_present 0 and no maps.
+        assertTrue(VacuumStatus(mapStatus = 253).unsavedMapPresent)
+        assertFalse(VacuumStatus(mapStatus = 252).unsavedMapPresent)
+        assertFalse(VacuumStatus(mapStatus = 7).unsavedMapPresent)
+        assertFalse(VacuumStatus().unsavedMapPresent)
+    }
+
+    @Test
     fun set_lab_status_matches_capture() {
         // Captured 2026-09-29: off keeping map 0, then on again.
         assertEquals(
