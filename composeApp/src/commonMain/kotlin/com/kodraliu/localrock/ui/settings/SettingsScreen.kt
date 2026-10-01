@@ -43,8 +43,10 @@ import com.kodraliu.localrock.shared.settings.ThemeMode
 import com.kodraliu.localrock.shared.platform.donationUrl
 import com.kodraliu.localrock.shared.platform.donationsEnabled
 import com.kodraliu.localrock.ui.LocalAppContainer
+import com.kodraliu.localrock.ui.whatsnew.WhatsNewSheet
+import com.kodraliu.localrock.ui.whatsnew.whatsNewFor
 
-const val APP_VERSION: String = "1.1.0"
+const val APP_VERSION: String = "1.2.0"
 
 private const val PROJECT_URL = "https://github.com/DonSidro/LocalRock/"
 
@@ -60,6 +62,8 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
     val userData by container.authRepository.userData.collectAsState()
 
     var url by remember { mutableStateOf(savedUrl ?: "") }
+    var showWhatsNew by remember { mutableStateOf(false) }
+    val whatsNew = whatsNewFor(APP_VERSION)
 
     Scaffold(
         topBar = {
@@ -183,6 +187,12 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (whatsNew != null) {
+                OutlinedButton(
+                    onClick = { showWhatsNew = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("What's new in $APP_VERSION") }
+            }
             OutlinedButton(
                 onClick = { uriHandler.openUri(PRIVACY_URL) },
                 modifier = Modifier.fillMaxWidth(),
@@ -208,6 +218,10 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
             )
             Spacer(Modifier.height(16.dp))
         }
+    }
+
+    if (showWhatsNew && whatsNew != null) {
+        WhatsNewSheet(release = whatsNew, onDismiss = { showWhatsNew = false })
     }
 }
 
