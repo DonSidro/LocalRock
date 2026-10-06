@@ -142,6 +142,7 @@ import com.kodraliu.localrock.shared.vacuum.VacuumFanPower
 import com.kodraliu.localrock.shared.vacuum.VacuumStateCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumStatus
 import com.kodraliu.localrock.shared.vacuum.WaterBoxMode
+import com.kodraliu.localrock.shared.vacuum.isSmartModeSet
 import com.kodraliu.localrock.shared.vacuum.mapNameBlocker
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
@@ -474,6 +475,13 @@ fun VacuumDetailScreen(
                 currentRoute = mopMode,
                 cleaningCount = cleaningCount,
                 busy = busy,
+                supportsSmartPlan = viewModel.supportsSmartPlan,
+                onSmartPlanSelected = { smart ->
+                    viewModel.run {
+                        if (smart) it.setCleanMotorMode(VacuumFanPower.SMART, WaterBoxMode.SMART, MopRoute.SMART)
+                        else it.setCleanMotorMode(VacuumFanPower.BALANCED, WaterBoxMode.LOW, MopRoute.STANDARD)
+                    }
+                },
                 onFanPowerSelected = { level -> viewModel.run { it.setFanPower(level) } },
                 onWaterModeSelected = { level -> viewModel.run { it.setWaterBoxMode(level) } },
                 onRouteSelected = { mode -> viewModel.run { it.setMopMode(mode) } },
@@ -974,7 +982,7 @@ private fun ControlBar(
         ) {
             AssistChip(
                 onClick = onCleaningMode,
-                label = { Text(if (mopping) "Vac & Mop" else "Vacuum") },
+                label = { Text(if (isSmartModeSet(status.fanPower, status.waterBoxCustomMode, null)) "SmartPlan" else if (mopping) "Vac & Mop" else "Vacuum") },
                 leadingIcon = {
                     Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
                 },
@@ -1138,6 +1146,8 @@ private fun CleaningModeSheetContent(
     currentRoute: Int?,
     cleaningCount: Int,
     busy: Boolean,
+    supportsSmartPlan: Boolean,
+    onSmartPlanSelected: (Boolean) -> Unit,
     onFanPowerSelected: (Int) -> Unit,
     onWaterModeSelected: (Int) -> Unit,
     onRouteSelected: (Int) -> Unit,
@@ -1149,54 +1159,70 @@ private fun CleaningModeSheetContent(
         else -> 0
     }
     var selectedTab by remember { mutableIntStateOf(initialTab) }
+    // SmartPlan owns suction, water and route; the robot rejects manual changes until it is left.
+    val smart = isSmartModeSet(currentFanPower, currentWaterMode, currentRoute)
 
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 16.dp)) {
         Spacer(Modifier.height(12.dp))
-        SecondaryTabRow(selectedTabIndex = selectedTab) {
-            listOf("Vac & Mop", "Mop", "Vacuum").forEachIndexed { i, title ->
-                Tab(
-                    selected = selectedTab == i,
-                    onClick = {
-                        selectedTab = i
-                        when (i) {
-                            0 -> { if ((currentWaterMode ?: WaterBoxMode.OFF) == WaterBoxMode.OFF) onWaterModeSelected(WaterBoxMode.LOW) }
-                            1 -> { onFanPowerSelected(VacuumFanPower.QUIET); if ((currentWaterMode ?: WaterBoxMode.OFF) == WaterBoxMode.OFF) onWaterModeSelected(WaterBoxMode.LOW) }
-                            2 -> { onWaterModeSelected(WaterBoxMode.OFF) }
-                        }
-                    },
-                    text = { Text(title) },
-                )
+        if (supportsSmartPlan || smart) {
+            Box(Modifier.padding(horizontal = 24.dp).padding(bottom = 12.dp)) {
+                ModeOptionSelector("Mode", listOf("SmartPlan", "Manual"), if (smart) 0 else 1, !busy) {
+                    if ((it == 0) != smart) onSmartPlanSelected(it == 0)
+                }
             }
         }
+        if (smart) {
+            Column(Modifier.padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                Text("SmartPlan picks suction, water and route for each room.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                CountSelector(cleaningCount, onCountChange)
+            }
+        } else {
+            SecondaryTabRow(selectedTabIndex = selectedTab) {
+                listOf("Vac & Mop", "Mop", "Vacuum").forEachIndexed { i, title ->
+                    Tab(
+                        selected = selectedTab == i,
+                        onClick = {
+                            selectedTab = i
+                            when (i) {
+                                0 -> { if ((currentWaterMode ?: WaterBoxMode.OFF) == WaterBoxMode.OFF) onWaterModeSelected(WaterBoxMode.LOW) }
+                                1 -> { onFanPowerSelected(VacuumFanPower.QUIET); if ((currentWaterMode ?: WaterBoxMode.OFF) == WaterBoxMode.OFF) onWaterModeSelected(WaterBoxMode.LOW) }
+                                2 -> { onWaterModeSelected(WaterBoxMode.OFF) }
+                            }
+                        },
+                        text = { Text(title) },
+                    )
+                }
+            }
 
-        Box(Modifier.fillMaxWidth().heightIn(min = 380.dp)) {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 24.dp, vertical = 16.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
-                val subtitle = when (selectedTab) {
-                    0 -> "Vac & Mop for daily clean"
-                    1 -> "Mop only for delicate floors"
-                    else -> "Vacuum only mode"
-                }
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Box(Modifier.fillMaxWidth().heightIn(min = 380.dp)) {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = 24.dp, vertical = 16.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    val subtitle = when (selectedTab) {
+                        0 -> "Vac & Mop for daily clean"
+                        1 -> "Mop only for delicate floors"
+                        else -> "Vacuum only mode"
+                    }
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-                val suction = @Composable {
-                    ModeOptionSelector("Suction power", FAN_OPTIONS.map { it.second }, FAN_OPTIONS.indexOfFirst { it.first == currentFanPower }.coerceAtLeast(0), !busy) { onFanPowerSelected(FAN_OPTIONS[it].first) }
-                }
-                val water = @Composable {
-                    ModeOptionSelector("Water flow", WATER_OPTIONS.map { it.second }, WATER_OPTIONS.indexOfFirst { it.first == currentWaterMode }.coerceAtLeast(0), !busy) { onWaterModeSelected(WATER_OPTIONS[it].first) }
-                }
-                val route = @Composable {
-                    ModeOptionSelector("Route", ROUTE_OPTIONS.map { it.second }, ROUTE_OPTIONS.indexOfFirst { it.first == currentRoute }.coerceAtLeast(0), !busy) { onRouteSelected(ROUTE_OPTIONS[it].first) }
-                }
+                    val suction = @Composable {
+                        ModeOptionSelector("Suction power", FAN_OPTIONS.map { it.second }, FAN_OPTIONS.indexOfFirst { it.first == currentFanPower }, !busy) { onFanPowerSelected(FAN_OPTIONS[it].first) }
+                    }
+                    val water = @Composable {
+                        ModeOptionSelector("Water flow", WATER_OPTIONS.map { it.second }, WATER_OPTIONS.indexOfFirst { it.first == WaterBoxMode.normalize(currentWaterMode) }, !busy) { onWaterModeSelected(WATER_OPTIONS[it].first) }
+                    }
+                    val route = @Composable {
+                        ModeOptionSelector("Route", ROUTE_OPTIONS.map { it.second }, ROUTE_OPTIONS.indexOfFirst { it.first == currentRoute }, !busy) { onRouteSelected(ROUTE_OPTIONS[it].first) }
+                    }
 
-                when (selectedTab) {
-                    0 -> { suction(); water(); CountSelector(cleaningCount, onCountChange); route() }
-                    1 -> { water(); CountSelector(cleaningCount, onCountChange); route() }
-                    2 -> { suction(); CountSelector(cleaningCount, onCountChange) }
+                    when (selectedTab) {
+                        0 -> { suction(); water(); CountSelector(cleaningCount, onCountChange); route() }
+                        1 -> { water(); CountSelector(cleaningCount, onCountChange); route() }
+                        2 -> { suction(); CountSelector(cleaningCount, onCountChange) }
+                    }
                 }
             }
         }

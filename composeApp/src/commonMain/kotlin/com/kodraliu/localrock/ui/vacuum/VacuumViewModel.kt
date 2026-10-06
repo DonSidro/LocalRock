@@ -7,6 +7,7 @@ import com.kodraliu.localrock.shared.messages.MessageSeverity
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
+import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +25,7 @@ class VacuumViewModel(
     val deviceName: String = device.name
     val modelName: String? = container.deviceRepository.productsByDuid.value[duid]?.model
     val firmwareVersion: String? = device.fv
+    val supportsSmartPlan: Boolean = isSmartPlanSupported(device.newFeatureSet)
     val repository: VacuumRepository = container.vacuumRepositoryFor(device)
     val status = repository.status
 

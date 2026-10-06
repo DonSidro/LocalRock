@@ -308,6 +308,13 @@ class VacuumRepository(
         _mopMode.value = mode
     }
 
+    /** Switches suction, water and route in one command, the only way in or out of SmartPlan. */
+    suspend fun setCleanMotorMode(fanPower: Int, waterBoxMode: Int, mopMode: Int) {
+        val resp = session.setCleanMotorMode(fanPower, waterBoxMode, mopMode)
+        resp.error?.let { error("Robot rejected cleaning mode: $it") }
+        _mopMode.value = mopMode
+    }
+
     suspend fun fetchConsumableStatus() {
         val resp = session.getConsumableStatus()
         val result = resp.result ?: return

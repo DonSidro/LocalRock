@@ -135,6 +135,7 @@ object VacuumFanPower {
     const val BALANCED = 102
     const val TURBO = 103
     const val MAX = 104
+    const val SMART = 110
 }
 
 
@@ -143,6 +144,15 @@ object WaterBoxMode {
     const val LOW = 201
     const val MEDIUM = 202
     const val HIGH = 203
+    const val SMART = 209
+
+    /** Pure-water-flow robots (e.g. Saros 10R) report 201/202/203 back as 225/235/245. */
+    fun normalize(code: Int?): Int? = when (code) {
+        225 -> LOW
+        235 -> MEDIUM
+        245 -> HIGH
+        else -> code
+    }
 }
 
 
@@ -151,4 +161,5 @@ object MopRoute {
     const val DEEP = 301
     const val DEEP_PLUS = 303
     const val FAST = 304
+    const val SMART = 306
 }
