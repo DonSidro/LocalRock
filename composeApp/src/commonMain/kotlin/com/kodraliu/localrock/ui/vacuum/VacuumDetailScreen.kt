@@ -479,7 +479,11 @@ fun VacuumDetailScreen(
                 onSmartPlanSelected = { smart ->
                     viewModel.run {
                         if (smart) it.setCleanMotorMode(VacuumFanPower.SMART, WaterBoxMode.SMART, MopRoute.SMART)
-                        else it.setCleanMotorMode(VacuumFanPower.BALANCED, WaterBoxMode.LOW, MopRoute.STANDARD)
+                        else {
+                            // Water slide robots get a slide code, as python-roborock does.
+                            val water = if (viewModel.supportsWaterSlide) WaterBoxMode.SLIDE_MEDIUM else WaterBoxMode.LOW
+                            it.setCleanMotorMode(VacuumFanPower.BALANCED, water, MopRoute.STANDARD)
+                        }
                     }
                 },
                 onFanPowerSelected = { level -> viewModel.run { it.setFanPower(level) } },

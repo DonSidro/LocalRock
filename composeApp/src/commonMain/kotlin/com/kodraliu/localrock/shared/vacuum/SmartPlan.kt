@@ -7,6 +7,9 @@ import kotlinx.serialization.json.JsonPrimitive
 /** Bit index of SmartPlan in `newFeatureSet` (python-roborock NewFeatureStrBit.SMART_CLEAN_MODE_SET). */
 private const val SMART_CLEAN_MODE_SET_BIT = 55
 
+/** Bit index of water slide mode (python-roborock NewFeatureStrBit.WATER_SLIDE_MODE). */
+private const val WATER_SLIDE_MODE_BIT = 106
+
 /**
  * Reads bit [bit] of the hex `newFeatureSet` string, counting from its last character.
  * Port of python-roborock's DeviceFeatures.from_feature_flags; anything malformed reads as false.
@@ -20,6 +23,9 @@ fun newFeatureBit(newFeatureSet: String?, bit: Int): Boolean {
 }
 
 fun isSmartPlanSupported(newFeatureSet: String?): Boolean = newFeatureBit(newFeatureSet, SMART_CLEAN_MODE_SET_BIT)
+
+/** Water slide robots use their own water codes (221-250) and may not accept 201-203. */
+fun isWaterSlideSupported(newFeatureSet: String?): Boolean = newFeatureBit(newFeatureSet, WATER_SLIDE_MODE_BIT)
 
 /** SmartPlan is on if any of the three values is its smart code (python-roborock is_smart_mode_set). */
 fun isSmartModeSet(fanPower: Int?, waterBoxMode: Int?, mopMode: Int?): Boolean =

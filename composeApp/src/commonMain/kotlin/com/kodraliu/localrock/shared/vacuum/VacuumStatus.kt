@@ -145,11 +145,12 @@ object WaterBoxMode {
     const val MEDIUM = 202
     const val HIGH = 203
     const val SMART = 209
+    const val SLIDE_MEDIUM = 235
 
     /** Pure-water-flow robots (e.g. Saros 10R) report 201/202/203 back as 225/235/245. */
     fun normalize(code: Int?): Int? = when (code) {
         225 -> LOW
-        235 -> MEDIUM
+        SLIDE_MEDIUM -> MEDIUM
         245 -> HIGH
         else -> code
     }

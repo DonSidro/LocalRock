@@ -33,6 +33,14 @@ class SmartPlanTest {
     }
 
     @Test
+    fun water_slide_support_is_bit_106() {
+        // Bit 106 lives in the 27th char from the end, bit 2 of that nibble.
+        assertTrue(isWaterSlideSupported("4" + "0".repeat(26)))
+        assertFalse(isWaterSlideSupported("b" + "0".repeat(26)))
+        assertFalse(isWaterSlideSupported("0".repeat(26)))
+    }
+
+    @Test
     fun smart_mode_is_set_when_any_value_is_smart() {
         assertTrue(isSmartModeSet(VacuumFanPower.SMART, WaterBoxMode.LOW, MopRoute.STANDARD))
         assertTrue(isSmartModeSet(VacuumFanPower.BALANCED, WaterBoxMode.SMART, MopRoute.STANDARD))
