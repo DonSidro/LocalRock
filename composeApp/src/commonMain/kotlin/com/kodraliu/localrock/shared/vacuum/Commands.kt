@@ -128,6 +128,8 @@ suspend fun VacuumSession.setLedStatus(enabled: Boolean): V1Response =
 suspend fun VacuumSession.getMopMode(): V1Response = sendCommand("get_mop_mode")
 suspend fun VacuumSession.setMopMode(mode: Int): V1Response =
     sendCommand("set_mop_mode", listOf(JsonPrimitive(mode)))
+suspend fun VacuumSession.setCleanMotorMode(fanPower: Int, waterBoxMode: Int, mopMode: Int): V1Response =
+    sendCommandRaw("set_clean_motor_mode", encodeCleanMotorModeParams(fanPower, waterBoxMode, mopMode))
 
 suspend fun VacuumSession.appSetDryerStatus(on: Boolean): V1Response =
     sendCommandRaw("app_set_dryer_status", JsonObject(mapOf("status" to JsonPrimitive(if (on) 1 else 0))))
