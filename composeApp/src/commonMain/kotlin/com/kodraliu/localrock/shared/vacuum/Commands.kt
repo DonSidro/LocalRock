@@ -110,14 +110,25 @@ suspend fun VacuumSession.appZonedClean(zones: List<ZoneRect>): V1Response =
 
 suspend fun VacuumSession.getTimer(): V1Response = sendCommand("get_timer")
 
-suspend fun VacuumSession.setTimer(id: String, enabled: Boolean, cron: String): V1Response =
+/**
+ * Creates or replaces a schedule. [settings] ride in the action object; with none chosen it is the
+ * `{}` this always sent. [previous] is the schedule's stored settings when editing, so a value that
+ * was dropped is cleared rather than kept.
+ */
+suspend fun VacuumSession.setTimer(
+    id: String,
+    enabled: Boolean,
+    cron: String,
+    settings: TimerSettings = TimerSettings(),
+    previous: TimerSettings? = null,
+): V1Response =
     sendCommand("set_timer", listOf(JsonArray(listOf(
         JsonPrimitive(id),
         JsonArray(listOf(
             JsonPrimitive(if (enabled) "on" else "off"),
             JsonArray(listOf(
                 JsonPrimitive(cron),
-                JsonArray(listOf(JsonPrimitive("start_clean"), JsonObject(emptyMap()))),
+                JsonArray(listOf(JsonPrimitive("start_clean"), settings.toActionObject(previous))),
             )),
         )),
     ))))

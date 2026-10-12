@@ -813,26 +813,39 @@ class VacuumRepository(
 
     suspend fun fetchTimers() {
         val resp = session.getTimer()
-        val result = resp.result ?: return
-        if (result !is JsonArray) return
-        val parsed = result.mapNotNull { entry ->
-            if (entry !is JsonArray || entry.size < 3) return@mapNotNull null
-            val id = entry[0].jsonPrimitive.contentOrNull ?: return@mapNotNull null
-            val enabled = entry[1].jsonPrimitive.contentOrNull == "on"
-            val details = runCatching { entry[2].jsonArray }.getOrNull() ?: return@mapNotNull null
-            val cron = details.firstOrNull()?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-            parseCronTimer(id, enabled, cron)
-        }
-        _timers.value = parsed
+        val result = resp.result as? JsonArray ?: return
+        _timers.value = parseTimerList(result)
     }
 
-    suspend fun createTimer(hour: Int, minute: Int, weekdays: Set<Int>): CleanTimer {
+    suspend fun createTimer(
+        hour: Int,
+        minute: Int,
+        weekdays: Set<Int>,
+        settings: TimerSettings = TimerSettings(),
+    ): CleanTimer {
         val id = nowEpochSeconds().toString()
         val cron = buildCron(minute, hour, weekdays)
-        session.setTimer(id, enabled = true, cron = cron)
-        val timer = CleanTimer(id = id, enabled = true, hour = hour, minute = minute, weekdays = weekdays)
+        session.setTimer(id, enabled = true, cron = cron, settings = settings)
+        val timer = CleanTimer(
+            id = id, enabled = true, hour = hour, minute = minute, weekdays = weekdays, settings = settings,
+        )
         _timers.value = _timers.value + timer
         return timer
+    }
+
+    /** Rewrites [timer]'s time, days and options in place; its id and on/off state are kept. */
+    suspend fun updateTimer(
+        timer: CleanTimer,
+        hour: Int,
+        minute: Int,
+        weekdays: Set<Int>,
+        settings: TimerSettings,
+    ): CleanTimer {
+        val cron = buildCron(minute, hour, weekdays)
+        session.setTimer(timer.id, enabled = timer.enabled, cron = cron, settings = settings, previous = timer.settings)
+        val updated = timer.copy(hour = hour, minute = minute, weekdays = weekdays, settings = settings)
+        _timers.value = _timers.value.map { if (it.id == timer.id) updated else it }
+        return updated
     }
 
     suspend fun toggleTimer(timer: CleanTimer) {
@@ -1118,19 +1131,43 @@ class VacuumRepository(
     }
 }
 
-private fun buildCron(minute: Int, hour: Int, weekdays: Set<Int>): String {
+internal fun buildCron(minute: Int, hour: Int, weekdays: Set<Int>): String {
     val days = if (weekdays.isEmpty()) "*" else weekdays.sorted().joinToString(",")
     return "$minute $hour * * $days"
 }
 
-private fun parseCronTimer(id: String, enabled: Boolean, cron: String): CleanTimer? {
+internal fun parseCronTimer(
+    id: String,
+    enabled: Boolean,
+    cron: String,
+    settings: TimerSettings = TimerSettings(),
+): CleanTimer? {
     val parts = cron.trim().split(Regex("\\s+"))
     if (parts.size < 5) return null
     val minute = parts[0].toIntOrNull() ?: return null
     val hour = parts[1].toIntOrNull() ?: return null
     val weekdays = if (parts[4] == "*") emptySet()
     else parts[4].split(",").mapNotNull { it.toIntOrNull() }.toSet()
-    return CleanTimer(id = id, enabled = enabled, hour = hour, minute = minute, weekdays = weekdays)
+    return CleanTimer(
+        id = id, enabled = enabled, hour = hour, minute = minute, weekdays = weekdays, settings = settings,
+    )
+}
+
+/**
+ * The schedules in a get_timer answer, `[[id, "on"|"off", [cron, ["start_clean", {options}]]], ...]`.
+ * Entries that don't have that shape are skipped; the options object is optional.
+ */
+internal fun parseTimerList(result: JsonElement?): List<CleanTimer> {
+    val list = result as? JsonArray ?: return emptyList()
+    return list.mapNotNull { entry ->
+        if (entry !is JsonArray || entry.size < 3) return@mapNotNull null
+        val id = entry[0].jsonPrimitive.contentOrNull ?: return@mapNotNull null
+        val enabled = entry[1].jsonPrimitive.contentOrNull == "on"
+        val details = runCatching { entry[2].jsonArray }.getOrNull() ?: return@mapNotNull null
+        val cron = details.firstOrNull()?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+        val action = runCatching { details[1].jsonArray }.getOrNull()
+        parseCronTimer(id, enabled, cron, parseTimerSettings(action?.getOrNull(1)))
+    }
 }
 
 const val CONSUMABLE_UNSUPPORTED = "unsupported"
