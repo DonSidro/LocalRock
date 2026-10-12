@@ -1,5 +1,9 @@
 package com.kodraliu.localrock.ui.vacuum
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +26,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -49,6 +54,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.vacuum.CleanTimer
+import com.kodraliu.localrock.shared.vacuum.MopRoute
+import com.kodraliu.localrock.shared.vacuum.TimerKind
+import com.kodraliu.localrock.shared.vacuum.TimerSettings
+import com.kodraliu.localrock.shared.vacuum.VacuumFanPower
+import com.kodraliu.localrock.shared.vacuum.WaterBoxMode
+import com.kodraliu.localrock.shared.vacuum.kind
+import com.kodraliu.localrock.shared.vacuum.summary
+import com.kodraliu.localrock.shared.vacuum.timerSettingsFor
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,6 +74,7 @@ fun ScheduleScreen(
     val timers by repository.timers.collectAsState()
     val scope = rememberCoroutineScope()
     var showAddDialog by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<CleanTimer?>(null) }
 
     LaunchedEffect(Unit) { runCatching { repository.fetchTimers() } }
 
@@ -97,6 +111,7 @@ fun ScheduleScreen(
                 items(timers, key = { it.id }) { timer ->
                     TimerRow(
                         timer = timer,
+                        onEdit = { editing = timer },
                         onToggle = { scope.launch { runCatching { repository.toggleTimer(timer) } } },
                         onDelete = { scope.launch { runCatching { repository.deleteTimer(timer) } } },
                     )
@@ -107,20 +122,32 @@ fun ScheduleScreen(
     }
 
     if (showAddDialog) {
-        AddTimerDialog(
-            onAdd = { hour, minute, weekdays ->
+        TimerDialog(
+            initial = null,
+            onSave = { hour, minute, weekdays, settings ->
                 showAddDialog = false
-                scope.launch { runCatching { repository.createTimer(hour, minute, weekdays) } }
+                scope.launch { runCatching { repository.createTimer(hour, minute, weekdays, settings) } }
             },
             onDismiss = { showAddDialog = false },
+        )
+    }
+
+    editing?.let { timer ->
+        TimerDialog(
+            initial = timer,
+            onSave = { hour, minute, weekdays, settings ->
+                editing = null
+                scope.launch { runCatching { repository.updateTimer(timer, hour, minute, weekdays, settings) } }
+            },
+            onDismiss = { editing = null },
         )
     }
 }
 
 @Composable
-private fun TimerRow(timer: CleanTimer, onToggle: () -> Unit, onDelete: () -> Unit) {
+private fun TimerRow(timer: CleanTimer, onEdit: () -> Unit, onToggle: () -> Unit, onDelete: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onEdit).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -145,6 +172,13 @@ private fun TimerRow(timer: CleanTimer, onToggle: () -> Unit, onDelete: () -> Un
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            timer.settings.summary()?.let { summary ->
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         IconButton(onClick = onDelete) {
             Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -153,17 +187,32 @@ private fun TimerRow(timer: CleanTimer, onToggle: () -> Unit, onDelete: () -> Un
     }
 }
 
+/** Adds a schedule, or edits [initial]. Cleaning options left at "Current" use the robot's own settings. */
 @Composable
-private fun AddTimerDialog(onAdd: (hour: Int, minute: Int, weekdays: Set<Int>) -> Unit, onDismiss: () -> Unit) {
-    var hour by remember { mutableIntStateOf(8) }
-    var minute by remember { mutableIntStateOf(0) }
-    var weekdays by remember { mutableStateOf(setOf(1, 2, 3, 4, 5)) } // Mon–Fri default
+private fun TimerDialog(
+    initial: CleanTimer?,
+    onSave: (hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val start = initial?.settings ?: TimerSettings()
+    var hour by remember { mutableIntStateOf(initial?.hour ?: 8) }
+    var minute by remember { mutableIntStateOf(initial?.minute ?: 0) }
+    var weekdays by remember { mutableStateOf(initial?.weekdays ?: setOf(1, 2, 3, 4, 5)) } // Mon–Fri default
+    var kind by remember { mutableStateOf(start.kind) }
+    // Off (no suction / no water) is what Vacuum-only and Mop-only mean, not a level of its own.
+    var fanPower by remember { mutableStateOf(start.fanPower?.takeIf { it != VacuumFanPower.OFF }) }
+    var waterBoxMode by remember { mutableStateOf(start.waterBoxMode?.takeIf { it != WaterBoxMode.OFF }) }
+    var mopMode by remember { mutableStateOf(start.mopMode) }
+    var repeat by remember { mutableIntStateOf(start.repeat ?: 1) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New schedule") },
+        title = { Text(if (initial == null) "New schedule" else "Edit schedule") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
                 Text("Time", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     NumberStepper("Hour", hour, 0, 23) { hour = it }
@@ -192,15 +241,105 @@ private fun AddTimerDialog(onAdd: (hour: Int, minute: Int, weekdays: Set<Int>) -
                         }
                     }
                 }
+
+                ChipRow(
+                    label = "Cleaning",
+                    options = listOf(
+                        TimerKind.CURRENT to "Current settings",
+                        TimerKind.VACUUM to "Vacuum",
+                        TimerKind.VAC_AND_MOP to "Vacuum and mop",
+                        TimerKind.MOP to "Mop",
+                    ),
+                    selected = kind,
+                    onSelect = { kind = it },
+                )
+                if (kind == TimerKind.VACUUM || kind == TimerKind.VAC_AND_MOP) {
+                    ChipRow(
+                        label = "Suction",
+                        options = listOf<Pair<Int?, String>>(
+                            null to "Current",
+                            VacuumFanPower.QUIET to "Quiet",
+                            VacuumFanPower.BALANCED to "Balanced",
+                            VacuumFanPower.TURBO to "Turbo",
+                            VacuumFanPower.MAX to "Max",
+                            VacuumFanPower.SMART to "Smart",
+                        ),
+                        selected = fanPower,
+                        onSelect = { fanPower = it },
+                    )
+                }
+                if (kind == TimerKind.VAC_AND_MOP || kind == TimerKind.MOP) {
+                    ChipRow(
+                        label = "Water",
+                        options = listOf<Pair<Int?, String>>(
+                            null to "Medium",
+                            WaterBoxMode.LOW to "Low",
+                            WaterBoxMode.HIGH to "High",
+                            WaterBoxMode.SMART to "Smart",
+                        ),
+                        selected = waterBoxMode?.takeIf { it != WaterBoxMode.MEDIUM },
+                        onSelect = { waterBoxMode = it },
+                    )
+                    ChipRow(
+                        label = "Mop route",
+                        options = listOf<Pair<Int?, String>>(
+                            null to "Current",
+                            MopRoute.STANDARD to "Standard",
+                            MopRoute.DEEP to "Deep",
+                            MopRoute.DEEP_PLUS to "Deep+",
+                            MopRoute.FAST to "Fast",
+                            MopRoute.SMART to "Smart",
+                        ),
+                        selected = mopMode,
+                        onSelect = { mopMode = it },
+                    )
+                }
+                ChipRow(
+                    label = "Passes",
+                    options = listOf(1 to "1", 2 to "2", 3 to "3"),
+                    selected = repeat,
+                    onSelect = { repeat = it },
+                )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onAdd(hour, minute, weekdays) }) { Text("Save") }
+            TextButton(
+                onClick = {
+                    val settings = timerSettingsFor(
+                        kind = kind,
+                        fanPower = fanPower,
+                        waterBoxMode = waterBoxMode,
+                        mopMode = mopMode,
+                        repeat = repeat.takeIf { it > 1 },
+                    )
+                    onSave(hour, minute, weekdays, settings)
+                },
+            ) { Text("Save") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
+}
+
+/** A labelled row of single-choice chips that scrolls sideways when it does not fit the dialog. */
+@Composable
+private fun <T> ChipRow(label: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            options.forEach { (value, text) ->
+                FilterChip(
+                    selected = value == selected,
+                    onClick = { onSelect(value) },
+                    label = { Text(text) },
+                )
+            }
+        }
+    }
 }
 
 @Composable
