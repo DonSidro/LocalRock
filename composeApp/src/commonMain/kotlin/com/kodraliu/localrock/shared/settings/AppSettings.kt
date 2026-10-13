@@ -171,6 +171,22 @@ class AppSettings(private val settings: Settings) {
         if (order.isEmpty()) settings.remove(key) else settings.putString(key, order.joinToString(","))
     }
 
+    /** The map's on-screen rotation for one robot: 0, 90, 180 or 270. Remembered per robot. */
+    fun mapRotation(duid: String): Int = settings.getInt("map_rotation_$duid", 0)
+
+    fun setMapRotation(duid: String, degrees: Int) {
+        val normalized = ((degrees % 360) + 360) % 360
+        if (normalized == 0) settings.remove("map_rotation_$duid")
+        else settings.putInt("map_rotation_$duid", normalized)
+    }
+
+    /** Whether the map view for one robot shows a tilted 3D perspective instead of flat 2D. */
+    fun map3D(duid: String): Boolean = settings.getBoolean("map_3d_$duid", false)
+
+    fun setMap3D(duid: String, value: Boolean) {
+        if (!value) settings.remove("map_3d_$duid") else settings.putBoolean("map_3d_$duid", true)
+    }
+
     internal fun readUserDataJson(): String? = settings.getStringOrNull(KEY_USER_DATA)
 
     internal fun writeUserDataJson(json: String?) {
