@@ -817,12 +817,15 @@ private fun VacuumMapImage(
     map: ParsedMap,
     selectedRoomIds: List<Int>,
     onRoomTap: (Int) -> Unit,
-    onObstacleTap: (MapObstacle) -> Unit,
+    is3D: Boolean = false,
     modifier: Modifier = Modifier,
     viewportScope: Any? = null,
     providedMapViewport: LiveMapViewport? = null,
 ) {
-    val bitmap = rememberMapBitmap(map)
+    val bitmap = rememberMapBitmap(map, is3D = is3D)
+    // The isometric 3D bitmap has a different shape than the flat map, so the aspect ratio has to
+    // come from whatever was actually rendered, not the raw map dimensions.
+    val aspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
     val labelRooms = remember(map.rooms) { map.rooms.filter { it.labelNormX != null && it.labelNormY != null } }
     val textMeasurer = rememberTextMeasurer()
     // Labels follow the scheme rather than being a fixed black scrim: over a light map a dark
@@ -881,17 +884,13 @@ private fun VacuumMapImage(
                             }
                         },
                         onTap = { tapOffset ->
-                            val content = currentMap.fittedSize(size.toSize())
-                            // An obstacle dot is small, so a tap near one opens it before any room.
-                            currentMap.obstacleAt(tapOffset, content, mapViewport.offset, mapViewport.scale, 20.dp.toPx())
-                                ?.let { currentOnObstacleTap(it); return@detectTapGestures }
-                            val p = (tapOffset - mapViewport.offset) / mapViewport.scale
-                            val normX = p.x / content.width
-                            val normY = p.y / content.height
-                            // The view is larger than the map; a tap beside it is not on a room.
-                            if (normX in 0f..1f && normY in 0f..1f) {
-                                currentMap.roomAtNorm(normX, normY)?.let { currentOnRoomTap(it.id) }
-                            }
+                            // Room hit-testing assumes the flat top-down bitmap's coordinate space;
+                            // the isometric 3D render doesn't share it, so tapping a room is 2D-only.
+                            if (is3D) return@detectTapGestures
+                            val mapX = (tapOffset.x - mapOffset.x) / mapScale
+                            val mapY = (tapOffset.y - mapOffset.y) / mapScale
+                            map.roomAtNorm(mapX / size.width, mapY / size.height)
+                                ?.let { currentOnRoomTap(it.id) }
                         },
                     )
                 },
