@@ -15,10 +15,9 @@ import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.ProductCatalog
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
-import com.kodraliu.localrock.shared.vacuum.supportedBetaFeatures
-import com.kodraliu.localrock.shared.vacuum.unlistedAdvertisedFeatures
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -70,13 +69,29 @@ class VacuumViewModel(
     private val _mapRotation = MutableStateFlow(container.appSettings.mapRotation(device.duid))
     val mapRotation: StateFlow<Int> = _mapRotation.asStateFlow()
 
-    // Also doubles as which of the 4 true isometric viewpoints the 3D render is built from
-    // (mapRotation / 90): unlike 2D, where rotating is just spinning the finished image, 3D needs
-    // the whole projection recomputed so the walls' shaded faces still match the new angle.
-    fun rotateMap90(clockwise: Boolean = true) {
-        val next = ((_mapRotation.value + if (clockwise) 90 else -90) + 360) % 360
+    /** The flat 2D map's orientation. The 3D view has its own heading, [map3DYaw]. */
+    fun rotateMap90() {
+        val next = (_mapRotation.value + 90) % 360
         container.appSettings.setMapRotation(device.duid, next)
         _mapRotation.value = next
+    }
+
+    private val _map3DYaw = MutableStateFlow(container.appSettings.map3DYaw(device.duid))
+    val map3DYaw: StateFlow<Float> = _map3DYaw.asStateFlow()
+    private var yawSaveJob: Job? = null
+
+    /**
+     * Turning the 3D model fires on every frame of a twist, so the view updates at once and only
+     * the heading it settles on is written to storage.
+     */
+    fun setMap3DYaw(degrees: Float) {
+        val normalized = ((degrees % 360f) + 360f) % 360f
+        _map3DYaw.value = normalized
+        yawSaveJob?.cancel()
+        yawSaveJob = viewModelScope.launch {
+            delay(500)
+            container.appSettings.setMap3DYaw(device.duid, normalized)
+        }
     }
 
     private val _map3D = MutableStateFlow(container.appSettings.map3D(device.duid))

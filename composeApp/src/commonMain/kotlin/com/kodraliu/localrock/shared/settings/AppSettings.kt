@@ -24,6 +24,8 @@ private const val KEY_NOTIFY_FINISHED = "notify_finished"
 private const val KEY_NOTIFY_DOCK = "notify_dock"
 private const val KEY_NOTIFY_BACKGROUND = "notify_background"
 private const val KEY_NOTIFY_PROGRESS = "notify_progress"
+// A three-quarter view, so a first look at the 3D map shows two faces of every wall.
+private const val DEFAULT_MAP_3D_YAW = 35f
 
 class AppSettings(private val settings: Settings) {
 
@@ -178,6 +180,16 @@ class AppSettings(private val settings: Settings) {
         val normalized = ((degrees % 360) + 360) % 360
         if (normalized == 0) settings.remove("map_rotation_$duid")
         else settings.putInt("map_rotation_$duid", normalized)
+    }
+
+    /**
+     * The 3D view's own heading, in degrees. Kept apart from [mapRotation] on purpose: turning the
+     * 3D model around must not disturb the orientation chosen for the flat 2D map.
+     */
+    fun map3DYaw(duid: String): Float = settings.getFloat("map_3d_yaw_$duid", DEFAULT_MAP_3D_YAW)
+
+    fun setMap3DYaw(duid: String, degrees: Float) {
+        settings.putFloat("map_3d_yaw_$duid", degrees)
     }
 
     /** Whether the map view for one robot shows a tilted 3D perspective instead of flat 2D. */
