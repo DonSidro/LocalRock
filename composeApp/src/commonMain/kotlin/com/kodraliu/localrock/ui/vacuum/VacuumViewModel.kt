@@ -70,8 +70,11 @@ class VacuumViewModel(
     private val _mapRotation = MutableStateFlow(container.appSettings.mapRotation(device.duid))
     val mapRotation: StateFlow<Int> = _mapRotation.asStateFlow()
 
-    fun rotateMap90() {
-        val next = (_mapRotation.value + 90) % 360
+    // Also doubles as which of the 4 true isometric viewpoints the 3D render is built from
+    // (mapRotation / 90): unlike 2D, where rotating is just spinning the finished image, 3D needs
+    // the whole projection recomputed so the walls' shaded faces still match the new angle.
+    fun rotateMap90(clockwise: Boolean = true) {
+        val next = ((_mapRotation.value + if (clockwise) 90 else -90) + 360) % 360
         container.appSettings.setMapRotation(device.duid, next)
         _mapRotation.value = next
     }

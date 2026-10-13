@@ -80,11 +80,16 @@ private val DarkPalette = MapPalette(
  * the raw system setting, so the map never disagrees with the surface it sits on.
  */
 @Composable
-fun rememberMapBitmap(map: ParsedMap, drawRestrictions: Boolean = true, is3D: Boolean = false): ImageBitmap {
+fun rememberMapBitmap(
+    map: ParsedMap,
+    drawRestrictions: Boolean = true,
+    is3D: Boolean = false,
+    isoQuadrant: Int = 0,
+): ImageBitmap {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val palette = if (dark) DarkPalette else LightPalette
-    return remember(map, dark, drawRestrictions, is3D) {
-        if (is3D) renderMapIsometric(map, palette) else renderMap(map, palette, drawRestrictions)
+    return remember(map, dark, drawRestrictions, is3D, isoQuadrant) {
+        if (is3D) renderMapIsometric(map, palette, isoQuadrant) else renderMap(map, palette, drawRestrictions)
     }
 }
 
@@ -195,8 +200,13 @@ private fun shade(c: Color, factor: Float) = Color(
  * room is its own floor tile, every wall — interior walls included, not only the outer boundary —
  * is an extruded box with a top face and two shaded side faces, tiling seamlessly where wall runs
  * are adjacent. This is a separate bitmap built from scratch, not a tilt of the flat 2D one.
+ *
+ * [quadrant] is one of the 4 true isometric viewpoints (0-3, 90° apart). Unlike the flat 2D map,
+ * rotating this view can't just spin the finished image: a wall's two visible side faces are
+ * genuinely different faces from each corner, so a real viewpoint change has to re-run the whole
+ * projection from rotated grid coordinates, which is what this does.
  */
-private fun renderMapIsometric(map: ParsedMap, palette: MapPalette): ImageBitmap {
+private fun renderMapIsometric(map: ParsedMap, palette: MapPalette, quadrant: Int = 0): ImageBitmap {
     val w = map.width
     val h = map.height
     val grid = map.grid
@@ -216,13 +226,13 @@ private fun renderMapIsometric(map: ParsedMap, palette: MapPalette): ImageBitmap
     }
     if (maxX < 0) return ImageBitmap(1, 1)
 
-    val gw = (maxX - minX) / DOWNSAMPLE + 1
-    val gh = (maxY - minY) / DOWNSAMPLE + 1
+    var gw = (maxX - minX) / DOWNSAMPLE + 1
+    var gh = (maxY - minY) / DOWNSAMPLE + 1
 
     // 0 empty, 1 floor, 2 wall, per downsampled block; a block with any wall cell counts as wall,
     // so a thin wall between two rooms is never lost to a floor-cell majority inside its own block.
-    val kind = IntArray(gw * gh)
-    val roomOf = IntArray(gw * gh) { -1 }
+    var kind = IntArray(gw * gh)
+    var roomOf = IntArray(gw * gh) { -1 }
     for (cy in 0 until gh) {
         for (cx in 0 until gw) {
             var sawWall = false
@@ -251,6 +261,27 @@ private fun renderMapIsometric(map: ParsedMap, palette: MapPalette): ImageBitmap
             kind[idx] = if (sawWall) 2 else if (sawFloor) 1 else 0
             if (sawFloor) roomOf[idx] = roomCounts.maxByOrNull { it.value }?.key ?: -1
         }
+    }
+
+    // A real viewpoint change, not a spin of the finished picture: rotate the block grid itself 90°
+    // clockwise per step, so the downstream code below — which always treats a cell's (cx+1,cy+1)
+    // corner as the one nearest the camera — stays correct from every corner instead of needing to
+    // know which corner is actually nearest for each of the 4 views.
+    repeat(((quadrant % 4) + 4) % 4) {
+        val rGw = gh; val rGh = gw
+        val rKind = IntArray(rGw * rGh)
+        val rRoomOf = IntArray(rGw * rGh) { -1 }
+        for (y in 0 until gh) {
+            for (x in 0 until gw) {
+                val nx = gh - 1 - y
+                val ny = x
+                val srcIdx = y * gw + x
+                val dstIdx = ny * rGw + nx
+                rKind[dstIdx] = kind[srcIdx]
+                rRoomOf[dstIdx] = roomOf[srcIdx]
+            }
+        }
+        gw = rGw; gh = rGh; kind = rKind; roomOf = rRoomOf
     }
 
     fun projX(cx: Float, cy: Float) = (cx - cy) * ISO_CELL_W
@@ -313,15 +344,24 @@ private fun renderMapIsometric(map: ParsedMap, palette: MapPalette): ImageBitmap
     }
 
     fun projectMm(point: ParsedMapPoint): Pair<Float, Float>? {
-        val gx = ((point.x / 50f) - map.pixelOffsetLeft - minX) / DOWNSAMPLE
-        val gy = ((maxY - minY) - ((point.y / 50f) - map.pixelOffsetTop - minY)) / DOWNSAMPLE
+        var gx = ((point.x / 50f) - map.pixelOffsetLeft - minX) / DOWNSAMPLE
+        var gy = ((maxY - minY) - ((point.y / 50f) - map.pixelOffsetTop - minY)) / DOWNSAMPLE
+        var pw = (maxX - minX) / DOWNSAMPLE + 1f
+        var ph = (maxY - minY) / DOWNSAMPLE + 1f
+        // Same per-step rotation the block grid above was built with, chained the same number of
+        // times, so a marker lands on the rotated floor plan rather than the unrotated one.
+        repeat(((quadrant % 4) + 4) % 4) {
+            val nx = ph - gy; val ny = gx
+            val nw = ph; val nh = pw
+            gx = nx; gy = ny; pw = nw; ph = nh
+        }
         if (gx !in 0f..gw.toFloat() || gy !in 0f..gh.toFloat()) return null
         return gx to gy
     }
     fun drawIsoMarker(point: ParsedMapPoint, color: Color, ring: Color, square: Boolean) {
         val (gx, gy) = projectMm(point) ?: return
-        val center = pt(gx, gy, ISO_WALL_HEIGHT.coerceAtMost(1f))
-        val r = 2.2f
+        val center = pt(gx, gy, 2f)
+        val r = 4f
         if (square) {
             canvas.drawRect(Rect(center.x - r - 1f, center.y - r - 1f, center.x + r + 1f, center.y + r + 1f), Paint().apply { this.color = ring })
             canvas.drawRect(Rect(center.x - r, center.y - r, center.x + r, center.y + r), Paint().apply { this.color = color })

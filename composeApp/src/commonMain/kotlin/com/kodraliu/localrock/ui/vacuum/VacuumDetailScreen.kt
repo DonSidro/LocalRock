@@ -818,11 +818,13 @@ private fun VacuumMapImage(
     selectedRoomIds: List<Int>,
     onRoomTap: (Int) -> Unit,
     is3D: Boolean = false,
+    isoQuadrant: Int = 0,
+    onDragRotate: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
     viewportScope: Any? = null,
     providedMapViewport: LiveMapViewport? = null,
 ) {
-    val bitmap = rememberMapBitmap(map, is3D = is3D)
+    val bitmap = rememberMapBitmap(map, is3D = is3D, isoQuadrant = isoQuadrant)
     // The isometric 3D bitmap has a different shape than the flat map, so the aspect ratio has to
     // come from whatever was actually rendered, not the raw map dimensions.
     val aspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
@@ -843,12 +845,26 @@ private fun VacuumMapImage(
     val currentOnObstacleTap by rememberUpdatedState(onObstacleTap)
 
     // A parsed map is mostly blank grid, so open framed on the floor plan rather than on padding.
-    val bounds = remember(map) { map.contentBoundsNorm() }
-    var viewport by remember { mutableStateOf(Size.Zero) }
-    // Null until the view has been measured, so the framing is never applied from a stale size.
-    val fit: Pair<Float, Offset>? = remember(bounds, viewport) {
-        if (viewport.width == 0f || viewport.height == 0f) null
-        else frameMap(bounds, map.fittedSize(viewport), viewport)
+    // The isometric bitmap is already cropped tight to its content in renderMapIsometric, so there
+    // it's just the whole bitmap; contentBoundsNorm only applies to the flat 2D grid.
+    val bounds = remember(map, is3D) { if (is3D) MapContentBounds(0f, 0f, 1f, 1f) else map.contentBoundsNorm() }
+    var canvasSize by remember(map) { mutableStateOf(IntSize.Zero) }
+    // Null until the canvas has been measured, so the framing is never applied from a stale size.
+    val fit: Pair<Float, Offset>? = remember(bounds, canvasSize) {
+        if (!bounds.isUsable || canvasSize.width == 0 || canvasSize.height == 0) {
+            null
+        } else {
+            val scale = minOf(1f / bounds.width, 1f / bounds.height).coerceIn(1f, 8f)
+            val w = canvasSize.width.toFloat()
+            val h = canvasSize.height.toFloat()
+            val cx = (bounds.left + bounds.right) / 2f
+            val cy = (bounds.top + bounds.bottom) / 2f
+            val offset = Offset(
+                (w * (0.5f - scale * cx)).coerceIn(-w * (scale - 1f), 0f),
+                (h * (0.5f - scale * cy)).coerceIn(-h * (scale - 1f), 0f),
+            )
+            scale to offset
+        }
     }
     val currentFit by rememberUpdatedState(fit)
 
@@ -862,16 +878,40 @@ private fun VacuumMapImage(
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Canvas(
             modifier = Modifier
-                .fillMaxSize()
+                // In 2D the canvas is locked to the bitmap's own aspect ratio, so it always matches
+                // exactly. The isometric bitmap is a diamond with transparent corners inside a
+                // rectangle; locking to its aspect there just letterboxes a small diamond inside an
+                // already-small rectangle. Filling the hero and covering it (below) fixes both at once.
+                .let { if (is3D) it.fillMaxSize() else it.aspectRatio(aspectRatio) }
                 .clipToBounds()
-                .onSizeChanged { viewport = it.toSize() }
-                .pointerInput(identity) {
-                    detectTransformGestures { centroid, pan, zoom, _ ->
-                        val view = size.toSize()
-                        val (newScale, newOffset) =
-                            zoomMap(mapViewport.scale, mapViewport.offset, centroid, pan, zoom, currentMap.fittedSize(view), view)
-                        mapViewport.scale = newScale
-                        mapViewport.offset = newOffset
+                .onSizeChanged { canvasSize = it }
+                .pointerInput(map, is3D) {
+                    // Two-finger twist is the gesture a 3D viewer uses to orbit a model; this isometric
+                    // render only has 4 true viewpoints (see renderMapIsometric), so a twist accumulates
+                    // until it earns a real 90° viewpoint change rather than animating continuously.
+                    var twistAccumDegrees = 0f
+                    detectTransformGestures { centroid, pan, zoom, rotation ->
+                        val newScale = (mapScale * zoom).coerceIn(1f, 8f)
+                        if (is3D) {
+                            twistAccumDegrees += rotation
+                            val turnThreshold = 45f
+                            if (twistAccumDegrees > turnThreshold) {
+                                onDragRotate(1); twistAccumDegrees = 0f
+                            } else if (twistAccumDegrees < -turnThreshold) {
+                                onDragRotate(-1); twistAccumDegrees = 0f
+                            }
+                            mapScale = newScale
+                        } else {
+                            mapOffset = centroid - (centroid - mapOffset) * (newScale / mapScale) + pan
+                            // Clamp so the map can't be panned fully off-screen
+                            val maxX = size.width * (newScale - 1f)
+                            val maxY = size.height * (newScale - 1f)
+                            mapOffset = Offset(
+                                mapOffset.x.coerceIn(-maxX, 0f),
+                                mapOffset.y.coerceIn(-maxY, 0f),
+                            )
+                            mapScale = newScale
+                        }
                     }
                 }
                 .pointerInput(identity) {
@@ -895,7 +935,16 @@ private fun VacuumMapImage(
                     )
                 },
         ) {
-            val content = map.fittedSize(size)
+            // In 2D the canvas already matches the bitmap's aspect ratio exactly, so both terms of
+            // this max are equal and it reduces to the old exact stretch-to-canvas. In 3D the canvas
+            // is just whatever the hero measures, so this fills it completely at one uniform scale
+            // instead of stretching non-uniformly or (via aspectRatio) letterboxing a small diamond.
+            val coverScale = maxOf(size.width / bitmap.width.toFloat(), size.height / bitmap.height.toFloat())
+            val baseDstSize = IntSize((bitmap.width * coverScale).toInt(), (bitmap.height * coverScale).toInt())
+            val baseDstOffset = IntOffset(
+                ((size.width - baseDstSize.width) / 2f).toInt(),
+                ((size.height - baseDstSize.height) / 2f).toInt(),
+            )
             withTransform({
                 translate(left = mapViewport.offset.x, top = mapViewport.offset.y)
                 scale(mapViewport.scale, mapViewport.scale, pivot = Offset.Zero)
@@ -904,8 +953,8 @@ private fun VacuumMapImage(
                     image = bitmap,
                     srcOffset = IntOffset.Zero,
                     srcSize = IntSize(bitmap.width, bitmap.height),
-                    dstOffset = IntOffset.Zero,
-                    dstSize = IntSize(content.width.toInt(), content.height.toInt()),
+                    dstOffset = baseDstOffset,
+                    dstSize = baseDstSize,
                     filterQuality = FilterQuality.None,
                 )
             }
