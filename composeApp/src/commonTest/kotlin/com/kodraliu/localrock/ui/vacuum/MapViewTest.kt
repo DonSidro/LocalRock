@@ -64,6 +64,29 @@ class MapViewTest {
     }
 
     @Test
+    fun tilting_the_camera_squashes_the_floor_and_lifts_walls_by_the_matching_amount() {
+        // Straight down: floor undistorted, no wall height visible. Tipped 60°: floor squashed to half
+        // and a wall's height shows at the matching sin(60°) of its length.
+        assertNear(1f, squashForTilt(0f))
+        assertNear(0.5f, squashForTilt(60f))
+
+        val tipped = view(0f, squashForTilt(60f))
+        assertNear(0.866f, tipped.lift, tolerance = 0.001f)
+        assertNear(0f, view(0f, squashForTilt(0f)).lift)
+    }
+
+    @Test
+    fun a_tap_still_lands_on_the_point_drawn_there_at_every_tilt() {
+        for (tilt in listOf(0f, 20f, 53f, MAP_3D_MAX_TILT)) {
+            val v = view(70f, squashForTilt(tilt))
+            val screen = v.toScreen(80f, 150f)
+            val back = v.toBitmap(screen.x, screen.y)
+            assertNear(80f, back.x, tolerance = 0.05f)
+            assertNear(150f, back.y, tolerance = 0.05f)
+        }
+    }
+
+    @Test
     fun the_free_turning_fit_does_not_change_with_the_heading() {
         val a = fitScale(400f, 600f, 300f, 200f, yawDegrees = 0f, squash = 0.6f, freeTurning = true)
         val b = fitScale(400f, 600f, 300f, 200f, yawDegrees = 71f, squash = 0.6f, freeTurning = true)

@@ -78,19 +78,28 @@ class VacuumViewModel(
 
     private val _map3DYaw = MutableStateFlow(container.appSettings.map3DYaw(device.duid))
     val map3DYaw: StateFlow<Float> = _map3DYaw.asStateFlow()
-    private var yawSaveJob: Job? = null
+    private val _map3DTilt = MutableStateFlow(container.appSettings.map3DTilt(device.duid))
+    val map3DTilt: StateFlow<Float> = _map3DTilt.asStateFlow()
+    private var map3DSaveJob: Job? = null
 
-    /**
-     * Turning the 3D model fires on every frame of a twist, so the view updates at once and only
-     * the heading it settles on is written to storage.
-     */
+    /** Turning the 3D model fires on every frame of a twist; the view updates at once. */
     fun setMap3DYaw(degrees: Float) {
-        val normalized = ((degrees % 360f) + 360f) % 360f
-        _map3DYaw.value = normalized
-        yawSaveJob?.cancel()
-        yawSaveJob = viewModelScope.launch {
+        _map3DYaw.value = ((degrees % 360f) + 360f) % 360f
+        saveMap3DViewSoon()
+    }
+
+    fun setMap3DTilt(degrees: Float) {
+        _map3DTilt.value = degrees.coerceIn(MAP_3D_MIN_TILT, MAP_3D_MAX_TILT)
+        saveMap3DViewSoon()
+    }
+
+    // Only where the model settles is written to storage, not every frame of getting there.
+    private fun saveMap3DViewSoon() {
+        map3DSaveJob?.cancel()
+        map3DSaveJob = viewModelScope.launch {
             delay(500)
-            container.appSettings.setMap3DYaw(device.duid, normalized)
+            container.appSettings.setMap3DYaw(device.duid, _map3DYaw.value)
+            container.appSettings.setMap3DTilt(device.duid, _map3DTilt.value)
         }
     }
 

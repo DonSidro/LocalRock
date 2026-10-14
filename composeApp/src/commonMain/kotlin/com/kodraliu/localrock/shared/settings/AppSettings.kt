@@ -26,6 +26,7 @@ private const val KEY_NOTIFY_BACKGROUND = "notify_background"
 private const val KEY_NOTIFY_PROGRESS = "notify_progress"
 // A three-quarter view, so a first look at the 3D map shows two faces of every wall.
 private const val DEFAULT_MAP_3D_YAW = 35f
+private const val DEFAULT_MAP_3D_TILT = 53f
 
 class AppSettings(private val settings: Settings) {
 
@@ -190,6 +191,13 @@ class AppSettings(private val settings: Settings) {
 
     fun setMap3DYaw(duid: String, degrees: Float) {
         settings.putFloat("map_3d_yaw_$duid", degrees)
+    }
+
+    /** How far the 3D camera is tipped from looking straight down, in degrees; 0 is the flat view. */
+    fun map3DTilt(duid: String): Float = settings.getFloat("map_3d_tilt_$duid", DEFAULT_MAP_3D_TILT)
+
+    fun setMap3DTilt(duid: String, degrees: Float) {
+        settings.putFloat("map_3d_tilt_$duid", degrees)
     }
 
     /** Whether the map view for one robot shows a tilted 3D perspective instead of flat 2D. */

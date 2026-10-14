@@ -47,6 +47,13 @@ internal class MapView(
     }
 }
 
+// The 3D camera's tip from looking straight down, in degrees. Past about 75 the floor is a sliver.
+internal const val MAP_3D_MIN_TILT = 0f
+internal const val MAP_3D_MAX_TILT = 75f
+
+/** How much a floor squashes vertically when the camera is tipped [tiltDegrees] off straight down. */
+internal fun squashForTilt(tiltDegrees: Float): Float = cos(tiltDegrees * (PI / 180.0)).toFloat()
+
 /**
  * The scale at which the floor plan fits the canvas. The 3D view turns freely, so it fits the plan's
  * diagonal and stays the same size at every heading; the flat view fits the plan as it is turned.

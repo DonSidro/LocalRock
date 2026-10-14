@@ -18,6 +18,7 @@ import com.kodraliu.localrock.shared.vacuum.map.MapZone
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapPoint
 import com.kodraliu.localrock.shared.vacuum.map.VirtualWall
+import com.kodraliu.localrock.shared.vacuum.map.roomIdAtCell
 
 // Zone overlays are translucent, so one pair reads over both the light and dark palettes.
 private val NO_GO_FILL = Color(0x33f44336)    // translucent red
@@ -89,22 +90,119 @@ fun rememberMapBitmap(map: ParsedMap, drawRestrictions: Boolean = true): ImageBi
 }
 
 /**
- * The map's wall cells alone, on a transparent bitmap, as (side, top). The 3D view stacks the side
- * layer at rising heights and caps it with the lighter top, which extrudes every wall — interior
- * ones included — through whatever rotation the view is at, with no per-wall geometry to rebuild.
+ * How many times larger than the grid the detail screen draws its layers: as large as keeps the
+ * biggest side under about 2400 pixels, and at most 3. Each step is 9x the memory, so a very large
+ * map falls back to the grid's own size rather than risking running out.
+ */
+internal fun supersampleFor(map: ParsedMap): Int = (2400 / maxOf(map.width, map.height, 1)).coerceIn(1, 3)
+
+/**
+ * The map as (floor, overlay) at [scale] times the grid. The floor is the rooms and walls; the
+ * overlay is the robot's path, zones and markers, drawn over a selected room's tint rather than
+ * under it.
  */
 @Composable
-fun rememberWallBitmaps(map: ParsedMap): Pair<ImageBitmap, ImageBitmap> {
+fun rememberMapLayers(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap> {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return remember(map, dark) {
-        val wall = (if (dark) DarkPalette else LightPalette).wall
-        renderWalls(map, lerp(wall, Color.White, 0.10f)) to renderWalls(map, lerp(wall, Color.White, 0.30f))
+    return remember(map, dark, scale) {
+        val palette = if (dark) DarkPalette else LightPalette
+        renderLayer(map, palette, scale, overlay = false) to renderLayer(map, palette, scale, overlay = true)
     }
 }
 
-private fun renderWalls(map: ParsedMap, color: Color): ImageBitmap {
-    val bitmap = ImageBitmap(map.width, map.height)
+/**
+ * The map's wall cells alone, on a transparent bitmap at [scale] times the grid, as (side, top). The
+ * 3D view stacks the side layer at rising heights and caps it with the lighter top, which extrudes
+ * every wall — interior ones included — through whatever rotation the view is at, with no per-wall
+ * geometry to rebuild.
+ */
+@Composable
+fun rememberWallBitmaps(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap> {
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    return remember(map, dark, scale) {
+        val wall = (if (dark) DarkPalette else LightPalette).wall
+        renderWalls(map, lerp(wall, Color.White, 0.10f), scale) to renderWalls(map, lerp(wall, Color.White, 0.30f), scale)
+    }
+}
+
+/**
+ * The same hue as [color] at full strength: how a room looks when it is picked. The map shows rooms
+ * in muted tints so nothing shouts; a selected room keeps its own hue but comes up bright.
+ */
+internal fun vividOf(color: Color): Color {
+    val r = color.red
+    val g = color.green
+    val b = color.blue
+    val max = maxOf(r, g, b)
+    val delta = max - minOf(r, g, b)
+    if (delta < 0.001f) return Color(0.78f, 0.78f, 0.78f)
+    var hue = when (max) {
+        r -> 60f * (((g - b) / delta) % 6f)
+        g -> 60f * ((b - r) / delta + 2f)
+        else -> 60f * ((r - g) / delta + 4f)
+    }
+    if (hue < 0f) hue += 360f
+    return hsv(hue, saturation = 0.62f, value = 0.95f)
+}
+
+private fun hsv(hue: Float, saturation: Float, value: Float): Color {
+    val c = value * saturation
+    val sector = (hue / 60f) % 6f
+    val x = c * (1f - kotlin.math.abs(sector % 2f - 1f))
+    val m = value - c
+    val (r, g, b) = when (sector.toInt()) {
+        0 -> Triple(c, x, 0f)
+        1 -> Triple(x, c, 0f)
+        2 -> Triple(0f, c, x)
+        3 -> Triple(0f, x, c)
+        4 -> Triple(x, 0f, c)
+        else -> Triple(c, 0f, x)
+    }
+    return Color(r + m, g + m, b + m)
+}
+
+/**
+ * The selected rooms' floor cells at [scale] times the grid, each in a vivid version of that room's
+ * own colour, on a transparent bitmap laid over the floor; null while nothing is selected. It
+ * covers exactly the cells a tap on that room would pick.
+ */
+@Composable
+fun rememberSelectionBitmap(map: ParsedMap, selectedRoomIds: List<Int>, scale: Int): ImageBitmap? {
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    return remember(map, selectedRoomIds, dark, scale) {
+        if (selectedRoomIds.isEmpty()) {
+            null
+        } else {
+            renderSelection(map, selectedRoomIds.toSet(), if (dark) DarkPalette else LightPalette, scale)
+        }
+    }
+}
+
+private fun renderSelection(map: ParsedMap, selected: Set<Int>, palette: MapPalette, scale: Int): ImageBitmap {
+    val bitmap = ImageBitmap(map.width * scale, map.height * scale)
     val canvas = Canvas(bitmap)
+    canvas.scale(scale.toFloat(), scale.toFloat())
+    val vivid = palette.rooms.map { vividOf(it) }
+    val paint = Paint()
+    for (y in 0 until map.height) {
+        val rowOff = y * map.width
+        // Same Y flip as renderMap, so the tint lands on the floor it belongs to.
+        val drawY = (map.height - 1 - y).toFloat()
+        for (x in 0 until map.width) {
+            val room = map.roomIdAtCell(rowOff + x) ?: continue
+            if (room !in selected) continue
+            // Indexed the way drawFloor tints a room, so a room lights up in its own hue.
+            paint.color = vivid[room % vivid.size]
+            canvas.drawRect(Rect(x.toFloat(), drawY, x + 1f, drawY + 1f), paint)
+        }
+    }
+    return bitmap
+}
+
+private fun renderWalls(map: ParsedMap, color: Color, scale: Int): ImageBitmap {
+    val bitmap = ImageBitmap(map.width * scale, map.height * scale)
+    val canvas = Canvas(bitmap)
+    canvas.scale(scale.toFloat(), scale.toFloat())
     val paint = Paint().apply { this.color = color }
     for (y in 0 until map.height) {
         val rowOff = y * map.width
@@ -160,6 +258,26 @@ fun ParsedMap.contentBoundsNorm(): MapContentBounds {
 private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean): ImageBitmap {
     val bitmap = ImageBitmap(map.width, map.height)
     val canvas = Canvas(bitmap)
+    drawFloor(canvas, map, palette)
+    drawOverlays(canvas, map, palette, drawRestrictions)
+    return bitmap
+}
+
+/**
+ * One of the map's two layers, drawn [scale] times larger than the grid. The detail screen draws
+ * the floor, then a selected room's tint, then this overlay (path, zones, markers), so a lit-up
+ * room never hides the path across it. Drawn larger, a thin path or a marker's edge stays crisp
+ * when zoomed in instead of being one blurred grid cell.
+ */
+private fun renderLayer(map: ParsedMap, palette: MapPalette, scale: Int, overlay: Boolean): ImageBitmap {
+    val bitmap = ImageBitmap(map.width * scale, map.height * scale)
+    val canvas = Canvas(bitmap)
+    canvas.scale(scale.toFloat(), scale.toFloat())
+    if (overlay) drawOverlays(canvas, map, palette, drawRestrictions = true) else drawFloor(canvas, map, palette)
+    return bitmap
+}
+
+private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     val wallPaint = Paint().apply { color = palette.wall }
     val floorPaint = Paint().apply { color = palette.floor }
     val roomPaint = Paint()
@@ -190,6 +308,9 @@ private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boo
             )
         }
     }
+}
+
+private fun drawOverlays(canvas: Canvas, map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean) {
     if (map.pathMm.size >= 2) drawPath(canvas, map, palette)
     if (drawRestrictions) {
         map.carpetAreas.forEach { drawZone(canvas, map, it, CARPET_FILL, CARPET_STROKE) }
@@ -201,7 +322,6 @@ private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boo
     // Square dock, round robot: the two markers stay distinguishable without relying on colour.
     map.chargerMm?.let { drawMarker(canvas, map, it, palette.charger, palette.markerRing, square = true) }
     map.robotMm?.let { drawMarker(canvas, map, it, palette.robot, palette.markerRing, square = false) }
-    return bitmap
 }
 
 private fun drawZone(canvas: Canvas, map: ParsedMap, zone: MapZone, fill: Color, stroke: Color) {
