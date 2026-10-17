@@ -781,7 +781,7 @@ class VacuumRepository(
     ): CleanTimer {
         val id = nowEpochSeconds().toString()
         val cron = buildCron(minute, hour, weekdays)
-        session.setTimer(id, enabled = true, cron = cron, settings = settings)
+        session.setTimer(id, enabled = true, cron = cron, settings = settings).requireOk("set_timer")
         val timer = CleanTimer(
             id = id, enabled = true, hour = hour, minute = minute, weekdays = weekdays, settings = settings,
         )
@@ -789,7 +789,11 @@ class VacuumRepository(
         return timer
     }
 
-    /** Rewrites [timer]'s time, days and options in place; its id and on/off state are kept. */
+    /**
+     * Rewrites [timer]'s time, days and options; its id and on/off state are kept. The old schedule
+     * is deleted and added again rather than overwritten, so an option that was dropped is simply
+     * absent and no firmware has to accept a null. If the new one is refused the old one is put back.
+     */
     suspend fun updateTimer(
         timer: CleanTimer,
         hour: Int,
@@ -798,7 +802,16 @@ class VacuumRepository(
         settings: TimerSettings,
     ): CleanTimer {
         val cron = buildCron(minute, hour, weekdays)
-        session.setTimer(timer.id, enabled = timer.enabled, cron = cron, settings = settings, previous = timer.settings)
+        session.delTimer(timer.id).requireOk("del_timer")
+        try {
+            session.setTimer(timer.id, enabled = timer.enabled, cron = cron, settings = settings).requireOk("set_timer")
+        } catch (e: Exception) {
+            runCatching {
+                val oldCron = buildCron(timer.minute, timer.hour, timer.weekdays)
+                session.setTimer(timer.id, enabled = timer.enabled, cron = oldCron, settings = timer.settings)
+            }
+            throw e
+        }
         val updated = timer.copy(hour = hour, minute = minute, weekdays = weekdays, settings = settings)
         _timers.value = _timers.value.map { if (it.id == timer.id) updated else it }
         return updated

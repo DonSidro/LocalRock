@@ -55,7 +55,6 @@ class TimerSettingsTest {
     @Test
     fun no_options_send_the_empty_object_this_app_always_sent() {
         assertEquals("{}", TimerSettings().toActionObject().toString())
-        assertEquals("{}", TimerSettings().toActionObject(previous = TimerSettings()).toString())
     }
 
     @Test
@@ -66,16 +65,10 @@ class TimerSettingsTest {
     }
 
     @Test
-    fun a_dropped_option_is_sent_as_null_so_it_is_cleared() {
-        val before = TimerSettings(fanPower = 104, waterBoxMode = 203, mopMode = 300)
+    fun an_option_that_is_not_chosen_is_left_out_not_sent_as_null() {
         val after = TimerSettings(fanPower = 104)
 
-        assertEquals(
-            """{"fan_power":104,"water_box_mode":null,"mop_mode":null}""",
-            after.toActionObject(previous = before).toString(),
-        )
-        // Nothing to clear when it was never set.
-        assertEquals("""{"fan_power":104}""", after.toActionObject(previous = TimerSettings(fanPower = 101)).toString())
+        assertEquals("""{"fan_power":104}""", after.toActionObject().toString())
     }
 
     @Test
