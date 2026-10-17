@@ -248,6 +248,17 @@ class VacuumRepository(
     suspend fun stopCleaning(): V1Response = session.appStop().requireOk("app_stop")
     suspend fun dock(): V1Response = session.appCharge().requireOk("app_charge")
 
+    suspend fun resumeCleaning(): V1Response {
+        val fresh = session.getStatus() ?: throw IllegalStateException("The robot's current task is unavailable")
+        _status.update { it.merge(fresh) }
+        return when (fresh.inCleaning) {
+            1 -> session.appStart().requireOk("app_start")
+            2 -> session.sendCommand("resume_zoned_clean").requireOk("resume_zoned_clean")
+            3 -> session.sendCommand("resume_segment_clean").requireOk("resume_segment_clean")
+            else -> throw IllegalStateException("There is no supported cleaning task to resume")
+        }
+    }
+
 
     suspend fun rooms(): V1Response {
         val resp = session.appRooms()
