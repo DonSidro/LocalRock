@@ -269,6 +269,9 @@ fun VacuumDetailScreen(
     LaunchedEffect(status.cleanArea) {
         if ((status.cleanArea ?: 0L) > 0L) lastCleanArea = status.cleanArea
     }
+    LaunchedEffect(status.cleanSequenceType) {
+        if (status.cleanSequenceType == 1) cleaningCount = 1
+    }
     // The first request can go out before the robot link is up, so retry until the list arrives.
     // map_status and lab_status change when a map is saved, deleted or switched (also from the
     // official app), so the list is read again then and the floor picker stays current.
@@ -359,7 +362,7 @@ fun VacuumDetailScreen(
                     sessionRoomIds = toClean
                     selectedRoomIds = emptyList()
                     panel = null
-                    viewModel.run { it.cleanRooms(toClean, cleaningCount) }
+                    viewModel.run { it.cleanRooms(toClean, if (status.cleanSequenceType == 1) 1 else cleaningCount) }
                 },
                 onLoadMap = {
                     panel = null
@@ -400,6 +403,11 @@ fun VacuumDetailScreen(
             )
 
             DetailPanel.CleaningMode -> {
+                val vacuumThenMop = status.cleanSequenceType == 1
+                val fan = status.fanPower?.takeUnless { it == VacuumFanPower.OFF } ?: VacuumFanPower.BALANCED
+                val water = status.waterBoxCustomMode?.takeUnless { it == WaterBoxMode.OFF }
+                    ?: if (supportsWaterSlide) WaterBoxMode.SLIDE_MEDIUM else WaterBoxMode.LOW
+                val route = mopMode ?: MopRoute.STANDARD
                 // A refusal is shown in the sheet; the screen's own message would be behind it.
                 var modeError by remember { mutableStateOf<String?>(null) }
                 fun runMode(successMessage: String? = null, action: suspend (VacuumRepository) -> Unit) {
@@ -410,31 +418,66 @@ fun VacuumDetailScreen(
                     currentFanPower = status.fanPower,
                     currentWaterMode = status.waterBoxCustomMode,
                     currentRoute = mopMode,
+                    currentSequenceType = status.cleanSequenceType,
                     cleaningCount = cleaningCount,
                     busy = busy,
                     supportsSmartPlan = supportsSmartPlan,
+                    supportsVacuumThenMop = viewModel.supportsVacuumThenMop,
+                    supportsCleanEfficiency = viewModel.supportsCleanEfficiency,
                     rooms = parsedMap?.rooms ?: emptyList(),
                     roomCleanModes = roomCleanModes,
                     roomModesLoaded = roomModesLoaded,
                     error = modeError,
                     onPlanSelected = { plan ->
+                        val (planFan, planWater, planRoute) = when (plan) {
+                            CleanPlan.SMART -> Triple(VacuumFanPower.SMART, WaterBoxMode.SMART, MopRoute.SMART)
+                            CleanPlan.MANUAL -> Triple(
+                                VacuumFanPower.BALANCED,
+                                if (supportsWaterSlide) WaterBoxMode.SLIDE_MEDIUM else WaterBoxMode.LOW,
+                                MopRoute.STANDARD,
+                            )
+                            CleanPlan.PER_ROOM -> Triple(VacuumFanPower.CUSTOM, WaterBoxMode.CUSTOM, MopRoute.CUSTOM)
+                        }
                         runMode {
-                            when (plan) {
-                                CleanPlan.SMART -> it.setCleanMotorMode(VacuumFanPower.SMART, WaterBoxMode.SMART, MopRoute.SMART)
-                                CleanPlan.MANUAL -> {
-                                    // Water slide robots get a slide code, as python-roborock does.
-                                    val water = if (supportsWaterSlide) WaterBoxMode.SLIDE_MEDIUM else WaterBoxMode.LOW
-                                    it.setCleanMotorMode(VacuumFanPower.BALANCED, water, MopRoute.STANDARD)
-                                }
-                                // The three codes the official app sent for its Customize tab.
-                                CleanPlan.PER_ROOM -> it.setCleanMotorMode(VacuumFanPower.CUSTOM, WaterBoxMode.CUSTOM, MopRoute.CUSTOM)
+                            if (vacuumThenMop) {
+                                it.setCleanSequenceType(0, planFan, planWater, planRoute)
+                            } else {
+                                it.setCleanMotorMode(planFan, planWater, planRoute)
+                            }
+                        }
+                    },
+                    onModeSelected = { mode ->
+                        val modeFan = if (mode == 1) VacuumFanPower.OFF else fan
+                        val modeWater = if (mode == 2) WaterBoxMode.OFF else water
+                        val modeRoute = if (mode == 3 && !viewModel.supportsCleanEfficiency &&
+                            route != MopRoute.STANDARD && route != MopRoute.FAST
+                        ) MopRoute.STANDARD else route
+                        runMode {
+                            if (mode == 3 || vacuumThenMop) {
+                                it.setCleanSequenceType(
+                                    if (mode == 3) 1 else 0, modeFan, modeWater, modeRoute,
+                                    if (mode == 3 && viewModel.supportsVacuumThenMopRepeat) 1 else null,
+                                )
+                            } else if (modeFan == VacuumFanPower.OFF) {
+                                // The robot rejects turning suction off while water is also off.
+                                it.setWaterBoxMode(modeWater)
+                                it.setFanPower(modeFan)
+                            } else {
+                                it.setFanPower(modeFan)
+                                it.setWaterBoxMode(modeWater)
                             }
                         }
                     },
                     onSaveRoomModes = { modes -> runMode("Room settings saved") { it.saveRoomCleanModes(modes) } },
-                    onFanPowerSelected = { level -> runMode { it.setFanPower(level) } },
-                    onWaterModeSelected = { level -> runMode { it.setWaterBoxMode(level) } },
-                    onRouteSelected = { mode -> runMode { it.setMopMode(mode) } },
+                    onFanPowerSelected = { level -> runMode {
+                        if (vacuumThenMop) it.setCleanMotorMode(level, water, route) else it.setFanPower(level)
+                    } },
+                    onWaterModeSelected = { level -> runMode {
+                        if (vacuumThenMop) it.setCleanMotorMode(fan, level, route) else it.setWaterBoxMode(level)
+                    } },
+                    onRouteSelected = { mode -> runMode {
+                        if (vacuumThenMop) it.setCleanMotorMode(fan, water, mode) else it.setMopMode(mode)
+                    } },
                     onCountChange = { cleaningCount = it },
                 )
             }
@@ -506,7 +549,7 @@ fun VacuumDetailScreen(
                 val toClean = selectedRoomIds
                 sessionRoomIds = toClean
                 selectedRoomIds = emptyList()
-                viewModel.run { it.cleanRooms(toClean, cleaningCount) }
+                viewModel.run { it.cleanRooms(toClean, if (status.cleanSequenceType == 1) 1 else cleaningCount) }
             },
             onClearSelection = { selectedRoomIds = emptyList() },
             onPause = { viewModel.run { it.pause() } },
@@ -1180,6 +1223,7 @@ private fun ControlBar(
                 label = {
                     Text(
                         when {
+                            status.cleanSequenceType == 1 -> "Vac → Mop"
                             isSmartModeSet(status.fanPower, status.waterBoxCustomMode, null) -> CleanPlan.SMART.label
                             isCustomizeModeSet(status.fanPower, status.waterBoxCustomMode, null) -> CleanPlan.PER_ROOM.label
                             mopping && status.fanPower == VacuumFanPower.OFF -> "Mop"
@@ -1418,26 +1462,30 @@ private fun CleaningModeSheetContent(
     currentFanPower: Int?,
     currentWaterMode: Int?,
     currentRoute: Int?,
+    currentSequenceType: Int?,
     cleaningCount: Int,
     busy: Boolean,
     supportsSmartPlan: Boolean,
+    supportsVacuumThenMop: Boolean,
+    supportsCleanEfficiency: Boolean,
     rooms: List<ParsedMapRoom>,
     roomCleanModes: List<RoomCleanMode>,
     roomModesLoaded: Boolean?,
     error: String?,
     onPlanSelected: (CleanPlan) -> Unit,
+    onModeSelected: (Int) -> Unit,
     onSaveRoomModes: (List<RoomCleanMode>) -> Unit,
     onFanPowerSelected: (Int) -> Unit,
     onWaterModeSelected: (Int) -> Unit,
     onRouteSelected: (Int) -> Unit,
     onCountChange: (Int) -> Unit,
 ) {
-    val initialTab = when {
+    val selectedTab = when {
+        currentSequenceType == 1 -> 3
         (currentWaterMode ?: WaterBoxMode.OFF) == WaterBoxMode.OFF -> 2
         currentFanPower == VacuumFanPower.OFF -> 1
         else -> 0
     }
-    var selectedTab by remember { mutableIntStateOf(initialTab) }
     // SmartPlan owns suction, water and route; the robot rejects manual changes until it is left.
     val smart = isSmartModeSet(currentFanPower, currentWaterMode, currentRoute)
     // Per-room settings report their own codes for all three as well.
@@ -1489,19 +1537,13 @@ private fun CleaningModeSheetContent(
             }
         } else {
             SecondaryTabRow(selectedTabIndex = selectedTab) {
-                listOf("Vac & Mop", "Mop", "Vacuum").forEachIndexed { i, title ->
+                val tabs = listOf("Vac & Mop", "Mop", "Vacuum") +
+                    if (supportsVacuumThenMop || currentSequenceType == 1) listOf("Vac → Mop") else emptyList()
+                tabs.forEachIndexed { i, title ->
                     Tab(
                         selected = selectedTab == i,
-                        onClick = {
-                            selectedTab = i
-                            val waterOff = (currentWaterMode ?: WaterBoxMode.OFF) == WaterBoxMode.OFF
-                            val fanOff = currentFanPower == VacuumFanPower.OFF
-                            when (i) {
-                                0 -> { if (waterOff) onWaterModeSelected(WaterBoxMode.LOW); if (fanOff) onFanPowerSelected(VacuumFanPower.BALANCED) }
-                                1 -> { if (waterOff) onWaterModeSelected(WaterBoxMode.LOW); onFanPowerSelected(VacuumFanPower.OFF) }
-                                2 -> { if (fanOff) onFanPowerSelected(VacuumFanPower.BALANCED); onWaterModeSelected(WaterBoxMode.OFF) }
-                            }
-                        },
+                        enabled = !busy,
+                        onClick = { onModeSelected(i) },
                         text = { Text(title) },
                     )
                 }
@@ -1517,6 +1559,7 @@ private fun CleaningModeSheetContent(
                     val subtitle = when (selectedTab) {
                         0 -> "Vac & Mop for daily clean"
                         1 -> "Mop only for delicate floors"
+                        3 -> "Vacuum first, then mop"
                         else -> "Vacuum only mode"
                     }
                     Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1525,16 +1568,21 @@ private fun CleaningModeSheetContent(
                         ModeOptionSelector("Suction power", FAN_OPTIONS.map { it.second }, FAN_OPTIONS.indexOfFirst { it.first == currentFanPower }, !busy) { onFanPowerSelected(FAN_OPTIONS[it].first) }
                     }
                     val water = @Composable {
-                        ModeOptionSelector("Water flow", WATER_OPTIONS.map { it.second }, WATER_OPTIONS.indexOfFirst { it.first == WaterBoxMode.normalize(currentWaterMode) }, !busy) { onWaterModeSelected(WATER_OPTIONS[it].first) }
+                        val options = if (selectedTab == 3) WATER_OPTIONS.filter { it.first != WaterBoxMode.OFF } else WATER_OPTIONS
+                        ModeOptionSelector("Water flow", options.map { it.second }, options.indexOfFirst { it.first == WaterBoxMode.normalize(currentWaterMode) }, !busy) { onWaterModeSelected(options[it].first) }
                     }
                     val route = @Composable {
-                        ModeOptionSelector("Route", ROUTE_OPTIONS.map { it.second }, ROUTE_OPTIONS.indexOfFirst { it.first == currentRoute }, !busy) { onRouteSelected(ROUTE_OPTIONS[it].first) }
+                        val options = if (selectedTab == 3 && !supportsCleanEfficiency) {
+                            ROUTE_OPTIONS.filter { it.first == MopRoute.STANDARD || it.first == MopRoute.FAST }
+                        } else ROUTE_OPTIONS
+                        ModeOptionSelector("Route", options.map { it.second }, options.indexOfFirst { it.first == currentRoute }, !busy) { onRouteSelected(options[it].first) }
                     }
 
                     when (selectedTab) {
                         0 -> { suction(); water(); CountSelector(cleaningCount, onCountChange); route() }
                         1 -> { water(); CountSelector(cleaningCount, onCountChange); route() }
                         2 -> { suction(); CountSelector(cleaningCount, onCountChange); route() }
+                        3 -> { suction(); water(); route() }
                     }
                 }
             }
