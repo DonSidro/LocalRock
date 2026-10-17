@@ -34,6 +34,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -76,9 +78,24 @@ fun ScheduleScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<CleanTimer?>(null) }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+
     LaunchedEffect(Unit) { runCatching { repository.fetchTimers() } }
 
+    // A refused save is shown, and the list is read back so it matches what the robot really holds.
+    fun saveTimer(action: suspend () -> Unit) {
+        scope.launch {
+            try {
+                action()
+            } catch (e: Exception) {
+                runCatching { repository.fetchTimers() }
+                snackbarHostState.showSnackbar(e.message ?: "The schedule could not be saved")
+            }
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Schedule") },
@@ -126,7 +143,7 @@ fun ScheduleScreen(
             initial = null,
             onSave = { hour, minute, weekdays, settings ->
                 showAddDialog = false
-                scope.launch { runCatching { repository.createTimer(hour, minute, weekdays, settings) } }
+                saveTimer { repository.createTimer(hour, minute, weekdays, settings) }
             },
             onDismiss = { showAddDialog = false },
         )
@@ -137,7 +154,7 @@ fun ScheduleScreen(
             initial = timer,
             onSave = { hour, minute, weekdays, settings ->
                 editing = null
-                scope.launch { runCatching { repository.updateTimer(timer, hour, minute, weekdays, settings) } }
+                saveTimer { repository.updateTimer(timer, hour, minute, weekdays, settings) }
             },
             onDismiss = { editing = null },
         )

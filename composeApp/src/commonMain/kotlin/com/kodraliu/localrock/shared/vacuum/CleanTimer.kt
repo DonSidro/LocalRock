@@ -1,7 +1,6 @@
 package com.kodraliu.localrock.shared.vacuum
 
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -62,21 +61,14 @@ fun timerSettingsFor(
 
 /**
  * The action object for set_timer. It is `{}` when nothing is chosen, which is the wire format this
- * app always used. A value that [previous] had and this no longer has is sent as null so the server
- * clears it rather than keeping the old one.
+ * app always used. An option that is not chosen is left out of the object, never sent as null.
  */
-internal fun TimerSettings.toActionObject(previous: TimerSettings? = null): JsonObject {
+internal fun TimerSettings.toActionObject(): JsonObject {
     val fields = LinkedHashMap<String, JsonElement>()
-    fun put(key: String, now: Int?, before: Int?) {
-        when {
-            now != null -> fields[key] = JsonPrimitive(now)
-            before != null -> fields[key] = JsonNull
-        }
-    }
-    put("fan_power", fanPower, previous?.fanPower)
-    put("water_box_mode", waterBoxMode, previous?.waterBoxMode)
-    put("mop_mode", mopMode, previous?.mopMode)
-    put("repeat", repeat, previous?.repeat)
+    fanPower?.let { fields["fan_power"] = JsonPrimitive(it) }
+    waterBoxMode?.let { fields["water_box_mode"] = JsonPrimitive(it) }
+    mopMode?.let { fields["mop_mode"] = JsonPrimitive(it) }
+    repeat?.let { fields["repeat"] = JsonPrimitive(it) }
     return JsonObject(fields)
 }
 

@@ -112,15 +112,13 @@ suspend fun VacuumSession.getTimer(): V1Response = sendCommand("get_timer")
 
 /**
  * Creates or replaces a schedule. [settings] ride in the action object; with none chosen it is the
- * `{}` this always sent. [previous] is the schedule's stored settings when editing, so a value that
- * was dropped is cleared rather than kept.
+ * `{}` this always sent.
  */
 suspend fun VacuumSession.setTimer(
     id: String,
     enabled: Boolean,
     cron: String,
     settings: TimerSettings = TimerSettings(),
-    previous: TimerSettings? = null,
 ): V1Response =
     sendCommand("set_timer", listOf(JsonArray(listOf(
         JsonPrimitive(id),
@@ -128,7 +126,7 @@ suspend fun VacuumSession.setTimer(
             JsonPrimitive(if (enabled) "on" else "off"),
             JsonArray(listOf(
                 JsonPrimitive(cron),
-                JsonArray(listOf(JsonPrimitive("start_clean"), settings.toActionObject(previous))),
+                JsonArray(listOf(JsonPrimitive("start_clean"), settings.toActionObject())),
             )),
         )),
     ))))
