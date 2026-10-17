@@ -32,7 +32,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,7 +49,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.vacuum.ZoneRect
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,7 +57,7 @@ fun ZoneCleanScreen(
     onBack: () -> Unit,
 ) {
     val parsedMap by viewModel.repository.parsedMap.collectAsState()
-    val scope = rememberCoroutineScope()
+    val busy by viewModel.busy.collectAsState()
     var zones by remember { mutableStateOf<List<ZoneRect>>(emptyList()) }
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragCurrent by remember { mutableStateOf<Offset?>(null) }
@@ -92,9 +90,10 @@ fun ZoneCleanScreen(
                         }
                     }
                     if (zones.isNotEmpty() && !sent) {
-                        TextButton(onClick = {
-                            scope.launch {
-                                runCatching { viewModel.repository.cleanZones(zones) }
+                        TextButton(enabled = !busy, onClick = {
+                            val selectedZones = zones
+                            viewModel.run {
+                                it.cleanZones(selectedZones)
                                 sent = true
                             }
                         }) { Text("Start") }
