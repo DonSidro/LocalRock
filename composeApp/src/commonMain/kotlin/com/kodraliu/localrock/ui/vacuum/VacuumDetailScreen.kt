@@ -214,6 +214,7 @@ fun VacuumDetailScreen(
 
     var sessionRoomIds by remember { mutableStateOf(emptyList<Int>()) }
     var showDockSheet by remember { mutableStateOf(false) }
+    var showEmptyWaterTankConfirmation by remember { mutableStateOf(false) }
     var showRoomsSheet by remember { mutableStateOf(false) }
     var showOrderSheet by remember { mutableStateOf(false) }
     var showMoreSheet by remember { mutableStateOf(false) }
@@ -428,7 +429,9 @@ fun VacuumDetailScreen(
                 status = status,
                 busy = busy,
                 dockSettings = dockSettings,
+                supportsEmptyRobotWaterTank = viewModel.supportsEmptyRobotWaterTank,
                 onEmptyDustbin = { showDockSheet = false; viewModel.run { it.collectDust() } },
+                onEmptyRobotWaterTank = { showDockSheet = false; showEmptyWaterTankConfirmation = true },
                 onWashMop = { showDockSheet = false; viewModel.run { it.washMop() } },
                 // Dry keeps the sheet open so the drying status row appears in place.
                 onDryMop = { viewModel.run { it.startDryer() } },
@@ -438,6 +441,26 @@ fun VacuumDetailScreen(
                 onAutoEmptyModeChange = { mode -> viewModel.run { repo -> repo.setAutoEmptyMode(mode) } },
             )
         }
+    }
+
+    if (showEmptyWaterTankConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showEmptyWaterTankConfirmation = false },
+            title = { Text("Empty robot water tank?") },
+            text = { Text("Remove both mop holders with their pads, then place the robot back in the dock before starting.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        showEmptyWaterTankConfirmation = false
+                        viewModel.run { it.emptyRobotWaterTank() }
+                    },
+                ) { Text("Mops removed, start") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEmptyWaterTankConfirmation = false }) { Text("Cancel") }
+            },
+        )
     }
 
     if (showRecoverSheet) {
@@ -1470,7 +1493,9 @@ private fun DockSheetContent(
     status: VacuumStatus,
     busy: Boolean,
     dockSettings: DockSettings,
+    supportsEmptyRobotWaterTank: Boolean,
     onEmptyDustbin: () -> Unit,
+    onEmptyRobotWaterTank: () -> Unit,
     onWashMop: () -> Unit,
     onDryMop: () -> Unit,
     onStopDry: () -> Unit,
@@ -1489,7 +1514,7 @@ private fun DockSheetContent(
         }
         Box(Modifier.fillMaxWidth().heightIn(min = 340.dp)) {
             when (selectedTab) {
-                0 -> DockControlTab(status, busy, onEmptyDustbin, onWashMop, onDryMop, onStopDry)
+                0 -> DockControlTab(status, busy, supportsEmptyRobotWaterTank, onEmptyDustbin, onEmptyRobotWaterTank, onWashMop, onDryMop, onStopDry)
                 1 -> DockSettingsTab(dockSettings, onWashModeChange, onWashFreqChange, onAutoEmptyModeChange)
             }
         }
@@ -1500,7 +1525,9 @@ private fun DockSheetContent(
 private fun DockControlTab(
     status: VacuumStatus,
     busy: Boolean,
+    supportsEmptyRobotWaterTank: Boolean,
     onEmptyDustbin: () -> Unit,
+    onEmptyRobotWaterTank: () -> Unit,
     onWashMop: () -> Unit,
     onDryMop: () -> Unit,
     onStopDry: () -> Unit,
@@ -1574,6 +1601,17 @@ private fun DockControlTab(
             } else {
                 DockActionButton(Modifier.weight(1f), Icons.Default.Air, AppColors.Warn, "Dry", !busy, onDryMop)
             }
+        }
+        if (supportsEmptyRobotWaterTank) {
+            DockActionButton(
+                modifier = Modifier.fillMaxWidth(),
+                icon = Icons.Default.WaterDrop,
+                iconTint = AppColors.Water,
+                label = "Empty robot water tank into dock",
+                enabled = !busy && status.inCleaning == 0 &&
+                    status.state in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE),
+                onClick = onEmptyRobotWaterTank,
+            )
         }
     }
 }

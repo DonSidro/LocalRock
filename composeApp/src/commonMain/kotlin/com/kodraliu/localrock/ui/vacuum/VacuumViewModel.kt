@@ -9,6 +9,7 @@ import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
+import com.kodraliu.localrock.shared.vacuum.newFeatureBit
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +30,7 @@ class VacuumViewModel(
     val firmwareVersion: String? = device.fv
     val supportsSmartPlan: Boolean = isSmartPlanSupported(device.newFeatureSet)
     val supportsWaterSlide: Boolean = isWaterSlideSupported(device.newFeatureSet)
+    val supportsEmptyRobotWaterTank: Boolean = newFeatureBit(device.newFeatureSet, 27)
     val repository: VacuumRepository = container.vacuumRepositoryFor(device)
     val status = repository.status
 

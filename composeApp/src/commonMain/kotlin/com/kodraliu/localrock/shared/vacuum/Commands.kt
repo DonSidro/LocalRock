@@ -40,6 +40,8 @@ suspend fun VacuumSession.setWaterBoxCustomMode(level: Int): V1Response =
 suspend fun VacuumSession.appStartCollectDust(): V1Response = sendCommand("app_start_collect_dust")
 suspend fun VacuumSession.appStartWash(): V1Response = sendCommand("app_start_wash")
 suspend fun VacuumSession.appStopWash(): V1Response = sendCommand("app_stop_wash")
+suspend fun VacuumSession.appEmptyInbuiltWaterTank(): V1Response =
+    sendCommandRaw("app_empty_inbuilt_water_tank", JsonObject(emptyMap()))
 
 suspend fun VacuumSession.getStatus(): VacuumStatus? {
     val resp = sendCommand("get_status")

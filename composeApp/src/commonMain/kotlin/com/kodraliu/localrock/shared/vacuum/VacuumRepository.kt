@@ -351,6 +351,15 @@ class VacuumRepository(
 
     suspend fun stopDryer(): V1Response = session.appSetDryerStatus(false)
 
+    suspend fun emptyRobotWaterTank(): V1Response {
+        val fresh = session.getStatus() ?: throw IllegalStateException("The robot's current status is unavailable")
+        _status.update { it.merge(fresh) }
+        if (fresh.state !in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE) || fresh.inCleaning != 0) {
+            throw IllegalStateException("Dock the robot and finish its current task before emptying its water tank")
+        }
+        return session.appEmptyInbuiltWaterTank().requireOk("app_empty_inbuilt_water_tank")
+    }
+
     suspend fun fetchMopMode() {
         runCatching { session.getMopMode() }.getOrNull()
             ?.result?.let { r ->
