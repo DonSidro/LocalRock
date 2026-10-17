@@ -79,13 +79,13 @@ suspend fun VacuumSession.appGotoTarget(x: Int, y: Int): V1Response =
     sendCommand("app_goto_target", listOf(JsonArray(listOf(JsonPrimitive(x), JsonPrimitive(y)))))
 
 suspend fun VacuumSession.appZonedClean(zones: List<ZoneRect>): V1Response {
-    val params = listOf(JsonArray(zones.map { z ->
+    val params = zones.map { z ->
         JsonArray(listOf(
             JsonPrimitive(z.x1), JsonPrimitive(z.y1),
             JsonPrimitive(z.x2), JsonPrimitive(z.y2),
             JsonPrimitive(z.times),
         ))
-    }))
+    }
     return sendCommand("app_zoned_clean", params)
 }
 
