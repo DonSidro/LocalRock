@@ -13,6 +13,7 @@ import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
 import com.kodraliu.localrock.shared.vacuum.map.VirtualWall
 import com.kodraliu.localrock.shared.vacuum.map.parseB01Map
 import com.kodraliu.localrock.shared.vacuum.map.parseLegacyMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -243,9 +244,9 @@ class VacuumRepository(
         scope.launch { session.close() }
     }
 
-    suspend fun pause(): V1Response = session.appPause()
-    suspend fun stopCleaning(): V1Response = session.appStop()
-    suspend fun dock(): V1Response = session.appCharge()
+    suspend fun pause(): V1Response = session.appPause().requireOk("app_pause")
+    suspend fun stopCleaning(): V1Response = session.appStop().requireOk("app_stop")
+    suspend fun dock(): V1Response = session.appCharge().requireOk("app_charge")
 
 
     suspend fun rooms(): V1Response {
@@ -294,7 +295,7 @@ class VacuumRepository(
      */
     suspend fun cleanRooms(roomIds: List<Int>, repeat: Int = 1): V1Response {
         if (roomIds.distinct().size >= 2) writeCleanSequence { stored -> cleanSequenceFor(roomIds, stored) }
-        return session.appSegmentClean(roomIds, repeat)
+        return session.appSegmentClean(roomIds, repeat).requireOk("app_segment_clean")
     }
 
     /**
@@ -306,7 +307,7 @@ class VacuumRepository(
         val onMap = _rooms.value.map { it.id }
         val order = if (onMap.isEmpty()) defaultOrder else defaultOrder.filter { it in onMap }
         if (order.isNotEmpty()) writeCleanSequence { stored -> order.takeIf { it != stored } }
-        return session.appStart()
+        return session.appStart().requireOk("app_start")
     }
 
     /** Set once the robot fails a sequence command, so later cleans don't wait on it again. */
@@ -319,6 +320,7 @@ class VacuumRepository(
             val stored = parseCleanSequence(session.getCleanSequence().result)
             wanted(stored)?.let { session.setCleanSequence(it) }
         }.onFailure {
+            if (it is CancellationException) throw it
             println("[VacLocal] room order not stored: $it")
             cleanSequenceRefused = true
         }
@@ -340,16 +342,16 @@ class VacuumRepository(
         cleanSequenceRefused = false
     }
 
-    suspend fun setFanPower(level: Int): V1Response = session.setCustomMode(level)
+    suspend fun setFanPower(level: Int): V1Response = session.setCustomMode(level).requireOk("set_custom_mode")
 
-    suspend fun setWaterBoxMode(level: Int): V1Response = session.setWaterBoxCustomMode(level)
+    suspend fun setWaterBoxMode(level: Int): V1Response = session.setWaterBoxCustomMode(level).requireOk("set_water_box_custom_mode")
 
-    suspend fun collectDust(): V1Response = session.appStartCollectDust()
-    suspend fun washMop(): V1Response = session.appStartWash()
-    suspend fun stopWash(): V1Response = session.appStopWash()
-    suspend fun startDryer(): V1Response = session.appSetDryerStatus(true)
+    suspend fun collectDust(): V1Response = session.appStartCollectDust().requireOk("app_start_collect_dust")
+    suspend fun washMop(): V1Response = session.appStartWash().requireOk("app_start_wash")
+    suspend fun stopWash(): V1Response = session.appStopWash().requireOk("app_stop_wash")
+    suspend fun startDryer(): V1Response = session.appSetDryerStatus(true).requireOk("app_set_dryer_status")
 
-    suspend fun stopDryer(): V1Response = session.appSetDryerStatus(false)
+    suspend fun stopDryer(): V1Response = session.appSetDryerStatus(false).requireOk("app_set_dryer_status")
 
     suspend fun fetchMopMode() {
         runCatching { session.getMopMode() }.getOrNull()
@@ -364,7 +366,7 @@ class VacuumRepository(
     }
 
     suspend fun setMopMode(mode: Int) {
-        session.setMopMode(mode)
+        session.setMopMode(mode).requireOk("set_mop_mode")
         _mopMode.value = mode
     }
 
@@ -456,7 +458,7 @@ class VacuumRepository(
 
     suspend fun gotoTarget(x: Int, y: Int) { session.appGotoTarget(x, y) }
 
-    suspend fun cleanZones(zones: List<ZoneRect>) { session.appZonedClean(zones) }
+    suspend fun cleanZones(zones: List<ZoneRect>) { session.appZonedClean(zones).requireOk("app_zoned_clean") }
 
     private val mapEditMutex = Mutex()
 
@@ -828,12 +830,12 @@ class VacuumRepository(
     }
 
     suspend fun setLed(enabled: Boolean) {
-        session.setLedStatus(enabled)
+        session.setLedStatus(enabled).requireOk("set_led_status")
         _robotSettings.update { it.copy(ledEnabled = enabled) }
     }
 
     suspend fun setCarpetMode(mode: Int) {
-        session.setCarpetCleanMode(mode)
+        session.setCarpetCleanMode(mode).requireOk("set_carpet_clean_mode")
         _robotSettings.update { it.copy(carpetMode = mode) }
     }
 
@@ -913,7 +915,7 @@ class VacuumRepository(
     }
 
     suspend fun setDnd(startHour: Int, startMinute: Int, endHour: Int, endMinute: Int) {
-        session.setDndTimer(startHour, startMinute, endHour, endMinute)
+        session.setDndTimer(startHour, startMinute, endHour, endMinute).requireOk("set_dnd_timer")
         _dndSettings.update {
             it?.copy(enabled = true, startHour = startHour, startMinute = startMinute, endHour = endHour, endMinute = endMinute)
                 ?: DndSettings(true, startHour, startMinute, endHour, endMinute)
@@ -921,7 +923,7 @@ class VacuumRepository(
     }
 
     suspend fun disableDnd() {
-        session.closeDndTimer()
+        session.closeDndTimer().requireOk("close_dnd_timer")
         _dndSettings.update { it?.copy(enabled = false) }
     }
 
