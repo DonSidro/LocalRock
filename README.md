@@ -2,6 +2,18 @@
 
 **A local-network client for Roborock vacuums — control your robot without the Roborock cloud.**
 
+<p align="center">
+  <a href="https://github.com/DonSidro/LocalRock/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/DonSidro/LocalRock?label=release&color=2ea44f"></a>
+  <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/DonSidro/LocalRock?color=blue"></a>
+  <img alt="Platforms: Android and iOS" src="https://img.shields.io/badge/platform-Android%20%7C%20iOS-lightgrey">
+  <a href="https://kotlinlang.org/docs/multiplatform.html"><img alt="Kotlin 2.3.21" src="https://img.shields.io/badge/Kotlin-2.3.21-7F52FF?logo=kotlin&logoColor=white"></a>
+  <a href="https://www.jetbrains.com/compose-multiplatform/"><img alt="Compose Multiplatform 1.10.3" src="https://img.shields.io/badge/Compose%20Multiplatform-1.10.3-4285F4?logo=jetpackcompose&logoColor=white"></a>
+  <br>
+  <a href="https://github.com/DonSidro/LocalRock/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/DonSidro/LocalRock?style=flat&logo=github"></a>
+  <a href="https://github.com/DonSidro/LocalRock/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/DonSidro/LocalRock"></a>
+  <a href="https://discord.gg/MJDZm9zmjY"><img alt="Join the LocalRock Discord" src="https://img.shields.io/badge/Discord-Join%20the%20server-5865F2?logo=discord&logoColor=white"></a>
+</p>
+
 LocalRock is a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.html) / [Compose Multiplatform](https://www.jetbrains.com/compose-multiplatform/) app (Android + iOS) that talks to a privately‑hosted [local_roborock_server](https://github.com/Python-roborock/local_roborock_server) instead of Roborock's cloud. Onboard and control your vacuum and edit its maps, entirely on your own network.
 
 <p align="center">
@@ -47,6 +59,7 @@ LocalRock is a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.
 - [Building from source](#building-from-source)
 - [Troubleshooting](#troubleshooting)
 - [Privacy & security](#privacy--security)
+- [Community](#community)
 - [Support the project](#support-the-project)
 - [Contributing](#contributing)
 - [License](#license)
@@ -311,6 +324,12 @@ cd LocalRock
 
 ---
 
+## Community
+
+Join the [LocalRock Discord](https://discord.gg/MJDZm9zmjY) for help with setup, questions, and release announcements. Bug reports and feature requests are best filed as [GitHub issues](https://github.com/DonSidro/LocalRock/issues) so they can be tracked.
+
+---
+
 ## Support the project
 
 LocalRock is free, open source, and built in my spare time. There's no cloud, no subscriptions, and no analytics — just an app that does one thing for people who want their vacuum to stay on the local network.
@@ -326,7 +345,7 @@ Not able to donate? Starring the repo, filing good bug reports, and contributing
 
 ## Contributing
 
-Contributions are welcome! Please open an issue to discuss substantial changes first. When submitting a PR:
+Contributions are welcome! Please open an issue to discuss substantial changes first, or bring them up on [Discord](https://discord.gg/MJDZm9zmjY). When submitting a PR:
 
 - Keep the app **local‑only** — no code paths that depend on the real Roborock cloud.
 - Follow the existing architecture (single `commonMain` core, `StateFlow` view models, manual DI via `AppContainer`, expect/actual for platform bits).
