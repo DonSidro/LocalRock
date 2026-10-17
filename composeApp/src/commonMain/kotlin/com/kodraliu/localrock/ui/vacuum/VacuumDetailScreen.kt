@@ -339,6 +339,7 @@ fun VacuumDetailScreen(
                 },
                 onClearSelection = { selectedRoomIds = emptyList() },
                 onPause = { viewModel.run { it.pause() } },
+                onResume = { viewModel.run("Cleaning resumed") { it.resumeCleaning() } },
                 onStop = {
                     sessionRoomIds = emptyList()
                     viewModel.run { it.stopCleaning() }
@@ -1025,6 +1026,7 @@ private fun ControlBar(
     onCleanRooms: () -> Unit,
     onClearSelection: () -> Unit,
     onPause: () -> Unit,
+    onResume: () -> Unit,
     onStop: () -> Unit,
     onDock: () -> Unit,
     onCleaningMode: () -> Unit,
@@ -1089,6 +1091,7 @@ private fun ControlBar(
                     when {
                         isCleaning -> onPause()
                         selectedRoomCount > 0 -> onCleanRooms()
+                        isPaused -> onResume()
                         else -> onClean()
                     }
                 },
