@@ -1,5 +1,6 @@
 package com.kodraliu.localrock.shared.vacuum
 
+import com.kodraliu.localrock.shared.device.DeviceApiException
 import com.kodraliu.localrock.shared.model.Room
 import com.kodraliu.localrock.shared.mqtt.MqttClient
 import com.kodraliu.localrock.shared.mqtt.MqttTopics
@@ -56,6 +57,7 @@ class VacuumRepository(
     private val nowEpochSeconds: () -> Int,
     private val pollIntervalMs: Long = 5_000L,
     private val demo: Boolean = false,
+    private val scheduleMirror: ScheduleMirror? = null,
 ) {
     val session: VacuumSession = VacuumSession(
         localKey = localKey,
@@ -890,12 +892,88 @@ class VacuumRepository(
             id = newTimerId(useServerTimer)
             saveTimerEntry(useServerTimer, id, cron, enabled = true, settings = settings)
         }
+        val newWeekdays = if (once) emptySet() else weekdays
+        var timerSettings = settings
+        var timerId = id
+        if (useServerTimer) {
+            timerSettings = settings.completedForServerTimer().copy(serverTimerId = id)
+            try {
+                timerId = createCloudRecord(id, minute, hour, newWeekdays, date, timerSettings)
+            } catch (e: DeviceApiException) {
+                // A server without the jobs endpoint (not yet on a release with it) answers 404 or
+                // 405. The robot's own schedule was already removed, so save it the legacy way,
+                // which robots that carry the server_timer flag still accept on such a server.
+                if (e.responseCode != 404 && e.responseCode != 405) throw e
+                serverTimerPreferred = false
+                id = newTimerId(false)
+                saveTimerEntry(false, id, cron, enabled = true, settings = settings)
+                timerSettings = settings
+                timerId = id
+            }
+        }
         val timer = CleanTimer(
-            id = id, enabled = true, hour = hour, minute = minute,
-            weekdays = if (once) emptySet() else weekdays, settings = settings, date = date,
+            id = timerId, enabled = true, hour = hour, minute = minute,
+            weekdays = newWeekdays, settings = timerSettings, date = date,
         )
         _timers.value = _timers.value + timer
         return timer
+    }
+
+    /**
+     * Adds the cloud's record of the server_timer schedule [robotId] just saved on the robot, and
+     * returns the record's own id. Without it the official app deletes the robot's schedule as a
+     * stray, and this app's list, which reads the records, would not show it. If the record cannot
+     * be written the robot's schedule is removed again, so nothing is left half saved.
+     */
+    private suspend fun createCloudRecord(
+        robotId: String,
+        minute: Int,
+        hour: Int,
+        weekdays: Set<Int>,
+        date: TimerDate?,
+        settings: TimerSettings,
+    ): String {
+        val mirror = scheduleMirror ?: return robotId
+        val body = mirrorJobBody(
+            cron = mirrorCron(minute, hour, weekdays, date),
+            enabled = true,
+            repeated = date == null,
+            settings = settings,
+            robotId = robotId,
+            forCreate = true,
+        )
+        try {
+            return mirror.create(duid, body)
+        } catch (e: Exception) {
+            runCatching { session.delServerTimer(robotId) }
+            throw e
+        }
+    }
+
+    /** Rewrites the cloud record [jobId] of a server_timer schedule to match what the robot now holds. */
+    private suspend fun updateCloudRecord(
+        jobId: String,
+        robotId: String,
+        minute: Int,
+        hour: Int,
+        weekdays: Set<Int>,
+        date: TimerDate?,
+        enabled: Boolean,
+        settings: TimerSettings,
+    ) {
+        val mirror = scheduleMirror ?: return
+        mirror.update(
+            duid,
+            jobId,
+            mirrorJobBody(
+                cron = mirrorCron(minute, hour, weekdays, date),
+                enabled = enabled,
+                repeated = date == null,
+                settings = settings.completedForServerTimer(),
+                robotId = robotId,
+                forCreate = false,
+            ),
+        )
     }
 
     /**
@@ -938,6 +1016,9 @@ class VacuumRepository(
             }
             throw e
         }
+        if (useServerTimer) {
+            updateCloudRecord(timer.id, id, minute, hour, newWeekdays, date, timer.enabled, newSettings)
+        }
         val updated = timer.copy(
             hour = hour, minute = minute, weekdays = newWeekdays, settings = newSettings, date = date,
         )
@@ -949,14 +1030,26 @@ class VacuumRepository(
         val updated = timer.copy(enabled = !timer.enabled)
         val useServerTimer = prefersServerTimer()
         val id = robotId(timer, useServerTimer)
-        if (useServerTimer) session.updServerTimer(id, updated.enabled) else session.updTimer(id, updated.enabled)
+        if (useServerTimer) {
+            session.updServerTimer(id, updated.enabled).requireOk("upd_server_timer")
+            updateCloudRecord(
+                timer.id, id, timer.minute, timer.hour, timer.weekdays, timer.date, updated.enabled, timer.settings,
+            )
+        } else {
+            session.updTimer(id, updated.enabled).requireOk("upd_timer")
+        }
         _timers.value = _timers.value.map { if (it.id == timer.id) updated else it }
     }
 
     suspend fun deleteTimer(timer: CleanTimer) {
         val useServerTimer = prefersServerTimer()
         val id = robotId(timer, useServerTimer)
-        if (useServerTimer) session.delServerTimer(id) else session.delTimer(id)
+        if (useServerTimer) {
+            session.delServerTimer(id).requireOk("del_server_timer")
+            scheduleMirror?.delete(duid, timer.id)
+        } else {
+            session.delTimer(id).requireOk("del_timer")
+        }
         _timers.value = _timers.value.filter { it.id != timer.id }
     }
 
@@ -1234,7 +1327,8 @@ class VacuumRepository(
 
 internal fun buildCron(minute: Int, hour: Int, weekdays: Set<Int>, date: TimerDate? = null): String {
     if (date != null) return "$minute $hour ${date.day} ${date.month} *"
-    val days = if (weekdays.isEmpty()) "*" else weekdays.sorted().joinToString(",")
+    // Every day lists all seven, as the official app's own cron does (captured live).
+    val days = weekdays.ifEmpty { setOf(0, 1, 2, 3, 4, 5, 6) }.sorted().joinToString(",")
     return "$minute $hour * * $days"
 }
 
