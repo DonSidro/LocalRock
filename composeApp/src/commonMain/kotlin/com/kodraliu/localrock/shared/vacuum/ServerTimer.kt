@@ -61,6 +61,35 @@ internal fun serverTimerSetParams(id: String, cron: String, settings: TimerSetti
 }
 
 /**
+ * [this] with every field a set_server_timer entry carries. Confirmed live: the official app always
+ * sends `repeat`, `water_box_mode`, `segments`, `mop_mode`, `fan_power`, `clean_mop` and `map_index`,
+ * and a robot answered `-10005 "Param error"` to an entry with only the three mode codes.
+ * The schedule screen always chooses the three modes, so the defaults here only cover an old
+ * schedule that carried none.
+ */
+internal fun TimerSettings.completedForServerTimer(): TimerSettings = copy(
+    fanPower = fanPower ?: VacuumFanPower.BALANCED,
+    waterBoxMode = waterBoxMode ?: WaterBoxMode.MEDIUM,
+    mopMode = mopMode ?: MopRoute.STANDARD,
+    repeat = repeat ?: 1,
+    segments = segments ?: "0",
+    cleanMop = cleanMop ?: 1,
+    mapIndex = mapIndex ?: -1,
+)
+
+/**
+ * Whether a robot's refusal means "this is the other kind of timer", the one case worth retrying on
+ * the other protocol. Both that and an ordinary bad-parameter refusal use code -10005; only the
+ * first says "timer type error". Retrying a bad request on the legacy protocol would save it on the
+ * server instead of the robot, so it would be run by the server rather than by the robot.
+ */
+internal fun isTimerTypeError(error: JsonObject): Boolean {
+    val code = error["code"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+    val message = error["message"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    return code == -10005 && message.contains("type", ignoreCase = true)
+}
+
+/**
  * Whether the robot's own account considers it a server_timer device, read the same way the
  * official app does: bit 0 of `app_get_init_status`'s `result[0].local_info.featureset`. `true`
  * means use get/set/upd/del_server_timer; `false` means legacy get/set/upd/del_timer. A robot

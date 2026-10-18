@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.shared.vacuum
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -22,12 +23,52 @@ class ServerTimerTest {
     }
 
     @Test
+    fun a_schedule_that_leaves_fields_open_is_completed_the_way_the_official_app_sends_it() {
+        // Only the three mode codes: the robot answered "Param error" to exactly this.
+        val smart = TimerSettings(fanPower = 110, waterBoxMode = 209, mopMode = 306)
+
+        assertEquals(
+            TimerSettings(
+                fanPower = 110, waterBoxMode = 209, mopMode = 306, repeat = 1, segments = "0", cleanMop = 1, mapIndex = -1,
+            ),
+            smart.completedForServerTimer(),
+        )
+        // An old schedule that carried no modes gets plain defaults.
+        assertEquals(
+            TimerSettings(
+                fanPower = 102, waterBoxMode = 202, mopMode = 300, repeat = 1, segments = "0", cleanMop = 1, mapIndex = -1,
+            ),
+            TimerSettings().completedForServerTimer(),
+        )
+        // What the schedule chose is never overwritten.
+        assertEquals(2, TimerSettings(repeat = 2).completedForServerTimer().repeat)
+    }
+
+    @Test
+    fun only_a_timer_type_error_sends_a_save_to_the_other_protocol() {
+        // Both captured live, both code -10005.
+        val typeError = Json.parseToJsonElement("""{"code":-10005,"message":"timer type error"}""") as kotlinx.serialization.json.JsonObject
+        val paramError = Json.parseToJsonElement("""{"code":-10005,"message":"Param error"}""") as kotlinx.serialization.json.JsonObject
+
+        assertEquals(true, isTimerTypeError(typeError))
+        assertEquals(false, isTimerTypeError(paramError))
+        assertEquals(false, isTimerTypeError(Json.parseToJsonElement("""{"code":-1,"message":"timer type error"}""") as kotlinx.serialization.json.JsonObject))
+    }
+
+    @Test
     fun malformed_entries_are_skipped_and_a_non_list_is_empty() {
         val answer = Json.parseToJsonElement("""[["only-an-id"], "junk", ["3","on",-1]]""")
 
         assertEquals(listOf(ServerTimerEntry("3", enabled = true, mapIndex = -1)), parseServerTimerList(answer))
         assertEquals(emptyList(), parseServerTimerList(Json.parseToJsonElement("""{"status":1}""")))
         assertEquals(emptyList(), parseServerTimerList(null))
+    }
+
+    @Test
+    fun upd_server_timer_params_match_the_captured_wire_format() {
+        // Captured from the official app turning a schedule off and back on; the robot answered ["ok"].
+        assertEquals("""[["1792291871087","off"]]""", JsonArray(serverTimerUpdParams("1792291871087", false)).toString())
+        assertEquals("""[["1792291871087","on"]]""", JsonArray(serverTimerUpdParams("1792291871087", true)).toString())
     }
 
     @Test

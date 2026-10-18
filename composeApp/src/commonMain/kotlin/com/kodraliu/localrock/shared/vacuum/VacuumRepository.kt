@@ -811,6 +811,51 @@ class VacuumRepository(
         runCatching { rooms() }
     }
 
+    // Cached per repository instance (one per robot session) once read, since it does not change
+    // for a given robot's account binding. null means not yet read.
+    private var serverTimerPreferred: Boolean? = null
+
+    /**
+     * Whether this robot expects get/set/upd/del_server_timer instead of legacy get/set/upd/del_timer,
+     * decided the same way the official app decides it; see [usesServerTimer]. Defaults to legacy,
+     * the long-established fallback, when the robot's answer can't be read. A write that comes back
+     * `-10005` is still handled as a one-off protocol switch by the caller, since a robot can be more
+     * lenient than this flag promises.
+     */
+    private suspend fun prefersServerTimer(): Boolean {
+        serverTimerPreferred?.let { return it }
+        val detected = runCatching { session.getInitStatus() }.getOrNull()
+            ?.result?.let { usesServerTimer(it) } ?: false
+        serverTimerPreferred = detected
+        return detected
+    }
+
+    private fun RobotCommandException.isTimerTypeMismatch(): Boolean = isTimerTypeError(error)
+
+    /** A server_timer id is a millisecond timestamp, confirmed live; legacy ones are second-based. */
+    private fun newTimerId(useServerTimer: Boolean): String =
+        if (useServerTimer) (nowEpochSeconds().toLong() * 1000).toString() else nowEpochSeconds().toString()
+
+    private suspend fun saveTimerEntry(
+        useServerTimer: Boolean,
+        id: String,
+        cron: String,
+        enabled: Boolean,
+        settings: TimerSettings,
+    ) {
+        if (useServerTimer) {
+            // The robot refuses a server_timer entry that leaves any field out ("Param error"); the
+            // official app always sends every one, so what the schedule leaves open is filled in.
+            session.setServerTimer(id, cron, settings.completedForServerTimer()).requireOk("set_server_timer")
+        } else {
+            session.setTimer(id, enabled = enabled, cron = cron, settings = settings).requireOk("set_timer")
+        }
+    }
+
+    // server_timer schedules live on the robot and have no cron/settings in get_server_timer's own
+    // answer (just id, on/off, and a map index), so the list always reads from legacy get_timer.
+    // Robots we've seen that prefer server_timer still answer this correctly; if one that genuinely
+    // doesn't exists, its schedules just won't show here yet, a known gap, not a silent wrong answer.
     suspend fun fetchTimers() {
         val resp = session.getTimer()
         val result = resp.result as? JsonArray ?: return
@@ -823,9 +868,18 @@ class VacuumRepository(
         weekdays: Set<Int>,
         settings: TimerSettings = TimerSettings(),
     ): CleanTimer {
-        val id = nowEpochSeconds().toString()
         val cron = buildCron(minute, hour, weekdays)
-        session.setTimer(id, enabled = true, cron = cron, settings = settings).requireOk("set_timer")
+        var useServerTimer = prefersServerTimer()
+        var id = newTimerId(useServerTimer)
+        try {
+            saveTimerEntry(useServerTimer, id, cron, enabled = true, settings = settings)
+        } catch (e: RobotCommandException) {
+            if (!e.isTimerTypeMismatch()) throw e
+            useServerTimer = !useServerTimer
+            serverTimerPreferred = useServerTimer
+            id = newTimerId(useServerTimer)
+            saveTimerEntry(useServerTimer, id, cron, enabled = true, settings = settings)
+        }
         val timer = CleanTimer(
             id = id, enabled = true, hour = hour, minute = minute, weekdays = weekdays, settings = settings,
         )
@@ -846,13 +900,15 @@ class VacuumRepository(
         settings: TimerSettings,
     ): CleanTimer {
         val cron = buildCron(minute, hour, weekdays)
-        session.delTimer(timer.id).requireOk("del_timer")
+        val useServerTimer = prefersServerTimer()
+        if (useServerTimer) session.delServerTimer(timer.id).requireOk("del_server_timer")
+        else session.delTimer(timer.id).requireOk("del_timer")
         try {
-            session.setTimer(timer.id, enabled = timer.enabled, cron = cron, settings = settings).requireOk("set_timer")
+            saveTimerEntry(useServerTimer, timer.id, cron, enabled = timer.enabled, settings = settings)
         } catch (e: Exception) {
             runCatching {
                 val oldCron = buildCron(timer.minute, timer.hour, timer.weekdays)
-                session.setTimer(timer.id, enabled = timer.enabled, cron = oldCron, settings = timer.settings)
+                saveTimerEntry(useServerTimer, timer.id, oldCron, enabled = timer.enabled, settings = timer.settings)
             }
             throw e
         }
@@ -863,12 +919,13 @@ class VacuumRepository(
 
     suspend fun toggleTimer(timer: CleanTimer) {
         val updated = timer.copy(enabled = !timer.enabled)
-        session.updTimer(timer.id, updated.enabled)
+        if (prefersServerTimer()) session.updServerTimer(timer.id, updated.enabled)
+        else session.updTimer(timer.id, updated.enabled)
         _timers.value = _timers.value.map { if (it.id == timer.id) updated else it }
     }
 
     suspend fun deleteTimer(timer: CleanTimer) {
-        session.delTimer(timer.id)
+        if (prefersServerTimer()) session.delServerTimer(timer.id) else session.delTimer(timer.id)
         _timers.value = _timers.value.filter { it.id != timer.id }
     }
 
