@@ -207,7 +207,7 @@ private fun TimerRow(timer: CleanTimer, onEdit: () -> Unit, onToggle: () -> Unit
     }
 }
 
-/** Adds a schedule, or edits [initial]. Cleaning options left at "Current" use the robot's own settings. */
+/** Adds a schedule, or edits [initial]. */
 @Composable
 private fun TimerDialog(
     initial: CleanTimer?,
@@ -221,12 +221,18 @@ private fun TimerDialog(
     // Once is the official app's default for a new schedule.
     var repeatChoice by remember { mutableStateOf(initial?.let { repeatChoiceOf(it) } ?: RepeatChoice.ONCE) }
     var weekdays by remember { mutableStateOf(initial?.weekdays?.takeIf { it.isNotEmpty() } ?: setOf(1, 2, 3, 4, 5)) }
-    var kind by remember { mutableStateOf(start.kind) }
+    // Like the official app, every schedule picks a mode, opening on Vac & Mop. An old schedule that
+    // carries no settings (it ran with whatever the robot had) opens on it too and is saved with them.
+    var kind by remember { mutableStateOf(start.kind.takeIf { it != TimerKind.CURRENT } ?: TimerKind.VAC_AND_MOP) }
     // Off (no suction / no water) is what Vacuum-only and Mop-only mean, not a level of its own, and
     // the smart codes are what SmartPlan means, so none of them is a choice in the rows below.
-    var fanPower by remember { mutableStateOf(start.fanPower?.takeIf { it != VacuumFanPower.OFF && it != VacuumFanPower.SMART }) }
-    var waterBoxMode by remember { mutableStateOf(start.waterBoxMode?.takeIf { it != WaterBoxMode.OFF && it != WaterBoxMode.SMART }) }
-    var mopMode by remember { mutableStateOf(start.mopMode?.takeIf { it != MopRoute.SMART }) }
+    var fanPower by remember {
+        mutableStateOf(start.fanPower?.takeIf { it != VacuumFanPower.OFF && it != VacuumFanPower.SMART } ?: VacuumFanPower.BALANCED)
+    }
+    var waterBoxMode by remember {
+        mutableStateOf(start.waterBoxMode?.takeIf { it != WaterBoxMode.OFF && it != WaterBoxMode.SMART } ?: WaterBoxMode.MEDIUM)
+    }
+    var mopMode by remember { mutableStateOf(start.mopMode?.takeIf { it != MopRoute.SMART } ?: MopRoute.STANDARD) }
     var repeat by remember { mutableIntStateOf(start.repeat ?: 1) }
 
     AlertDialog(
@@ -278,7 +284,6 @@ private fun TimerDialog(
                         add(TimerKind.VAC_AND_MOP to "Vacuum and mop")
                         add(TimerKind.MOP to "Mop")
                         add(TimerKind.VACUUM to "Vacuum")
-                        add(TimerKind.CURRENT to "Current settings")
                     },
                     selected = kind,
                     onSelect = { kind = it },
@@ -286,8 +291,7 @@ private fun TimerDialog(
                 if (kind == TimerKind.VACUUM || kind == TimerKind.VAC_AND_MOP) {
                     ChipRow(
                         label = "Suction",
-                        options = listOf<Pair<Int?, String>>(
-                            null to "Current",
+                        options = listOf(
                             VacuumFanPower.QUIET to "Quiet",
                             VacuumFanPower.BALANCED to "Balanced",
                             VacuumFanPower.TURBO to "Turbo",
@@ -300,18 +304,17 @@ private fun TimerDialog(
                 if (kind == TimerKind.VAC_AND_MOP || kind == TimerKind.MOP) {
                     ChipRow(
                         label = "Water",
-                        options = listOf<Pair<Int?, String>>(
-                            null to "Medium",
+                        options = listOf(
                             WaterBoxMode.LOW to "Low",
+                            WaterBoxMode.MEDIUM to "Medium",
                             WaterBoxMode.HIGH to "High",
                         ),
-                        selected = waterBoxMode?.takeIf { it != WaterBoxMode.MEDIUM },
+                        selected = waterBoxMode,
                         onSelect = { waterBoxMode = it },
                     )
                     ChipRow(
                         label = "Mop route",
-                        options = listOf<Pair<Int?, String>>(
-                            null to "Current",
+                        options = listOf(
                             MopRoute.STANDARD to "Standard",
                             MopRoute.DEEP to "Deep",
                             MopRoute.DEEP_PLUS to "Deep+",
@@ -339,7 +342,7 @@ private fun TimerDialog(
                         fanPower = fanPower,
                         waterBoxMode = waterBoxMode,
                         mopMode = mopMode,
-                        repeat = repeat.takeIf { it > 1 },
+                        repeat = repeat,
                     )
                     val days = when (repeatChoice) {
                         RepeatChoice.ONCE, RepeatChoice.EVERY_DAY -> emptySet()
