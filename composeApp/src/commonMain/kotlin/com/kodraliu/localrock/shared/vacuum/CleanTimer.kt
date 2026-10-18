@@ -34,6 +34,14 @@ data class TimerSettings(
     val segments: String? = null,
     val cleanMop: Int? = null,
     val mapIndex: Int? = null,
+    // The official app maintains a second, independent copy of a server_timer schedule over
+    // HTTP (POST/PUT /user/devices/{duid}/jobs), its own cloud-sync record with its own id, not
+    // the robot's. That copy's settings carry this "name" field, the real server_timer id it
+    // mirrors, confirmed live. get_timer answers from that HTTP-side store, so a schedule read
+    // from it is this mirror, not the robot's real entry: editing or deleting it must use this
+    // id, not the timer's own [CleanTimer.id], or the write lands on nothing the robot has.
+    // Never sent back out in [toActionObject]; the robot's own entries never carry it.
+    val serverTimerId: String? = null,
 )
 
 /** The cleaning choice a schedule offers, as the official app words it. */
@@ -93,6 +101,7 @@ internal fun parseTimerSettings(action: JsonElement?): TimerSettings {
         segments = str("segments"),
         cleanMop = int("clean_mop"),
         mapIndex = int("map_index"),
+        serverTimerId = str("name"),
     )
 }
 

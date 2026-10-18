@@ -115,6 +115,19 @@ class TimerSettingsTest {
     }
 
     @Test
+    fun a_name_field_parses_as_the_mirrors_real_server_timer_id_but_is_never_sent_back() {
+        // What the official app's HTTP-side job mirror carries, confirmed live.
+        val action = Json.parseToJsonElement(
+            """["start_clean", {"fan_power": 102, "name": "1792291817258"}]""",
+        )
+
+        val settings = parseTimerSettings((action as kotlinx.serialization.json.JsonArray)[1])
+
+        assertEquals("1792291817258", settings.serverTimerId)
+        assertEquals("""{"fan_power":102}""", settings.toActionObject().toString())
+    }
+
+    @Test
     fun cron_round_trips_through_the_timer_list() {
         val cron = buildCron(minute = 30, hour = 7, weekdays = setOf(5, 1, 3))
         assertEquals("30 7 * * 1,3,5", cron)

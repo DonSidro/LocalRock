@@ -852,10 +852,13 @@ class VacuumRepository(
         }
     }
 
-    // server_timer schedules live on the robot and have no cron/settings in get_server_timer's own
-    // answer (just id, on/off, and a map index), so the list always reads from legacy get_timer.
-    // Robots we've seen that prefer server_timer still answer this correctly; if one that genuinely
-    // doesn't exists, its schedules just won't show here yet, a known gap, not a silent wrong answer.
+    // get_server_timer's own answer has no cron or settings to show (just id, on/off, and a map
+    // index), so the list always reads from legacy get_timer instead. For a server_timer robot
+    // that answer is not the robot's own state either: it is the official app's separate HTTP-side
+    // mirror (POST/PUT /user/devices/{duid}/jobs), confirmed live, which is why its settings carry
+    // the "name" field [parseTimerSettings] reads into [TimerSettings.serverTimerId], the real
+    // robot-side id to use when writing back. A robot that never mirrors there just won't show its
+    // server_timer schedules here, a known gap, not a silently wrong answer.
     suspend fun fetchTimers() {
         val resp = session.getTimer()
         val result = resp.result as? JsonArray ?: return
@@ -888,6 +891,14 @@ class VacuumRepository(
     }
 
     /**
+     * The id to send the robot for [timer]: its own id normally, but [TimerSettings.serverTimerId]
+     * instead when set, since that means [timer] was read back as the official app's HTTP-side
+     * mirror of a server_timer schedule, whose own id belongs to that mirror, not the robot.
+     */
+    private fun robotId(timer: CleanTimer, useServerTimer: Boolean): String =
+        if (useServerTimer) timer.settings.serverTimerId ?: timer.id else timer.id
+
+    /**
      * Rewrites [timer]'s time, days and options; its id and on/off state are kept. The old schedule
      * is deleted and added again rather than overwritten, so an option that was dropped is simply
      * absent and no firmware has to accept a null. If the new one is refused the old one is put back.
@@ -901,31 +912,38 @@ class VacuumRepository(
     ): CleanTimer {
         val cron = buildCron(minute, hour, weekdays)
         val useServerTimer = prefersServerTimer()
-        if (useServerTimer) session.delServerTimer(timer.id).requireOk("del_server_timer")
-        else session.delTimer(timer.id).requireOk("del_timer")
+        val id = robotId(timer, useServerTimer)
+        // The new settings come from the edit dialog's own choices, which know nothing of the
+        // mirror link; carry it forward so a second edit can still find the real robot-side id.
+        val newSettings = settings.copy(serverTimerId = timer.settings.serverTimerId)
+        if (useServerTimer) session.delServerTimer(id).requireOk("del_server_timer")
+        else session.delTimer(id).requireOk("del_timer")
         try {
-            saveTimerEntry(useServerTimer, timer.id, cron, enabled = timer.enabled, settings = settings)
+            saveTimerEntry(useServerTimer, id, cron, enabled = timer.enabled, settings = newSettings)
         } catch (e: Exception) {
             runCatching {
                 val oldCron = buildCron(timer.minute, timer.hour, timer.weekdays)
-                saveTimerEntry(useServerTimer, timer.id, oldCron, enabled = timer.enabled, settings = timer.settings)
+                saveTimerEntry(useServerTimer, id, oldCron, enabled = timer.enabled, settings = timer.settings)
             }
             throw e
         }
-        val updated = timer.copy(hour = hour, minute = minute, weekdays = weekdays, settings = settings)
+        val updated = timer.copy(hour = hour, minute = minute, weekdays = weekdays, settings = newSettings)
         _timers.value = _timers.value.map { if (it.id == timer.id) updated else it }
         return updated
     }
 
     suspend fun toggleTimer(timer: CleanTimer) {
         val updated = timer.copy(enabled = !timer.enabled)
-        if (prefersServerTimer()) session.updServerTimer(timer.id, updated.enabled)
-        else session.updTimer(timer.id, updated.enabled)
+        val useServerTimer = prefersServerTimer()
+        val id = robotId(timer, useServerTimer)
+        if (useServerTimer) session.updServerTimer(id, updated.enabled) else session.updTimer(id, updated.enabled)
         _timers.value = _timers.value.map { if (it.id == timer.id) updated else it }
     }
 
     suspend fun deleteTimer(timer: CleanTimer) {
-        if (prefersServerTimer()) session.delServerTimer(timer.id) else session.delTimer(timer.id)
+        val useServerTimer = prefersServerTimer()
+        val id = robotId(timer, useServerTimer)
+        if (useServerTimer) session.delServerTimer(id) else session.delTimer(id)
         _timers.value = _timers.value.filter { it.id != timer.id }
     }
 
