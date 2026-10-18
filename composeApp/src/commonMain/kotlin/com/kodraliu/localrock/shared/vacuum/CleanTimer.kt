@@ -29,6 +29,11 @@ data class TimerSettings(
     val waterBoxMode: Int? = null,
     val mopMode: Int? = null,
     val repeat: Int? = null,
+    // Carried by server_timer schedules, never set by this app's own UI yet: which rooms to
+    // clean ("0" for the whole home), whether mopping is on, and which saved map to use.
+    val segments: String? = null,
+    val cleanMop: Int? = null,
+    val mapIndex: Int? = null,
 )
 
 /** The cleaning choice a schedule offers, as the official app words it. */
@@ -69,6 +74,9 @@ internal fun TimerSettings.toActionObject(): JsonObject {
     waterBoxMode?.let { fields["water_box_mode"] = JsonPrimitive(it) }
     mopMode?.let { fields["mop_mode"] = JsonPrimitive(it) }
     repeat?.let { fields["repeat"] = JsonPrimitive(it) }
+    segments?.let { fields["segments"] = JsonPrimitive(it) }
+    cleanMop?.let { fields["clean_mop"] = JsonPrimitive(it) }
+    mapIndex?.let { fields["map_index"] = JsonPrimitive(it) }
     return JsonObject(fields)
 }
 
@@ -76,11 +84,15 @@ internal fun TimerSettings.toActionObject(): JsonObject {
 internal fun parseTimerSettings(action: JsonElement?): TimerSettings {
     val obj = action as? JsonObject ?: return TimerSettings()
     fun int(key: String) = runCatching { obj[key]?.jsonPrimitive?.contentOrNull?.toIntOrNull() }.getOrNull()
+    fun str(key: String) = runCatching { obj[key]?.jsonPrimitive?.contentOrNull }.getOrNull()
     return TimerSettings(
         fanPower = int("fan_power"),
         waterBoxMode = int("water_box_mode"),
         mopMode = int("mop_mode"),
         repeat = int("repeat"),
+        segments = str("segments"),
+        cleanMop = int("clean_mop"),
+        mapIndex = int("map_index"),
     )
 }
 

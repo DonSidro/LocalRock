@@ -22,7 +22,10 @@ class TimerSettingsTest {
         val (monWedFri, weekend) = parseTimerList(answer)
 
         assertEquals(setOf(1, 3, 5), monWedFri.weekdays)
-        assertEquals(TimerSettings(fanPower = 104, waterBoxMode = 203, mopMode = 300, repeat = 1), monWedFri.settings)
+        assertEquals(
+            TimerSettings(fanPower = 104, waterBoxMode = 203, mopMode = 300, repeat = 1, segments = "0"),
+            monWedFri.settings,
+        )
         assertEquals(TimerKind.VAC_AND_MOP, monWedFri.settings.kind)
         assertEquals(false, weekend.enabled)
         assertEquals(TimerKind.VACUUM, weekend.settings.kind)
