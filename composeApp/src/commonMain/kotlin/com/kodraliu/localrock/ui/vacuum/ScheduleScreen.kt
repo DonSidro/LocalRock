@@ -143,9 +143,9 @@ fun ScheduleScreen(
         TimerDialog(
             initial = null,
             supportsSmartPlan = viewModel.supportsSmartPlan,
-            onSave = { hour, minute, weekdays, settings ->
+            onSave = { hour, minute, weekdays, settings, once ->
                 showAddDialog = false
-                saveTimer { repository.createTimer(hour, minute, weekdays, settings) }
+                saveTimer { repository.createTimer(hour, minute, weekdays, settings, once) }
             },
             onDismiss = { showAddDialog = false },
         )
@@ -155,9 +155,9 @@ fun ScheduleScreen(
         TimerDialog(
             initial = timer,
             supportsSmartPlan = viewModel.supportsSmartPlan,
-            onSave = { hour, minute, weekdays, settings ->
+            onSave = { hour, minute, weekdays, settings, once ->
                 editing = null
-                saveTimer { repository.updateTimer(timer, hour, minute, weekdays, settings) }
+                saveTimer { repository.updateTimer(timer, hour, minute, weekdays, settings, once) }
             },
             onDismiss = { editing = null },
         )
@@ -188,7 +188,7 @@ private fun TimerRow(timer: CleanTimer, onEdit: () -> Unit, onToggle: () -> Unit
                 color = if (timer.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                formatWeekdays(timer.weekdays),
+                formatRepeat(timer),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -212,13 +212,15 @@ private fun TimerRow(timer: CleanTimer, onEdit: () -> Unit, onToggle: () -> Unit
 private fun TimerDialog(
     initial: CleanTimer?,
     supportsSmartPlan: Boolean,
-    onSave: (hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings) -> Unit,
+    onSave: (hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings, once: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val start = initial?.settings ?: TimerSettings()
     var hour by remember { mutableIntStateOf(initial?.hour ?: 8) }
     var minute by remember { mutableIntStateOf(initial?.minute ?: 0) }
-    var weekdays by remember { mutableStateOf(initial?.weekdays ?: setOf(1, 2, 3, 4, 5)) } // Mon–Fri default
+    // Once is the official app's default for a new schedule.
+    var repeatChoice by remember { mutableStateOf(initial?.let { repeatChoiceOf(it) } ?: RepeatChoice.ONCE) }
+    var weekdays by remember { mutableStateOf(initial?.weekdays?.takeIf { it.isNotEmpty() } ?: setOf(1, 2, 3, 4, 5)) }
     var kind by remember { mutableStateOf(start.kind) }
     // Off (no suction / no water) is what Vacuum-only and Mop-only mean, not a level of its own, and
     // the smart codes are what SmartPlan means, so none of them is a choice in the rows below.
@@ -241,8 +243,13 @@ private fun TimerDialog(
                     Text(":", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     NumberStepper("Min", minute, 0, 59, step = 15) { minute = it }
                 }
-                Text("Days", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                ChipRow(
+                    label = "Repeat",
+                    options = RepeatChoice.entries.map { it to it.label },
+                    selected = repeatChoice,
+                    onSelect = { repeatChoice = it },
+                )
+                if (repeatChoice == RepeatChoice.CUSTOM) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     val dayLabels = listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")
                     dayLabels.forEachIndexed { index, label ->
                         val selected = index in weekdays
@@ -324,6 +331,8 @@ private fun TimerDialog(
         },
         confirmButton = {
             TextButton(
+                // Custom with no day picked would never run.
+                enabled = repeatChoice != RepeatChoice.CUSTOM || weekdays.isNotEmpty(),
                 onClick = {
                     val settings = timerSettingsFor(
                         kind = kind,
@@ -332,7 +341,13 @@ private fun TimerDialog(
                         mopMode = mopMode,
                         repeat = repeat.takeIf { it > 1 },
                     )
-                    onSave(hour, minute, weekdays, settings)
+                    val days = when (repeatChoice) {
+                        RepeatChoice.ONCE, RepeatChoice.EVERY_DAY -> emptySet()
+                        RepeatChoice.WEEKDAYS -> WEEKDAYS
+                        RepeatChoice.WEEKENDS -> WEEKENDS
+                        RepeatChoice.CUSTOM -> weekdays
+                    }
+                    onSave(hour, minute, days, settings, repeatChoice == RepeatChoice.ONCE)
                 },
             ) { Text("Save") }
         },
@@ -382,11 +397,36 @@ private fun formatTime(hour: Int, minute: Int): String {
     return "${h.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} $amPm"
 }
 
-private fun formatWeekdays(days: Set<Int>): String {
-    if (days.isEmpty()) return "Every day"
-    val names = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-    if (days == setOf(1, 2, 3, 4, 5)) return "Weekdays"
-    if (days == setOf(0, 6)) return "Weekends"
-    if (days.size == 7) return "Every day"
-    return days.sorted().joinToString(", ") { names.getOrElse(it) { "$it" } }
+private val WEEKDAYS = setOf(1, 2, 3, 4, 5)
+private val WEEKENDS = setOf(0, 6)
+
+/** The official app's Repeat choices; Custom shows the day buttons. */
+private enum class RepeatChoice(val label: String) {
+    ONCE("Once"),
+    EVERY_DAY("Every day"),
+    WEEKDAYS("Weekdays"),
+    WEEKENDS("Weekends"),
+    CUSTOM("Custom"),
+}
+
+private fun repeatChoiceOf(timer: CleanTimer): RepeatChoice = when {
+    timer.date != null -> RepeatChoice.ONCE
+    timer.weekdays.isEmpty() || timer.weekdays.size == 7 -> RepeatChoice.EVERY_DAY
+    timer.weekdays == WEEKDAYS -> RepeatChoice.WEEKDAYS
+    timer.weekdays == WEEKENDS -> RepeatChoice.WEEKENDS
+    else -> RepeatChoice.CUSTOM
+}
+
+private fun formatRepeat(timer: CleanTimer): String {
+    timer.date?.let { date ->
+        val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+        return "Once, ${months.getOrElse(date.month - 1) { "${date.month}" }} ${date.day}"
+    }
+    return when (val choice = repeatChoiceOf(timer)) {
+        RepeatChoice.CUSTOM -> {
+            val names = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+            timer.weekdays.sorted().joinToString(", ") { names.getOrElse(it) { "$it" } }
+        }
+        else -> choice.label
+    }
 }
