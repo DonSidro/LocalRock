@@ -130,8 +130,8 @@ fun ScheduleScreen(
                     TimerRow(
                         timer = timer,
                         onEdit = { editing = timer },
-                        onToggle = { scope.launch { runCatching { repository.toggleTimer(timer) } } },
-                        onDelete = { scope.launch { runCatching { repository.deleteTimer(timer) } } },
+                        onToggle = { saveTimer { repository.toggleTimer(timer) } },
+                        onDelete = { saveTimer { repository.deleteTimer(timer) } },
                     )
                     HorizontalDivider(Modifier.padding(start = 72.dp))
                 }
@@ -143,6 +143,8 @@ fun ScheduleScreen(
         TimerDialog(
             initial = null,
             supportsSmartPlan = viewModel.supportsSmartPlan,
+            supportsFastRoute = viewModel.supportsFastRoute,
+            supportsWaterSlide = viewModel.supportsWaterSlide,
             onSave = { hour, minute, weekdays, settings, once ->
                 showAddDialog = false
                 saveTimer { repository.createTimer(hour, minute, weekdays, settings, once) }
@@ -155,6 +157,8 @@ fun ScheduleScreen(
         TimerDialog(
             initial = timer,
             supportsSmartPlan = viewModel.supportsSmartPlan,
+            supportsFastRoute = viewModel.supportsFastRoute,
+            supportsWaterSlide = viewModel.supportsWaterSlide,
             onSave = { hour, minute, weekdays, settings, once ->
                 editing = null
                 saveTimer { repository.updateTimer(timer, hour, minute, weekdays, settings, once) }
@@ -212,6 +216,8 @@ private fun TimerRow(timer: CleanTimer, onEdit: () -> Unit, onToggle: () -> Unit
 private fun TimerDialog(
     initial: CleanTimer?,
     supportsSmartPlan: Boolean,
+    supportsFastRoute: Boolean,
+    supportsWaterSlide: Boolean,
     onSave: (hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings, once: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -230,7 +236,11 @@ private fun TimerDialog(
         mutableStateOf(start.fanPower?.takeIf { it != VacuumFanPower.OFF && it != VacuumFanPower.SMART } ?: VacuumFanPower.BALANCED)
     }
     var waterBoxMode by remember {
-        mutableStateOf(start.waterBoxMode?.takeIf { it != WaterBoxMode.OFF && it != WaterBoxMode.SMART } ?: WaterBoxMode.MEDIUM)
+        // Kept as LOW/MEDIUM/HIGH whichever codes the robot uses; the slide codes are applied on save.
+        mutableStateOf(
+            WaterBoxMode.normalize(start.waterBoxMode)?.takeIf { it != WaterBoxMode.OFF && it != WaterBoxMode.SMART }
+                ?: WaterBoxMode.MEDIUM,
+        )
     }
     var mopMode by remember { mutableStateOf(start.mopMode?.takeIf { it != MopRoute.SMART } ?: MopRoute.STANDARD) }
     var repeat by remember { mutableIntStateOf(start.repeat ?: 1) }
@@ -314,12 +324,16 @@ private fun TimerDialog(
                     )
                     ChipRow(
                         label = "Mop route",
-                        options = listOf(
-                            MopRoute.STANDARD to "Standard",
-                            MopRoute.DEEP to "Deep",
-                            MopRoute.DEEP_PLUS to "Deep+",
-                            MopRoute.FAST to "Fast",
-                        ),
+                        // A schedule can only use these two routes: a Qrevo Pro that accepts Deep and
+                        // Deep+ as its route setting refuses them inside a start command with -10005
+                        // "Param error", and the official app's schedule screen offers only these. A
+                        // route an existing schedule already carries stays visible so it is not dropped.
+                        options = buildList {
+                            add(MopRoute.STANDARD to "Standard")
+                            if (supportsFastRoute || mopMode == MopRoute.FAST) add(MopRoute.FAST to "Fast")
+                            if (mopMode == MopRoute.DEEP) add(MopRoute.DEEP to "Deep")
+                            if (mopMode == MopRoute.DEEP_PLUS) add(MopRoute.DEEP_PLUS to "Deep+")
+                        },
                         selected = mopMode,
                         onSelect = { mopMode = it },
                     )
@@ -340,7 +354,7 @@ private fun TimerDialog(
                     val settings = timerSettingsFor(
                         kind = kind,
                         fanPower = fanPower,
-                        waterBoxMode = waterBoxMode,
+                        waterBoxMode = if (supportsWaterSlide) WaterBoxMode.forSlide(waterBoxMode) else waterBoxMode,
                         mopMode = mopMode,
                         repeat = repeat,
                     )
