@@ -1,5 +1,6 @@
 package com.kodraliu.localrock.shared.vacuum
 
+import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -141,6 +142,34 @@ class TimerSettingsTest {
 
         assertEquals("1792291817258", settings.serverTimerId)
         assertEquals("""{"fan_power":102}""", settings.toActionObject().toString())
+    }
+
+    @Test
+    fun a_one_time_schedule_pins_the_day_and_month_like_the_official_app() {
+        // The robot's own set_server_timer cron and the HTTP mirror's, both captured live for "Once".
+        val robot = parseCronTimer("1", enabled = true, cron = "15 23 18 10 *")
+        val mirror = parseCronTimer("2", enabled = true, cron = "15 23 18 10 ?")
+
+        assertEquals(TimerDate(month = 10, day = 18), robot?.date)
+        assertEquals(TimerDate(month = 10, day = 18), mirror?.date)
+        assertEquals(emptySet(), mirror?.weekdays)
+        assertEquals("15 23 18 10 *", buildCron(minute = 15, hour = 23, weekdays = emptySet(), date = TimerDate(10, 18)))
+        // A repeating schedule is not one-time, and the server's "?" wording means no weekday.
+        assertNull(parseCronTimer("3", enabled = true, cron = "0 11 ? * 1,3,5")?.date)
+        assertNull(parseCronTimer("4", enabled = true, cron = "0 8 * * *")?.date)
+    }
+
+    @Test
+    fun a_one_time_schedule_runs_today_while_its_minute_is_ahead_and_tomorrow_after() {
+        val zone = TimeZone.UTC
+        val now = 1792329308L // 2026-10-18 13:15:08 UTC
+
+        assertEquals(TimerDate(10, 18), nextTimerDate(now, zone, hour = 23, minute = 15))
+        assertEquals(TimerDate(10, 18), nextTimerDate(now, zone, hour = 13, minute = 16))
+        assertEquals(TimerDate(10, 19), nextTimerDate(now, zone, hour = 13, minute = 15))
+        assertEquals(TimerDate(10, 19), nextTimerDate(now, zone, hour = 9, minute = 0))
+        // Tomorrow can be next month.
+        assertEquals(TimerDate(11, 1), nextTimerDate(1793448000L, zone, hour = 10, minute = 0))
     }
 
     @Test

@@ -11,8 +11,9 @@ data class CleanTimer(
     val enabled: Boolean,
     val hour: Int,
     val minute: Int,
-    val weekdays: Set<Int>, // 0=Sun, 1=Mon … 6=Sat
+    val weekdays: Set<Int>, // 0=Sun, 1=Mon … 6=Sat; empty means every day, unless [date] is set
     val settings: TimerSettings = TimerSettings(),
+    val date: TimerDate? = null, // set for a one-time schedule, which runs on that day only
 )
 
 /**

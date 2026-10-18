@@ -32,6 +32,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -832,6 +833,10 @@ class VacuumRepository(
 
     private fun RobotCommandException.isTimerTypeMismatch(): Boolean = isTimerTypeError(error)
 
+    /** The day a one-time schedule at [hour]:[minute] runs on, in the phone's own timezone. */
+    private fun nextOccurrence(hour: Int, minute: Int): TimerDate =
+        nextTimerDate(nowEpochSeconds().toLong(), TimeZone.currentSystemDefault(), hour, minute)
+
     /** A server_timer id is a millisecond timestamp, confirmed live; legacy ones are second-based. */
     private fun newTimerId(useServerTimer: Boolean): String =
         if (useServerTimer) (nowEpochSeconds().toLong() * 1000).toString() else nowEpochSeconds().toString()
@@ -870,8 +875,10 @@ class VacuumRepository(
         minute: Int,
         weekdays: Set<Int>,
         settings: TimerSettings = TimerSettings(),
+        once: Boolean = false,
     ): CleanTimer {
-        val cron = buildCron(minute, hour, weekdays)
+        val date = if (once) nextOccurrence(hour, minute) else null
+        val cron = buildCron(minute, hour, if (once) emptySet() else weekdays, date)
         var useServerTimer = prefersServerTimer()
         var id = newTimerId(useServerTimer)
         try {
@@ -884,7 +891,8 @@ class VacuumRepository(
             saveTimerEntry(useServerTimer, id, cron, enabled = true, settings = settings)
         }
         val timer = CleanTimer(
-            id = id, enabled = true, hour = hour, minute = minute, weekdays = weekdays, settings = settings,
+            id = id, enabled = true, hour = hour, minute = minute,
+            weekdays = if (once) emptySet() else weekdays, settings = settings, date = date,
         )
         _timers.value = _timers.value + timer
         return timer
@@ -909,8 +917,11 @@ class VacuumRepository(
         minute: Int,
         weekdays: Set<Int>,
         settings: TimerSettings,
+        once: Boolean = false,
     ): CleanTimer {
-        val cron = buildCron(minute, hour, weekdays)
+        val date = if (once) nextOccurrence(hour, minute) else null
+        val newWeekdays = if (once) emptySet() else weekdays
+        val cron = buildCron(minute, hour, newWeekdays, date)
         val useServerTimer = prefersServerTimer()
         val id = robotId(timer, useServerTimer)
         // The new settings come from the edit dialog's own choices, which know nothing of the
@@ -922,12 +933,14 @@ class VacuumRepository(
             saveTimerEntry(useServerTimer, id, cron, enabled = timer.enabled, settings = newSettings)
         } catch (e: Exception) {
             runCatching {
-                val oldCron = buildCron(timer.minute, timer.hour, timer.weekdays)
+                val oldCron = buildCron(timer.minute, timer.hour, timer.weekdays, timer.date)
                 saveTimerEntry(useServerTimer, id, oldCron, enabled = timer.enabled, settings = timer.settings)
             }
             throw e
         }
-        val updated = timer.copy(hour = hour, minute = minute, weekdays = weekdays, settings = newSettings)
+        val updated = timer.copy(
+            hour = hour, minute = minute, weekdays = newWeekdays, settings = newSettings, date = date,
+        )
         _timers.value = _timers.value.map { if (it.id == timer.id) updated else it }
         return updated
     }
@@ -1219,7 +1232,8 @@ class VacuumRepository(
     }
 }
 
-internal fun buildCron(minute: Int, hour: Int, weekdays: Set<Int>): String {
+internal fun buildCron(minute: Int, hour: Int, weekdays: Set<Int>, date: TimerDate? = null): String {
+    if (date != null) return "$minute $hour ${date.day} ${date.month} *"
     val days = if (weekdays.isEmpty()) "*" else weekdays.sorted().joinToString(",")
     return "$minute $hour * * $days"
 }
@@ -1234,10 +1248,16 @@ internal fun parseCronTimer(
     if (parts.size < 5) return null
     val minute = parts[0].toIntOrNull() ?: return null
     val hour = parts[1].toIntOrNull() ?: return null
-    val weekdays = if (parts[4] == "*") emptySet()
+    // "*" or "?" (the server's own wording) means no weekday is pinned.
+    val weekdays = if (parts[4] == "*" || parts[4] == "?") emptySet()
     else parts[4].split(",").mapNotNull { it.toIntOrNull() }.toSet()
+    // A day of the month and a month both pinned is a one-time schedule, not an every-day one.
+    val day = parts[2].toIntOrNull()
+    val month = parts[3].toIntOrNull()
+    val date = if (day != null && month != null) TimerDate(month, day) else null
     return CleanTimer(
         id = id, enabled = enabled, hour = hour, minute = minute, weekdays = weekdays, settings = settings,
+        date = date,
     )
 }
 
