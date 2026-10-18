@@ -170,6 +170,7 @@ fun VacuumSettingsScreen(
             onWashModeChange = { scope.launch { runCatching { repository.setWashMode(it) } } },
             onWashFreqChange = { scope.launch { runCatching { repository.setWashFreq(it) } } },
             onAutoEmptyModeChange = { scope.launch { runCatching { repository.setAutoEmptyMode(it) } } },
+            onEmptyWaterTank = { viewModel.run("Emptying the water tank") { it.emptyInbuiltWaterTank() } },
             onBack = { route = SettingsRoute.Root },
         )
         SettingsRoute.RobotSettings -> RobotSettingsScreen(
@@ -844,9 +845,11 @@ private fun DockSettingsScreen(
     onWashModeChange: (Int) -> Unit,
     onWashFreqChange: (Int) -> Unit,
     onAutoEmptyModeChange: (Int) -> Unit,
+    onEmptyWaterTank: () -> Unit,
     onBack: () -> Unit,
 ) {
     var dialogTarget by remember { mutableStateOf<String?>(null) }
+    var confirmEmptyTank by remember { mutableStateOf(false) }
 
     val washFreqOptions = listOf("Every trip", "Every 2 trips", "Every 3 trips")
     val washModeOptions = listOf("Light", "Standard", "Intensive")
@@ -892,7 +895,27 @@ private fun DockSettingsScreen(
                 value = autoEmptyOptions.getOrElse(dockSettings.autoEmptyMode) { "Smart" },
                 onClick = { dialogTarget = "auto_empty" },
             )
+            DockSettingCard(
+                modifier = Modifier.fillMaxWidth(),
+                icon = Icons.Default.WaterDrop,
+                iconTint = AppColors.Water,
+                title = "Internal water tank",
+                value = "Empty through the dock",
+                onClick = { confirmEmptyTank = true },
+            )
         }
+    }
+
+    if (confirmEmptyTank) {
+        AlertDialog(
+            onDismissRequest = { confirmEmptyTank = false },
+            title = { Text("Empty the water tank?") },
+            text = { Text("The dock pumps the water out of the robot's built-in tank. Make sure the robot is on the dock.") },
+            confirmButton = {
+                TextButton(onClick = { confirmEmptyTank = false; onEmptyWaterTank() }) { Text("Empty") }
+            },
+            dismissButton = { TextButton(onClick = { confirmEmptyTank = false }) { Text("Cancel") } },
+        )
     }
 
     when (dialogTarget) {
