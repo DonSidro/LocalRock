@@ -175,8 +175,8 @@ fun VacuumSettingsScreen(
         SettingsRoute.RobotSettings -> RobotSettingsScreen(
             robotSettings = robotSettings,
             onFindRobot = { scope.launch { runCatching { repository.findMe() } } },
-            onVolumeChange = { scope.launch { runCatching { repository.setVolume(it) } } },
-            onChildLockChange = { scope.launch { runCatching { repository.setChildLock(it) } } },
+            onVolumeChange = { volume -> viewModel.report { it.setVolume(volume) } },
+            onChildLockChange = { locked -> viewModel.report { it.setChildLock(locked) } },
             onLedChange = { scope.launch { runCatching { repository.setLed(it) } } },
             onCarpetModeChange = { scope.launch { runCatching { repository.setCarpetMode(it) } } },
             onBack = { route = SettingsRoute.Root },
