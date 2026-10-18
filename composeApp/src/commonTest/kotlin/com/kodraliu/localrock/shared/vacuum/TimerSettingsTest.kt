@@ -115,6 +115,22 @@ class TimerSettingsTest {
     }
 
     @Test
+    fun smart_plan_is_all_three_smart_codes_together() {
+        // What the official app stores for its SmartPlan tab, captured live: 110 / 209 / 306.
+        val smart = TimerSettings(fanPower = 110, waterBoxMode = 209, mopMode = 306, repeat = 1)
+
+        assertEquals(smart, timerSettingsFor(TimerKind.SMART_PLAN, fanPower = 104, waterBoxMode = 203, mopMode = 301, repeat = 1))
+        assertEquals(TimerKind.SMART_PLAN, smart.kind)
+        assertEquals("""{"fan_power":110,"water_box_mode":209,"mop_mode":306,"repeat":1}""", smart.toActionObject().toString())
+    }
+
+    @Test
+    fun smart_plan_summary_does_not_list_the_codes_the_robot_picks_itself() {
+        assertEquals("SmartPlan", TimerSettings(fanPower = 110, waterBoxMode = 209, mopMode = 306, repeat = 1).summary())
+        assertEquals("SmartPlan · 2 passes", TimerSettings(fanPower = 110, waterBoxMode = 209, mopMode = 306, repeat = 2).summary())
+    }
+
+    @Test
     fun a_name_field_parses_as_the_mirrors_real_server_timer_id_but_is_never_sent_back() {
         // What the official app's HTTP-side job mirror carries, confirmed live.
         val action = Json.parseToJsonElement(

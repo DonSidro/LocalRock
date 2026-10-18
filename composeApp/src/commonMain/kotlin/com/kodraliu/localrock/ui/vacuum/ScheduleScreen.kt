@@ -142,6 +142,7 @@ fun ScheduleScreen(
     if (showAddDialog) {
         TimerDialog(
             initial = null,
+            supportsSmartPlan = viewModel.supportsSmartPlan,
             onSave = { hour, minute, weekdays, settings ->
                 showAddDialog = false
                 saveTimer { repository.createTimer(hour, minute, weekdays, settings) }
@@ -153,6 +154,7 @@ fun ScheduleScreen(
     editing?.let { timer ->
         TimerDialog(
             initial = timer,
+            supportsSmartPlan = viewModel.supportsSmartPlan,
             onSave = { hour, minute, weekdays, settings ->
                 editing = null
                 saveTimer { repository.updateTimer(timer, hour, minute, weekdays, settings) }
@@ -209,6 +211,7 @@ private fun TimerRow(timer: CleanTimer, onEdit: () -> Unit, onToggle: () -> Unit
 @Composable
 private fun TimerDialog(
     initial: CleanTimer?,
+    supportsSmartPlan: Boolean,
     onSave: (hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -217,10 +220,11 @@ private fun TimerDialog(
     var minute by remember { mutableIntStateOf(initial?.minute ?: 0) }
     var weekdays by remember { mutableStateOf(initial?.weekdays ?: setOf(1, 2, 3, 4, 5)) } // Mon–Fri default
     var kind by remember { mutableStateOf(start.kind) }
-    // Off (no suction / no water) is what Vacuum-only and Mop-only mean, not a level of its own.
-    var fanPower by remember { mutableStateOf(start.fanPower?.takeIf { it != VacuumFanPower.OFF }) }
-    var waterBoxMode by remember { mutableStateOf(start.waterBoxMode?.takeIf { it != WaterBoxMode.OFF }) }
-    var mopMode by remember { mutableStateOf(start.mopMode) }
+    // Off (no suction / no water) is what Vacuum-only and Mop-only mean, not a level of its own, and
+    // the smart codes are what SmartPlan means, so none of them is a choice in the rows below.
+    var fanPower by remember { mutableStateOf(start.fanPower?.takeIf { it != VacuumFanPower.OFF && it != VacuumFanPower.SMART }) }
+    var waterBoxMode by remember { mutableStateOf(start.waterBoxMode?.takeIf { it != WaterBoxMode.OFF && it != WaterBoxMode.SMART }) }
+    var mopMode by remember { mutableStateOf(start.mopMode?.takeIf { it != MopRoute.SMART }) }
     var repeat by remember { mutableIntStateOf(start.repeat ?: 1) }
 
     AlertDialog(
@@ -262,12 +266,13 @@ private fun TimerDialog(
 
                 ChipRow(
                     label = "Cleaning",
-                    options = listOf(
-                        TimerKind.CURRENT to "Current settings",
-                        TimerKind.VACUUM to "Vacuum",
-                        TimerKind.VAC_AND_MOP to "Vacuum and mop",
-                        TimerKind.MOP to "Mop",
-                    ),
+                    options = buildList {
+                        if (supportsSmartPlan || kind == TimerKind.SMART_PLAN) add(TimerKind.SMART_PLAN to "SmartPlan")
+                        add(TimerKind.VAC_AND_MOP to "Vacuum and mop")
+                        add(TimerKind.MOP to "Mop")
+                        add(TimerKind.VACUUM to "Vacuum")
+                        add(TimerKind.CURRENT to "Current settings")
+                    },
                     selected = kind,
                     onSelect = { kind = it },
                 )
@@ -280,7 +285,6 @@ private fun TimerDialog(
                             VacuumFanPower.BALANCED to "Balanced",
                             VacuumFanPower.TURBO to "Turbo",
                             VacuumFanPower.MAX to "Max",
-                            VacuumFanPower.SMART to "Smart",
                         ),
                         selected = fanPower,
                         onSelect = { fanPower = it },
@@ -293,7 +297,6 @@ private fun TimerDialog(
                             null to "Medium",
                             WaterBoxMode.LOW to "Low",
                             WaterBoxMode.HIGH to "High",
-                            WaterBoxMode.SMART to "Smart",
                         ),
                         selected = waterBoxMode?.takeIf { it != WaterBoxMode.MEDIUM },
                         onSelect = { waterBoxMode = it },
@@ -306,7 +309,6 @@ private fun TimerDialog(
                             MopRoute.DEEP to "Deep",
                             MopRoute.DEEP_PLUS to "Deep+",
                             MopRoute.FAST to "Fast",
-                            MopRoute.SMART to "Smart",
                         ),
                         selected = mopMode,
                         onSelect = { mopMode = it },

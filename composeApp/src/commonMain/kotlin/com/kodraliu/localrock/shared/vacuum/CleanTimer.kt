@@ -45,10 +45,11 @@ data class TimerSettings(
 )
 
 /** The cleaning choice a schedule offers, as the official app words it. */
-enum class TimerKind { CURRENT, VACUUM, VAC_AND_MOP, MOP }
+enum class TimerKind { CURRENT, SMART_PLAN, VACUUM, VAC_AND_MOP, MOP }
 
 val TimerSettings.kind: TimerKind
     get() = when {
+        isSmartModeSet(fanPower, waterBoxMode, mopMode) -> TimerKind.SMART_PLAN
         waterBoxMode == WaterBoxMode.OFF -> TimerKind.VACUUM
         fanPower == VacuumFanPower.OFF -> TimerKind.MOP
         waterBoxMode != null -> TimerKind.VAC_AND_MOP
@@ -57,7 +58,8 @@ val TimerSettings.kind: TimerKind
 
 /**
  * Settings for [kind] from the individual choices. Mopping without a water level would not mop, so
- * it falls back to medium; vacuum only drops water and route, mop only drops suction.
+ * it falls back to medium; vacuum only drops water and route, mop only drops suction. SmartPlan lets
+ * the robot choose all three, which the official app stores as the three smart codes together.
  */
 fun timerSettingsFor(
     kind: TimerKind,
@@ -67,6 +69,7 @@ fun timerSettingsFor(
     repeat: Int?,
 ): TimerSettings = when (kind) {
     TimerKind.CURRENT -> TimerSettings(repeat = repeat)
+    TimerKind.SMART_PLAN -> TimerSettings(VacuumFanPower.SMART, WaterBoxMode.SMART, MopRoute.SMART, repeat)
     TimerKind.VACUUM -> TimerSettings(fanPower, WaterBoxMode.OFF, null, repeat)
     TimerKind.VAC_AND_MOP -> TimerSettings(fanPower, waterBoxMode ?: WaterBoxMode.MEDIUM, mopMode, repeat)
     TimerKind.MOP -> TimerSettings(VacuumFanPower.OFF, waterBoxMode ?: WaterBoxMode.MEDIUM, mopMode, repeat)
@@ -130,7 +133,14 @@ private val ROUTE_LABELS = mapOf(
 /** One line for a schedule row, or null when the schedule just uses the robot's current settings. */
 fun TimerSettings.summary(): String? {
     val parts = mutableListOf<String>()
+    if (kind == TimerKind.SMART_PLAN) {
+        // The robot picks suction, water and route itself, so there is nothing more to list.
+        parts += "SmartPlan"
+        repeat?.takeIf { it > 1 }?.let { parts += "$it passes" }
+        return parts.joinToString(" · ")
+    }
     when (kind) {
+        TimerKind.SMART_PLAN -> Unit
         TimerKind.VACUUM -> parts += "Vacuum"
         TimerKind.VAC_AND_MOP -> parts += "Vacuum and mop"
         TimerKind.MOP -> parts += "Mop"
