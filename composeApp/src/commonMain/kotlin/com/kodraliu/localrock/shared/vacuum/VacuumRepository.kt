@@ -838,29 +838,32 @@ class VacuumRepository(
     }
 
     suspend fun fetchDockSettings() {
-        runCatching { session.getWashTowelMode() }.getOrNull()
-            ?.result?.jsonObject?.get("wash_mode")?.jsonPrimitive?.intOrNull
-            ?.let { _dockSettings.update { s -> s.copy(washMode = it) } }
-        runCatching { session.getSmartWashParams() }.getOrNull()
-            ?.result?.jsonObject?.get("wash_interval")?.jsonPrimitive?.intOrNull
-            ?.let { interval -> _dockSettings.update { s -> s.copy(washFreq = (interval - 1).coerceAtLeast(0)) } }
-        runCatching { session.getDustCollectionMode() }.getOrNull()
-            ?.result?.jsonObject?.get("mode")?.jsonPrimitive?.intOrNull
-            ?.let { _dockSettings.update { s -> s.copy(autoEmptyMode = it) } }
+        _dockSettings.value = DockSettings()
+        val wash = runCatching { session.getWashTowelMode().requireOk("get_wash_towel_mode").result as? JsonObject }.getOrNull()
+        _dockSettings.update { it.copy(washMode = (wash?.get("wash_mode") as? JsonPrimitive)?.intOrNull) }
+        val frequency = runCatching { parseSmartWashSettings(session.getSmartWashParams().requireOk("get_smart_wash_params").result) }.getOrNull()
+        _dockSettings.update { it.copy(smartWash = frequency) }
+        val empty = runCatching { session.getDustCollectionMode().requireOk("get_dust_collection_mode").result as? JsonObject }.getOrNull()
+        _dockSettings.update { it.copy(autoEmptyMode = (empty?.get("mode") as? JsonPrimitive)?.intOrNull) }
     }
 
     suspend fun setWashMode(mode: Int) {
-        session.setWashTowelMode(mode)
+        session.setWashTowelMode(mode).requireOk("set_wash_towel_mode")
         _dockSettings.update { it.copy(washMode = mode) }
     }
 
-    suspend fun setWashFreq(freq: Int) {
-        session.setSmartWashParams(freq)
-        _dockSettings.update { it.copy(washFreq = freq) }
+    suspend fun setWashFrequency(mode: Int, intervalMinutes: Int?) {
+        // Room/smart modes still carry an interval. Preserve the robot's current value.
+        val current = parseSmartWashSettings(session.getSmartWashParams().requireOk("get_smart_wash_params").result)
+            ?: throw IllegalStateException("The robot's mop washing frequency is unavailable")
+        _dockSettings.update { it.copy(smartWash = current) }
+        val updated = current.withFrequency(mode, intervalMinutes)
+        session.setSmartWashParams(updated).requireOk("set_smart_wash_params")
+        _dockSettings.update { it.copy(smartWash = updated) }
     }
 
     suspend fun setAutoEmptyMode(mode: Int) {
-        session.setDustCollectionMode(mode)
+        session.setDustCollectionMode(mode).requireOk("set_dust_collection_mode")
         _dockSettings.update { it.copy(autoEmptyMode = mode) }
     }
 
@@ -1108,6 +1111,8 @@ internal fun VacuumStatus.merge(fresh: VacuumStatus): VacuumStatus = fresh.copy(
     waterBoxCustomMode = fresh.waterBoxCustomMode ?: waterBoxCustomMode,
     chargeStatus = fresh.chargeStatus ?: chargeStatus,
     dockErrorStatus = fresh.dockErrorStatus ?: dockErrorStatus,
+    dockType = fresh.dockType ?: dockType,
+    dockStatus = fresh.dockStatus ?: dockStatus,
     dryStatus = fresh.dryStatus ?: dryStatus,
     remainingDryTimeSec = fresh.remainingDryTimeSec ?: remainingDryTimeSec,
     mapStatus = fresh.mapStatus ?: mapStatus,

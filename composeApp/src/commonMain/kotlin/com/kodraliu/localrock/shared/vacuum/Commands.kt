@@ -144,11 +144,8 @@ suspend fun VacuumSession.setWashTowelMode(mode: Int): V1Response =
     sendCommandRaw("set_wash_towel_mode", JsonObject(mapOf("wash_mode" to JsonPrimitive(mode))))
 
 suspend fun VacuumSession.getSmartWashParams(): V1Response = sendCommand("get_smart_wash_params")
-suspend fun VacuumSession.setSmartWashParams(washFreq: Int): V1Response =
-    sendCommandRaw("set_smart_wash_params", JsonObject(mapOf(
-        "smart_wash" to JsonPrimitive(0),
-        "wash_interval" to JsonPrimitive(washFreq + 1),
-    )))
+suspend fun VacuumSession.setSmartWashParams(settings: SmartWashSettings): V1Response =
+    sendCommandRaw("set_smart_wash_params", encodeSmartWashParams(settings))
 
 suspend fun VacuumSession.getDustCollectionMode(): V1Response = sendCommand("get_dust_collection_mode")
 suspend fun VacuumSession.setDustCollectionMode(mode: Int): V1Response =

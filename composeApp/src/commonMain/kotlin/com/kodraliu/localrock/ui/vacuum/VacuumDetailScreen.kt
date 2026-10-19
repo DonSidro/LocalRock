@@ -134,6 +134,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.DockErrorCodes
 import com.kodraliu.localrock.shared.vacuum.DockSettings
 import com.kodraliu.localrock.shared.vacuum.FloorMap
@@ -149,6 +150,7 @@ import com.kodraliu.localrock.shared.vacuum.isCustomizeModeSet
 import com.kodraliu.localrock.shared.vacuum.isSmartModeSet
 import com.kodraliu.localrock.shared.vacuum.mapNameBlocker
 import com.kodraliu.localrock.shared.vacuum.roomCleanModesFor
+import com.kodraliu.localrock.shared.vacuum.washFrequencyLabel
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
 import com.kodraliu.localrock.shared.vacuum.map.roomAtNorm
@@ -428,13 +430,14 @@ fun VacuumDetailScreen(
                 status = status,
                 busy = busy,
                 dockSettings = dockSettings,
+                dockCapabilities = viewModel.dockCapabilities,
                 onEmptyDustbin = { showDockSheet = false; viewModel.run { it.collectDust() } },
                 onWashMop = { showDockSheet = false; viewModel.run { it.washMop() } },
                 // Dry keeps the sheet open so the drying status row appears in place.
                 onDryMop = { viewModel.run { it.startDryer() } },
                 onStopDry = { viewModel.run { it.stopDryer() } },
                 onWashModeChange = { mode -> viewModel.run { repo -> repo.setWashMode(mode) } },
-                onWashFreqChange = { freq -> viewModel.run { repo -> repo.setWashFreq(freq) } },
+                onWashFrequencyChange = { mode, minutes -> viewModel.run { repo -> repo.setWashFrequency(mode, minutes) } },
                 onAutoEmptyModeChange = { mode -> viewModel.run { repo -> repo.setAutoEmptyMode(mode) } },
             )
         }
@@ -1470,12 +1473,13 @@ private fun DockSheetContent(
     status: VacuumStatus,
     busy: Boolean,
     dockSettings: DockSettings,
+    dockCapabilities: DockCapabilities,
     onEmptyDustbin: () -> Unit,
     onWashMop: () -> Unit,
     onDryMop: () -> Unit,
     onStopDry: () -> Unit,
     onWashModeChange: (Int) -> Unit,
-    onWashFreqChange: (Int) -> Unit,
+    onWashFrequencyChange: (Int, Int?) -> Unit,
     onAutoEmptyModeChange: (Int) -> Unit,
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -1490,7 +1494,10 @@ private fun DockSheetContent(
         Box(Modifier.fillMaxWidth().heightIn(min = 340.dp)) {
             when (selectedTab) {
                 0 -> DockControlTab(status, busy, onEmptyDustbin, onWashMop, onDryMop, onStopDry)
-                1 -> DockSettingsTab(dockSettings, onWashModeChange, onWashFreqChange, onAutoEmptyModeChange)
+                1 -> DockSettingsTab(
+                    dockSettings, dockCapabilities, status.dockType, status.dockStatus, busy,
+                    onWashModeChange, onWashFrequencyChange, onAutoEmptyModeChange,
+                )
             }
         }
     }
@@ -1609,33 +1616,67 @@ private fun DockActionButton(modifier: Modifier = Modifier, icon: ImageVector, i
 @Composable
 private fun DockSettingsTab(
     dockSettings: DockSettings,
+    dockCapabilities: DockCapabilities,
+    dockType: Int?,
+    dockStatus: Int?,
+    busy: Boolean,
     onWashModeChange: (Int) -> Unit,
-    onWashFreqChange: (Int) -> Unit,
+    onWashFrequencyChange: (Int, Int?) -> Unit,
     onAutoEmptyModeChange: (Int) -> Unit,
 ) {
     var dialogTarget by remember { mutableStateOf<String?>(null) }
-    val washFreqOptions = listOf("Every trip", "Every 2 trips", "Every 3 trips")
-    val washModeOptions = listOf("Light", "Standard", "Intensive")
-    val autoEmptyOptions = listOf("Smart", "Max suction", "Normal")
+    val washFrequencyOptions = dockCapabilities.washFrequencyOptions
+    val smartWash = dockSettings.smartWash
+    val washFrequencyIndex = washFrequencyOptions.indexOfFirst {
+        smartWash != null && it.mode == smartWash.mode && (it.mode != 0 || it.intervalMinutes?.times(60) == smartWash.intervalSeconds)
+    }
+    val washModes = dockCapabilities.washModes(dockType, dockStatus)
+    val washModeIndex = washModes.indexOfFirst { it.first == dockCapabilities.washModeCode(dockSettings.washMode, dockType) }
+    val autoEmptyModes = dockCapabilities.autoEmptyModes
+    val dockKnown = dockType != null && dockType != 0
+    val washFrequencyEnabled = !busy && dockKnown && smartWash != null && washFrequencyOptions.isNotEmpty()
+    val washModeEnabled = !busy && dockKnown && dockSettings.washMode != null && washModes.isNotEmpty()
+    val autoEmptyEnabled = !busy && dockSettings.autoEmptyMode != null && autoEmptyModes.isNotEmpty()
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DockSettingCard(Modifier.weight(1f), Icons.Default.Repeat, AppColors.Water, "Mop wash frequency", washFreqOptions.getOrElse(dockSettings.washFreq) { "Every trip" }) { dialogTarget = "wash_freq" }
-            DockSettingCard(Modifier.weight(1f), Icons.Default.WaterDrop, AppColors.Water, "Washing mode", washModeOptions.getOrElse(dockSettings.washMode) { "Standard" }) { dialogTarget = "wash_mode" }
+            DockSettingCard(Modifier.weight(1f), Icons.Default.Repeat, AppColors.Water, "Mop wash frequency", washFrequencyLabel(smartWash), washFrequencyEnabled) { dialogTarget = "wash_freq" }
+            DockSettingCard(Modifier.weight(1f), Icons.Default.WaterDrop, AppColors.Water, "Washing mode", dockCapabilities.washModeLabel(dockSettings.washMode, dockType), washModeEnabled) { dialogTarget = "wash_mode" }
         }
-        DockSettingCard(Modifier.fillMaxWidth(), Icons.Default.Delete, MaterialTheme.colorScheme.primary, "Auto-empty mode", autoEmptyOptions.getOrElse(dockSettings.autoEmptyMode) { "Smart" }) { dialogTarget = "auto_empty" }
+        DockSettingCard(Modifier.fillMaxWidth(), Icons.Default.Delete, MaterialTheme.colorScheme.primary, "Auto-empty mode", dockCapabilities.autoEmptyModeLabel(dockSettings.autoEmptyMode), autoEmptyEnabled) { dialogTarget = "auto_empty" }
     }
 
     when (dialogTarget) {
-        "wash_freq" -> RadioPickerDialog("Mop wash frequency", washFreqOptions, dockSettings.washFreq, onWashFreqChange) { dialogTarget = null }
-        "wash_mode" -> RadioPickerDialog("Washing mode", washModeOptions, dockSettings.washMode, onWashModeChange) { dialogTarget = null }
-        "auto_empty" -> RadioPickerDialog("Auto-empty mode", autoEmptyOptions, dockSettings.autoEmptyMode, onAutoEmptyModeChange) { dialogTarget = null }
+        "wash_freq" -> RadioPickerDialog(
+            title = "Mop wash frequency",
+            options = washFrequencyOptions.map { it.label },
+            selected = washFrequencyIndex,
+            onSelect = { washFrequencyOptions[it].let { option -> onWashFrequencyChange(option.mode, option.intervalMinutes) } },
+            enabled = washFrequencyEnabled,
+            onDismiss = { dialogTarget = null },
+        )
+        "wash_mode" -> RadioPickerDialog(
+            title = "Washing mode",
+            options = washModes.map { it.second },
+            selected = washModeIndex,
+            onSelect = { onWashModeChange(washModes[it].first) },
+            enabled = washModeEnabled,
+            onDismiss = { dialogTarget = null },
+        )
+        "auto_empty" -> RadioPickerDialog(
+            title = "Auto-empty mode",
+            options = autoEmptyModes.map { it.second },
+            selected = autoEmptyModes.indexOfFirst { it.first == dockSettings.autoEmptyMode },
+            onSelect = { onAutoEmptyModeChange(autoEmptyModes[it].first) },
+            enabled = autoEmptyEnabled,
+            onDismiss = { dialogTarget = null },
+        )
     }
 }
 
 @Composable
-private fun DockSettingCard(modifier: Modifier, icon: ImageVector, iconTint: Color, title: String, value: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, modifier = modifier, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+private fun DockSettingCard(modifier: Modifier, icon: ImageVector, iconTint: Color, title: String, value: String, enabled: Boolean, onClick: () -> Unit) {
+    Surface(onClick = onClick, modifier = modifier, enabled = enabled, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Surface(shape = CircleShape, color = iconTint.copy(alpha = 0.15f), modifier = Modifier.size(36.dp)) {
                 Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(18.dp), iconTint) }
@@ -1650,15 +1691,15 @@ private fun DockSettingCard(modifier: Modifier, icon: ImageVector, iconTint: Col
 }
 
 @Composable
-private fun RadioPickerDialog(title: String, options: List<String>, selected: Int, onSelect: (Int) -> Unit, onDismiss: () -> Unit) {
+private fun RadioPickerDialog(title: String, options: List<String>, selected: Int, onSelect: (Int) -> Unit, enabled: Boolean, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 options.forEachIndexed { index, label ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                        RadioButton(selected = selected == index, onClick = { onSelect(index); onDismiss() })
+                        RadioButton(selected = selected == index, enabled = enabled, onClick = { onSelect(index); onDismiss() })
                         Spacer(Modifier.width(8.dp))
                         Text(label, style = MaterialTheme.typography.bodyLarge)
                     }
