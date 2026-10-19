@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.kodraliu.localrock.shared.AppContainer
 import com.kodraliu.localrock.shared.messages.MessageSeverity
 import com.kodraliu.localrock.shared.vacuum.MapEditException
+import com.kodraliu.localrock.shared.vacuum.RoomType
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
@@ -120,14 +121,14 @@ class VacuumViewModel(
 
 
     /**
-     * Rename a map room the way the Roborock app does: get a cloud room for the name from the
-     * server, point the robot's segment at it with `name_segment`, then reload the home so the new
-     * name resolves. Throws with a user-facing message on any failure.
+     * Set a room's type the way the Roborock app does: get a cloud room for the type's label from
+     * the server, point the robot's segment at it with `name_segment` along with the type's tag
+     * (which the robot uses to adjust its cleaning), then reload the home so the name resolves.
+     * Throws with a user-facing message on any failure.
      */
-    suspend fun renameRoom(segment: Int, name: String) {
-        val clean = validateRoomName(name)
-        val room = container.deviceRepository.createRoom(clean)
-        repository.assignRoom(segment, room.id)
+    suspend fun setRoomType(segment: Int, type: RoomType) {
+        val room = container.deviceRepository.createRoom(type.label)
+        repository.assignRoom(segment, room.id, type.tag)
         container.deviceRepository.refresh()
         repository.setHomeRooms(container.deviceRepository.home.value?.rooms ?: emptyList())
     }

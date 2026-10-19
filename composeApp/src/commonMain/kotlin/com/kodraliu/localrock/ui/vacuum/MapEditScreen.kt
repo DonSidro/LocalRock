@@ -4,7 +4,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.WindowInsets
+import com.kodraliu.localrock.shared.vacuum.RoomType
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
@@ -536,9 +539,9 @@ fun MapEditScreen(
                 segment = room,
                 working = working,
                 enabled = blockedReason == null,
-                onRename = { name ->
-                    runEdit("Room renamed.") {
-                        viewModel.renameRoom(room, name)
+                onRoomType = { type ->
+                    runEdit("Room type set.") {
+                        viewModel.setRoomType(room, type)
                         null
                     }
                 },
@@ -1134,21 +1137,20 @@ private fun RoomDock(action: RoomAction, roomName: (Int) -> String, onCancel: ()
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RoomSheet(
     map: ParsedMap,
     segment: Int,
     working: Boolean,
     enabled: Boolean,
-    onRename: (String) -> Unit,
+    onRoomType: (RoomType) -> Unit,
     onFloor: (FloorChoice) -> Unit,
     onSplit: () -> Unit,
     onMerge: () -> Unit,
 ) {
     val room = map.rooms.find { it.id == segment }
     val currentName = room?.name ?: "Room $segment"
-    var nameInput by remember(segment, currentName) { mutableStateOf(currentName) }
-    val nameError = runCatching { validateRoomName(nameInput) }.exceptionOrNull()?.message
     val canAct = enabled && !working
 
     Column(
@@ -1166,21 +1168,21 @@ private fun RoomSheet(
             if (working) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
         }
 
-        Text("Name", style = MaterialTheme.typography.titleSmall)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = nameInput,
-                onValueChange = { nameInput = it },
-                singleLine = true,
-                isError = nameError != null,
-                supportingText = nameError?.let { { Text(it) } },
-                modifier = Modifier.weight(1f),
-                enabled = canAct,
-            )
-            Button(
-                onClick = { onRename(nameInput) },
-                enabled = canAct && nameError == null && nameInput.trim() != currentName,
-            ) { Text("Rename") }
+        Text("Room type", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "In some modes, the robot adjusts its cleaning to the room type.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RoomType.entries.forEach { type ->
+                FilterChip(
+                    selected = type.label.equals(currentName, ignoreCase = true),
+                    onClick = { onRoomType(type) },
+                    label = { Text(type.label) },
+                    enabled = canAct,
+                )
+            }
         }
 
         HorizontalDivider()

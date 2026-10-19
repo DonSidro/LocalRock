@@ -598,20 +598,25 @@ class VacuumRepository(
      * only this entry changed. The robot may renumber segments in its answer; the check follows
      * that. Confirmed by reading the table back.
      */
-    suspend fun assignRoom(segment: Int, roomId: Long): Unit = mapEditMutex.withLock {
+    suspend fun assignRoom(segment: Int, roomId: Long, tagId: Int? = null): Unit = mapEditMutex.withLock {
         val map = editableMap()
         if (map.rooms.none { it.id == segment }) throw MapEditException("That room is not on the current map")
         rooms()
         val table = rawSegmentTable
         if (table.isEmpty()) throw MapEditException("The robot did not return its room table. Nothing was changed.")
         val existing = table.find { it.segment == segment }
-        val entry = SegmentEntry(segment, roomId.toString(), existing?.tagId ?: NEW_SEGMENT_TAG)
+        val entry = SegmentEntry(segment, roomId.toString(), tagId ?: existing?.tagId ?: NEW_SEGMENT_TAG)
         val resp = session.nameSegment(table.filter { it.segment != segment } + entry)
         val finalSegment = parseSegmentRenumbering(resp.result)[segment] ?: segment
-        rooms()
-        if (rawSegmentTable.find { it.segment == finalSegment }?.roomId != roomId.toString()) {
-            throw MapEditException(NOT_CONFIRMED)
+        // The table can lag the robot's answer by a moment, so look a few times before giving up.
+        var confirmed = false
+        for (attempt in 0 until 3) {
+            if (attempt > 0) delay(STATUS_READBACK_DELAY_MS)
+            rooms()
+            confirmed = rawSegmentTable.find { it.segment == finalSegment }?.roomId == roomId.toString()
+            if (confirmed) break
         }
+        if (!confirmed) throw MapEditException(NOT_CONFIRMED)
     }
 
     /** Why the robot's saved maps can't be renamed, deleted or rebuilt right now, or null. */
