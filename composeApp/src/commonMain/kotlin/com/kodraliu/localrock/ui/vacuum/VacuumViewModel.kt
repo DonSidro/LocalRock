@@ -121,6 +121,17 @@ class VacuumViewModel(
 
 
     /**
+     * Give a room a custom name the way the Roborock app does: the name becomes a cloud room and the
+     * segment points at it, keeping the room's type tag so the robot still treats it as that type.
+     */
+    suspend fun renameRoom(segment: Int, name: String) {
+        val room = container.deviceRepository.createRoom(validateRoomName(name))
+        repository.assignRoom(segment, room.id)
+        container.deviceRepository.refresh()
+        repository.setHomeRooms(container.deviceRepository.home.value?.rooms ?: emptyList())
+    }
+
+    /**
      * Set a room's type the way the Roborock app does: get a cloud room for the type's label from
      * the server, point the robot's segment at it with `name_segment` along with the type's tag
      * (which the robot uses to adjust its cleaning), then reload the home so the name resolves.

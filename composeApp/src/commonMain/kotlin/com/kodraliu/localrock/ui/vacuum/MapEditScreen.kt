@@ -539,6 +539,12 @@ fun MapEditScreen(
                 segment = room,
                 working = working,
                 enabled = blockedReason == null,
+                onRename = { name ->
+                    runEdit("Room renamed.") {
+                        viewModel.renameRoom(room, name)
+                        null
+                    }
+                },
                 onRoomType = { type ->
                     runEdit("Room type set.") {
                         viewModel.setRoomType(room, type)
@@ -1145,12 +1151,15 @@ private fun RoomSheet(
     working: Boolean,
     enabled: Boolean,
     onRoomType: (RoomType) -> Unit,
+    onRename: (String) -> Unit,
     onFloor: (FloorChoice) -> Unit,
     onSplit: () -> Unit,
     onMerge: () -> Unit,
 ) {
     val room = map.rooms.find { it.id == segment }
     val currentName = room?.name ?: "Room $segment"
+    var nameInput by remember(segment, currentName) { mutableStateOf(currentName) }
+    val nameError = runCatching { validateRoomName(nameInput) }.exceptionOrNull()?.message
     val canAct = enabled && !working
 
     Column(
@@ -1183,6 +1192,28 @@ private fun RoomSheet(
                     enabled = canAct,
                 )
             }
+        }
+
+        Text("Custom name", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "Keeps the room's type; only the label changes.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = nameInput,
+                onValueChange = { nameInput = it },
+                singleLine = true,
+                isError = nameError != null,
+                supportingText = nameError?.let { { Text(it) } },
+                modifier = Modifier.weight(1f),
+                enabled = canAct,
+            )
+            Button(
+                onClick = { onRename(nameInput) },
+                enabled = canAct && nameError == null && nameInput.trim() != currentName,
+            ) { Text("Rename") }
         }
 
         HorizontalDivider()
