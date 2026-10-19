@@ -294,6 +294,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     val wallPaint = Paint().apply { color = palette.wall }
     val floorPaint = Paint().apply { color = palette.floor }
     val roomPaint = Paint()
+    val patterns = HashMap<Int, FloorPattern>()
     val w = map.width
     val h = map.height
     val grid = map.grid
@@ -309,7 +310,11 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
                 128 -> {
                     if (raw != null) {
                         val roomId = (raw[rowOff + x].toInt() ushr 3) and 0x1f
-                        roomPaint.color = palette.rooms[roomId % palette.rooms.size]
+                        val base = palette.rooms[roomId % palette.rooms.size]
+                        val pattern = patterns.getOrPut(roomId) {
+                            floorPattern(map.segmentMaterials[roomId], map.segmentMaterialDirections[roomId])
+                        }
+                        roomPaint.color = if (pattern == FloorPattern.NONE) base else shaded(base, textureShade(pattern, x, y))
                         roomPaint
                     } else floorPaint
                 }
