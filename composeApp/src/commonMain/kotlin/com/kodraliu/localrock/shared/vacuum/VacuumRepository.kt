@@ -46,6 +46,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
 
+private const val INVALID_PARAMS_CODE = -10007
+
 class VacuumRepository(
     duid: String,
     localKey: String,
@@ -881,6 +883,56 @@ class VacuumRepository(
     suspend fun setCarpetMode(mode: Int) {
         session.setCarpetCleanMode(mode).requireOk("set_carpet_clean_mode")
         _robotSettings.update { it.copy(carpetMode = mode) }
+    }
+
+    private val _betaFeatures = MutableStateFlow<List<BetaFeatureState>>(emptyList())
+    val betaFeatures: StateFlow<List<BetaFeatureState>> = _betaFeatures
+
+    private val _betaFeaturesLoading = MutableStateFlow(false)
+    val betaFeaturesLoading: StateFlow<Boolean> = _betaFeaturesLoading
+
+    /** Null when the robot did not reply at all, so a read that timed out is not mistaken for an answer. */
+    private suspend fun readBetaFeature(def: BetaFeatureDef): BetaFeatureState? {
+        val resp = runCatching { session.sendCommand(def.getMethod) }.getOrNull() ?: return null
+        val parsed = parseBetaReply(resp.result)
+        return BetaFeatureState(
+            def = def,
+            value = parsed?.second,
+            key = parsed?.first,
+            raw = resp.result?.toString() ?: resp.error?.toString(),
+            answered = resp.error == null,
+        )
+    }
+
+    /** Stops at the first option the robot does not reply to, so an offline robot costs one timeout, not one per option. */
+    suspend fun fetchBetaFeatures(defs: List<BetaFeatureDef>) {
+        _betaFeaturesLoading.value = true
+        try {
+            val states = mutableListOf<BetaFeatureState>()
+            for (def in defs) {
+                val state = readBetaFeature(def) ?: break
+                if (state.answered && state.toggleable) states += state
+            }
+            _betaFeatures.value = states
+        } finally {
+            _betaFeaturesLoading.value = false
+        }
+    }
+
+    /**
+     * Tries each parameter shape until the robot stops answering "invalid params", then reads the option
+     * back so the screen shows what the robot holds. Throws the robot's refusal, if any, after that.
+     */
+    suspend fun setBetaFeature(id: String, on: Boolean) {
+        val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
+        var last: V1Response? = null
+        for (params in betaSetParamCandidates(current.key, on)) {
+            last = session.sendCommandRaw(current.def.setMethod, params)
+            if (last.error?.get("code")?.jsonPrimitive?.intOrNull != INVALID_PARAMS_CODE) break
+        }
+        val updated = readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }
+        if (updated != null) _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
+        last?.requireOk(current.def.setMethod)
     }
 
     suspend fun fetchDockSettings() {

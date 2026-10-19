@@ -13,6 +13,8 @@ import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
+import com.kodraliu.localrock.shared.vacuum.supportedBetaFeatures
+import com.kodraliu.localrock.shared.vacuum.unlistedAdvertisedFeatures
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +39,9 @@ class VacuumViewModel(
     val supportsSmartPlan: Boolean = isSmartPlanSupported(device.newFeatureSet)
     val supportsWaterSlide: Boolean = isWaterSlideSupported(device.newFeatureSet)
     val dockCapabilities = DockCapabilities(modelName, device.featureSet, device.newFeatureSet)
+    val betaFeatureDefs = supportedBetaFeatures(device.newFeatureSet)
+    val unlistedFeatures = unlistedAdvertisedFeatures(device.newFeatureSet)
+    val showsBetaFeatures = betaFeatureDefs.any { it.bit != null } || unlistedFeatures.isNotEmpty()
     val repository: VacuumRepository = container.vacuumRepositoryFor(device)
     val status = repository.status
 
