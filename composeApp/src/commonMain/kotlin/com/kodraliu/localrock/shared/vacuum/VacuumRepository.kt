@@ -578,7 +578,8 @@ class VacuumRepository(
                 session.splitSegment(segment, a.first, a.second, b.first, b.second)
                 break
             } catch (e: RobotCommandException) {
-                if (e.code() != SPLIT_FAILED_CODE || i == attempts.lastIndex) throw e
+                if (e.code() != SPLIT_FAILED_CODE) throw e
+                if (i == attempts.lastIndex) throw splitFailure(e)
                 // After refusing a split the robot sends a second, late error for the same
                 // request (~10 s later in the capture). Only try again once that has passed.
                 delay(SPLIT_RETRY_DELAY_MS)

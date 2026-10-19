@@ -1125,7 +1125,7 @@ private fun RoomDock(action: RoomAction, roomName: (Int) -> String, onCancel: ()
         Column(Modifier.weight(1f)) {
             val (title, help) = when (action) {
                 RoomAction.None -> "Rooms" to "Tap a room to rename it, change its floor type, split or merge it."
-                is RoomAction.Split -> "Split ${roomName(action.segment)}" to "Draw a line across the room, wall to wall."
+                is RoomAction.Split -> "Split ${roomName(action.segment)}" to "Draw a line all the way across the room, past the wall on both sides."
                 is RoomAction.Merge -> "Merge ${roomName(action.segment)}" to "Tap the neighbouring room to merge with."
             }
             Text(title, style = MaterialTheme.typography.titleSmall)
