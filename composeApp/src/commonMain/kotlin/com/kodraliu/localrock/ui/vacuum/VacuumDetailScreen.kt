@@ -1049,6 +1049,7 @@ private fun ControlBar(
                         when {
                             isSmartModeSet(status.fanPower, status.waterBoxCustomMode, null) -> CleanPlan.SMART.label
                             isCustomizeModeSet(status.fanPower, status.waterBoxCustomMode, null) -> CleanPlan.PER_ROOM.label
+                            mopping && status.fanPower == VacuumFanPower.OFF -> "Mop"
                             mopping -> "Vac & Mop"
                             else -> "Vacuum"
                         }
