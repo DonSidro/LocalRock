@@ -874,6 +874,11 @@ class VacuumRepository(
         _dockSettings.update { it.copy(autoEmptyMode = mode) }
     }
 
+    /** Pumps the robot's built-in water tank out through the dock. A refusal is raised, not ignored. */
+    suspend fun emptyInbuiltWaterTank() {
+        session.emptyInbuiltWaterTank().requireOk(APP_EMPTY_INBUILT_WATER_TANK)
+    }
+
 
     suspend fun fetchCleanSummary(): List<Long> {
         val result = session.getCleanSummary().result ?: return emptyList()
