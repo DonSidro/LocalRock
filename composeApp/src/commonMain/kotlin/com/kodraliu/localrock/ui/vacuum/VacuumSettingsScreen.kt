@@ -237,12 +237,18 @@ fun VacuumRemoteScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
 
 @Composable
 fun VacuumPinGoScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
-    val repository = viewModel.repository
-    val scope = rememberCoroutineScope()
-    val parsedMap by repository.parsedMap.collectAsState()
+    val parsedMap by viewModel.repository.parsedMap.collectAsState()
+    val busy by viewModel.busy.collectAsState()
     PinGoScreen(
         parsedMap = parsedMap,
-        onGoto = { x, y -> scope.launch { runCatching { repository.gotoTarget(x, y) } } },
+        busy = busy,
+        // A refusal is shown by run(); onSent only fires once the robot has accepted the target.
+        onGoto = { x, y, onSent ->
+            viewModel.run {
+                it.gotoTarget(x, y)
+                onSent()
+            }
+        },
         onBack = onBack,
     )
 }
@@ -1391,7 +1397,8 @@ private fun RcButton(icon: ImageVector, contentDescription: String, onClick: () 
 @Composable
 private fun PinGoScreen(
     parsedMap: ParsedMap?,
-    onGoto: (x: Int, y: Int) -> Unit,
+    busy: Boolean,
+    onGoto: (x: Int, y: Int, onSent: () -> Unit) -> Unit,
     onBack: () -> Unit,
 ) {
     var tapPoint by remember { mutableStateOf<Offset?>(null) }
@@ -1407,14 +1414,13 @@ private fun PinGoScreen(
                 },
                 actions = {
                     if (tapPoint != null && parsedMap != null && !sent) {
-                        TextButton(onClick = {
+                        TextButton(enabled = !busy, onClick = {
                             val tp = tapPoint ?: return@TextButton
                             val pm = parsedMap ?: return@TextButton
                             if (imageSize.width > 0 && imageSize.height > 0) {
-                                val mapX = (tp.x / imageSize.width * pm.width).toInt()
-                                val mapY = (tp.y / imageSize.height * pm.height).toInt()
-                                onGoto(mapX, mapY)
-                                sent = true
+                                // app_goto_target takes robot millimetres, not bitmap cells (#34).
+                                val (xMm, yMm) = pm.canvasToMm(tp, imageSize.width.toFloat(), imageSize.height.toFloat())
+                                onGoto(xMm, yMm) { if (tapPoint == tp) sent = true }
                             }
                         }) { Text("Go") }
                     }
