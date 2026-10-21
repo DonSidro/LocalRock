@@ -351,6 +351,15 @@ class VacuumRepository(
 
     suspend fun stopDryer(): V1Response = session.appSetDryerStatus(false)
 
+    suspend fun emptyRobotWaterTank(): V1Response {
+        val fresh = session.getStatus() ?: throw IllegalStateException("The robot's current status is unavailable")
+        _status.update { it.merge(fresh) }
+        if (fresh.state !in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE) || fresh.inCleaning != 0) {
+            throw IllegalStateException("Dock the robot and finish its current task before emptying its water tank")
+        }
+        return session.appEmptyInbuiltWaterTank().requireOk("app_empty_inbuilt_water_tank")
+    }
+
     suspend fun fetchMopMode() {
         runCatching { session.getMopMode() }.getOrNull()
             ?.result?.let { r ->
@@ -371,6 +380,19 @@ class VacuumRepository(
     /** Switches suction, water and route in one command, the only way in or out of SmartPlan. */
     suspend fun setCleanMotorMode(fanPower: Int, waterBoxMode: Int, mopMode: Int) {
         session.setCleanMotorMode(fanPower, waterBoxMode, mopMode).requireOk("set_clean_motor_mode")
+        _mopMode.value = mopMode
+    }
+
+    suspend fun setCleanSequenceType(
+        type: Int,
+        fanPower: Int,
+        waterBoxMode: Int,
+        mopMode: Int,
+        repeat: Int? = null,
+    ) {
+        session.setCleanSequenceType(type, fanPower, waterBoxMode, mopMode, repeat)
+            .requireOk("app_set_clean_sequence_type")
+        _status.update { it.copy(cleanSequenceType = type, fanPower = fanPower, waterBoxCustomMode = waterBoxMode) }
         _mopMode.value = mopMode
     }
 
@@ -1108,6 +1130,7 @@ internal fun VacuumStatus.merge(fresh: VacuumStatus): VacuumStatus = fresh.copy(
     battery = fresh.battery ?: battery,
     state = fresh.state ?: state,
     fanPower = fresh.fanPower ?: fanPower,
+    cleanSequenceType = fresh.cleanSequenceType ?: cleanSequenceType,
     cleanArea = fresh.cleanArea ?: cleanArea,
     cleanTime = fresh.cleanTime ?: cleanTime,
     errorCode = fresh.errorCode ?: errorCode,

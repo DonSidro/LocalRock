@@ -40,6 +40,8 @@ suspend fun VacuumSession.setWaterBoxCustomMode(level: Int): V1Response =
 suspend fun VacuumSession.appStartCollectDust(): V1Response = sendCommand("app_start_collect_dust")
 suspend fun VacuumSession.appStartWash(): V1Response = sendCommand("app_start_wash")
 suspend fun VacuumSession.appStopWash(): V1Response = sendCommand("app_stop_wash")
+suspend fun VacuumSession.appEmptyInbuiltWaterTank(): V1Response =
+    sendCommandRaw("app_empty_inbuilt_water_tank", JsonObject(emptyMap()))
 
 suspend fun VacuumSession.getStatus(): VacuumStatus? {
     val resp = sendCommand("get_status")
@@ -143,6 +145,20 @@ suspend fun VacuumSession.setMopMode(mode: Int): V1Response =
     sendCommand("set_mop_mode", listOf(JsonPrimitive(mode)))
 suspend fun VacuumSession.setCleanMotorMode(fanPower: Int, waterBoxMode: Int, mopMode: Int): V1Response =
     sendCommandRaw("set_clean_motor_mode", encodeCleanMotorModeParams(fanPower, waterBoxMode, mopMode))
+
+suspend fun VacuumSession.setCleanSequenceType(
+    type: Int,
+    fanPower: Int,
+    waterBoxMode: Int,
+    mopMode: Int,
+    repeat: Int? = null,
+): V1Response = sendCommandRaw("app_set_clean_sequence_type", JsonObject(buildMap {
+    put("type", JsonPrimitive(type))
+    put("fan_power", JsonPrimitive(fanPower))
+    put("water_box_mode", JsonPrimitive(waterBoxMode))
+    put("mop_mode", JsonPrimitive(mopMode))
+    if (type == 1 && repeat != null) put("repeat", JsonPrimitive(repeat))
+}))
 
 suspend fun VacuumSession.appSetDryerStatus(on: Boolean): V1Response =
     sendCommandRaw("app_set_dryer_status", JsonObject(mapOf("status" to JsonPrimitive(if (on) 1 else 0))))
