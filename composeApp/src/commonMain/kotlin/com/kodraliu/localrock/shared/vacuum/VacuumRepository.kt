@@ -340,9 +340,29 @@ class VacuumRepository(
         cleanSequenceRefused = false
     }
 
-    suspend fun setFanPower(level: Int): V1Response = session.setCustomMode(level)
+    suspend fun setFanPower(level: Int) =
+        setOneMotorMode("set_custom_mode", session.setCustomMode(level)) { it.copy(fanPower = level) }
 
-    suspend fun setWaterBoxMode(level: Int): V1Response = session.setWaterBoxCustomMode(level)
+    suspend fun setWaterBoxMode(level: Int) =
+        setOneMotorMode("set_water_box_custom_mode", session.setWaterBoxCustomMode(level)) { it.copy(waterBoxMode = level) }
+
+    /**
+     * Checks the robot's [answer] to a single suction, water or route change. On -10005 the change is
+     * sent again as one set_clean_motor_mode with the other two as the robot reports them now (see
+     * [motorModesForFallback]); a refusal that can't be retried, or a refused retry, is raised.
+     */
+    private suspend fun setOneMotorMode(method: String, answer: V1Response, change: (MotorModes) -> MotorModes) {
+        val error = answer.error ?: return
+        if (answer.errorCode() == PARAM_FORMAT_REFUSED_CODE) {
+            refreshStatus()
+            fetchMopMode()
+        }
+        val current = _status.value
+        val modes = motorModesForFallback(answer.errorCode(), current.fanPower, current.waterBoxCustomMode, _mopMode.value)
+            ?: throw RobotCommandException(method, error)
+        val wanted = change(modes)
+        setCleanMotorMode(wanted.fanPower, wanted.waterBoxMode, wanted.mopMode)
+    }
 
     suspend fun collectDust(): V1Response = session.appStartCollectDust()
     suspend fun washMop(): V1Response = session.appStartWash()
@@ -364,7 +384,7 @@ class VacuumRepository(
     }
 
     suspend fun setMopMode(mode: Int) {
-        session.setMopMode(mode)
+        setOneMotorMode("set_mop_mode", session.setMopMode(mode)) { it.copy(mopMode = mode) }
         _mopMode.value = mode
     }
 

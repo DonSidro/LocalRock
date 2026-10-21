@@ -38,3 +38,22 @@ fun encodeCleanMotorModeParams(fanPower: Int, waterBoxMode: Int, mopMode: Int): 
         "water_box_mode" to JsonPrimitive(waterBoxMode),
         "mop_mode" to JsonPrimitive(mopMode),
     ))))
+
+/** The suction, water and route codes one `set_clean_motor_mode` call carries. */
+data class MotorModes(val fanPower: Int, val waterBoxMode: Int, val mopMode: Int)
+
+/**
+ * The robot's current three codes to resend with a single change, when a refusal of
+ * set_custom_mode, set_water_box_custom_mode or set_mop_mode is worth retrying as one
+ * set_clean_motor_mode call; null when it is not. A Saros 20 Neo (a296, 02.29.56) answers -10005 to
+ * set_custom_mode 102-105 and to some set_mop_mode values that the combined call accepts (#34).
+ * Only -10005 is retried, and only with all three known. The codes stay raw, as the robot reported
+ * them (water 235, not normalized to 202), since those are what it accepted. SmartPlan and per-room
+ * settings own all three, so they are left alone.
+ */
+internal fun motorModesForFallback(errorCode: Int?, fanPower: Int?, waterBoxMode: Int?, mopMode: Int?): MotorModes? {
+    if (errorCode != PARAM_FORMAT_REFUSED_CODE) return null
+    if (fanPower == null || waterBoxMode == null || mopMode == null) return null
+    if (isSmartModeSet(fanPower, waterBoxMode, mopMode) || isCustomizeModeSet(fanPower, waterBoxMode, mopMode)) return null
+    return MotorModes(fanPower, waterBoxMode, mopMode)
+}
