@@ -83,15 +83,18 @@ The app implements the Roborock protocol (Hawk‑signed REST + MQTT‑over‑TLS
 
 - **Live map** — real‑time robot map with zoom/pan, room labels, cleaning path, no‑go zones, walls and carpets
 - **Full cleaning control** — start / pause / stop / dock, room and zone cleaning
-- **Cleaning modes** — Vac & Mop, Mop or Vacuum, with suction power, water flow, route and cleaning count
-- **Room cleaning** — pick rooms in the order they should be cleaned, with real names pulled from your home data
+- **Cleaning modes** — Vac & Mop, Mop or Vacuum, with suction power, water flow, route and cleaning count; **SmartPlan** on robots that support it
+- **Per‑room settings** — give each room its own suction, water and route for one run
+- **Room cleaning** — pick rooms in the order they should be cleaned, with real names pulled from your home data, and set a default cleaning order for a full clean
 - **Pin & Go** — send the robot to a point on the map
 - **Remote control** — manually drive the vacuum
-- **Map editor** — draw no‑go zones, invisible walls, carpets (including round ones) and thresholds; rename, split and merge rooms; set floor types
+- **Map editor** — draw no‑go zones, invisible walls, carpets (including round ones) and thresholds; pick a room type or give a room a custom name; split and merge rooms; set floor types
 - **Map management** — rename and delete maps, and send the robot out to map the home again (for example after moving the dock)
 - **Multi‑level homes** — keep a map per floor, switch with the picker on the map, or let the robot recognise the floor by itself
-- **Routines** — schedule recurring cleans
-- **Dock controls & settings** — empty, wash and dry, tank and dust‑bag status, plus the dock's own settings
+- **Schedule** — recurring cleans at a set time and on chosen days
+- **Dock controls & settings** — empty, wash and dry, tank and dust‑bag status, empty the robot's built‑in water tank through the dock, and the dock's own settings (wash mode, mop wash frequency, auto‑empty), offered per model
+- **Robot settings** — volume, child lock, status LED, carpet mode and Do Not Disturb
+- **Robot alerts** — optional notifications when a robot gets stuck, finishes cleaning, or its dock needs attention; on Android a background watch keeps them coming while the app is closed and can show cleaning progress
 - **Status & consumables** — battery, state, cleaning stats, filter/brush life
 - **Cleaning history** — past sessions and lifetime totals
 - **On‑phone onboarding** — provision a brand‑new vacuum over Wi‑Fi from the app
@@ -215,15 +218,21 @@ composeApp/src/
 │     ├─ shared/        # non-UI core
 │     │  ├─ auth/       # login + credential model
 │     │  ├─ device/     # home/device data & repository
+│     │  ├─ model/      # server API data classes
 │     │  ├─ vacuum/     # VacuumRepository, Commands, map parsing + map edit commands
 │     │  ├─ mqtt/       # self-healing MQTT client + transport abstraction
+│     │  ├─ notify/     # robot alerts: event detection, background watch, notifier
+│     │  ├─ messages/   # in-app messages and errors
+│     │  ├─ settings/   # app settings
 │     │  ├─ onboarding/ # phone Wi-Fi provisioning + admin session API
 │     │  ├─ crypto/     # RSA / AES / HMAC / MD5 helpers
 │     │  ├─ protocol/   # Roborock V1 message envelope
 │     │  ├─ http/       # Ktor client factories + Hawk auth
+│     │  ├─ demo/       # sample data for the demo login
+│     │  ├─ platform/   # small platform hooks (donation links)
 │     │  └─ webrtc/     # camera peer/video (expect/actual, currently unused)
 │     └─ ui/            # Compose screens: devices, vacuum (map, editor,
-│                       #   routines), settings, login, intro, onboarding,
+│                       #   schedule), settings, login, intro, onboarding,
 │                       #   whatsnew, navigation
 ├─ androidMain/         # Android actuals (OkHttp, Paho MQTT, libwebrtc)
 └─ iosMain/             # iOS actuals (Darwin, Swift-bridged MQTT/WebRTC/RSA)
@@ -301,6 +310,12 @@ cd LocalRock
 - If the server uses a self‑signed certificate, install its CA on the device. On iOS the app performs a real trust evaluation — the CA must be installed and trusted.
 - Use the server **root** URL (`https://host:555`), not `/admin`.
 
+**Can't connect behind a reverse proxy (Traefik and others)**
+- A proxy with strict SNI picks its certificate by the host name in the TLS handshake. The app sends it on Android since 1.3.0 and on iOS from the next release; on an older build, update. Traefik logs `No certificate found for domain: ""` when it is missing.
+
+**Add vacuum can't reach the robot**
+- Turn off any VPN on the phone while pairing. The phone has to join the vacuum's own Wi‑Fi, and a VPN can route that traffic away from it.
+
 **Two devices, one works and the other times out**
 - Each install generates a unique client id, so multiple devices should coexist. If you built an older revision, update — this was fixed by folding a per‑install id into the MQTT client id.
 
@@ -362,7 +377,7 @@ Released under the [MIT License](./LICENSE) — © 2026 Sidon Kodraliu. You're f
 ## Acknowledgements
 
 - [`local_roborock_server`](https://github.com/Python-roborock/local_roborock_server) — the self‑hosted backend this client targets.
-- [`python-roborock`](https://github.com/humbertogontijo/python-roborock) — reference for the Roborock protocol.
+- [`python-roborock`](https://github.com/Python-roborock/python-roborock) — reference for the Roborock protocol.
 - [go2rtc](https://github.com/AlexxIT/go2rtc) — reference for the camera WebRTC‑over‑MQTT signaling (the camera code is in the tree but not enabled).
 
 > LocalRock is an independent project and is **not affiliated with Roborock**.
