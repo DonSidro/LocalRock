@@ -159,11 +159,13 @@ enum class MapFormat { LEGACY, B01 }
 /**
  * Roborock floor material ids as used by `set_segment_ground_material` and map block 24.
  * Only the ids seen on the S8 Pro Ultra's map and in captures of the official app are listed
- * (0 default, 3 wood, 4 tile); the robot may report
- * others, which callers must show as unknown rather than overwrite.
+ * (0 default, 3 wood, 4 tile), plus 2 carpet: a Qrevo 3 Pro's map reports 2 for its fully
+ * carpeted rooms (#26). Carpet is read only, since setting it has not been captured. The robot
+ * may report others, which callers must show as unknown rather than overwrite.
  */
 enum class FloorMaterial(val id: Int) {
     DEFAULT(0),
+    CARPET(2),
     WOOD(3),
     TILE(4);
 
