@@ -4,7 +4,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.WindowInsets
+import com.kodraliu.localrock.shared.vacuum.RoomType
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
@@ -539,6 +542,12 @@ fun MapEditScreen(
                 onRename = { name ->
                     runEdit("Room renamed.") {
                         viewModel.renameRoom(room, name)
+                        null
+                    }
+                },
+                onRoomType = { type ->
+                    runEdit("Room type set.") {
+                        viewModel.setRoomType(room, type)
                         null
                     }
                 },
@@ -1134,12 +1143,14 @@ private fun RoomDock(action: RoomAction, roomName: (Int) -> String, onCancel: ()
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RoomSheet(
     map: ParsedMap,
     segment: Int,
     working: Boolean,
     enabled: Boolean,
+    onRoomType: (RoomType) -> Unit,
     onRename: (String) -> Unit,
     onFloor: (FloorChoice) -> Unit,
     onSplit: () -> Unit,
@@ -1166,7 +1177,29 @@ private fun RoomSheet(
             if (working) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
         }
 
-        Text("Name", style = MaterialTheme.typography.titleSmall)
+        Text("Room type", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "In some modes, the robot adjusts its cleaning to the room type.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RoomType.entries.forEach { type ->
+                FilterChip(
+                    selected = type.label.equals(currentName, ignoreCase = true),
+                    onClick = { onRoomType(type) },
+                    label = { Text(type.label) },
+                    enabled = canAct,
+                )
+            }
+        }
+
+        Text("Custom name", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "Keeps the room's type; only the label changes.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 value = nameInput,

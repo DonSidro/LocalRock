@@ -598,20 +598,25 @@ class VacuumRepository(
      * only this entry changed. The robot may renumber segments in its answer; the check follows
      * that. Confirmed by reading the table back.
      */
-    suspend fun assignRoom(segment: Int, roomId: Long): Unit = mapEditMutex.withLock {
+    suspend fun assignRoom(segment: Int, roomId: Long, tagId: Int? = null): Unit = mapEditMutex.withLock {
         val map = editableMap()
         if (map.rooms.none { it.id == segment }) throw MapEditException("That room is not on the current map")
         rooms()
         val table = rawSegmentTable
         if (table.isEmpty()) throw MapEditException("The robot did not return its room table. Nothing was changed.")
         val existing = table.find { it.segment == segment }
-        val entry = SegmentEntry(segment, roomId.toString(), existing?.tagId ?: NEW_SEGMENT_TAG)
+        val entry = SegmentEntry(segment, roomId.toString(), tagId ?: existing?.tagId ?: NEW_SEGMENT_TAG)
         val resp = session.nameSegment(table.filter { it.segment != segment } + entry)
         val finalSegment = parseSegmentRenumbering(resp.result)[segment] ?: segment
-        rooms()
-        if (rawSegmentTable.find { it.segment == finalSegment }?.roomId != roomId.toString()) {
-            throw MapEditException(NOT_CONFIRMED)
+        // The table can lag the robot's answer by a moment, so look a few times before giving up.
+        var confirmed = false
+        for (attempt in 0 until 3) {
+            if (attempt > 0) delay(STATUS_READBACK_DELAY_MS)
+            rooms()
+            confirmed = rawSegmentTable.find { it.segment == finalSegment }?.roomId == roomId.toString()
+            if (confirmed) break
         }
+        if (!confirmed) throw MapEditException(NOT_CONFIRMED)
     }
 
     /** Why the robot's saved maps can't be renamed, deleted or rebuilt right now, or null. */
@@ -817,13 +822,15 @@ class VacuumRepository(
             ?.let { _robotSettings.update { s -> s.copy(carpetMode = it) } }
     }
 
+    // The screen only changes once the robot has said ok, so a refused change is not shown as if it
+    // had been applied (#32).
     suspend fun setVolume(volume: Int) {
-        session.setSoundVolume(volume)
+        session.setSoundVolume(volume).requireOk(CHANGE_SOUND_VOLUME)
         _robotSettings.update { it.copy(volume = volume) }
     }
 
     suspend fun setChildLock(locked: Boolean) {
-        session.setChildLock(locked)
+        session.setChildLock(locked).requireOk(SET_CHILD_LOCK_STATUS)
         _robotSettings.update { it.copy(childLock = locked) }
     }
 
@@ -838,29 +845,32 @@ class VacuumRepository(
     }
 
     suspend fun fetchDockSettings() {
-        runCatching { session.getWashTowelMode() }.getOrNull()
-            ?.result?.jsonObject?.get("wash_mode")?.jsonPrimitive?.intOrNull
-            ?.let { _dockSettings.update { s -> s.copy(washMode = it) } }
-        runCatching { session.getSmartWashParams() }.getOrNull()
-            ?.result?.jsonObject?.get("wash_interval")?.jsonPrimitive?.intOrNull
-            ?.let { interval -> _dockSettings.update { s -> s.copy(washFreq = (interval - 1).coerceAtLeast(0)) } }
-        runCatching { session.getDustCollectionMode() }.getOrNull()
-            ?.result?.jsonObject?.get("mode")?.jsonPrimitive?.intOrNull
-            ?.let { _dockSettings.update { s -> s.copy(autoEmptyMode = it) } }
+        _dockSettings.value = DockSettings()
+        val wash = runCatching { session.getWashTowelMode().requireOk("get_wash_towel_mode").result as? JsonObject }.getOrNull()
+        _dockSettings.update { it.copy(washMode = (wash?.get("wash_mode") as? JsonPrimitive)?.intOrNull) }
+        val frequency = runCatching { parseSmartWashSettings(session.getSmartWashParams().requireOk("get_smart_wash_params").result) }.getOrNull()
+        _dockSettings.update { it.copy(smartWash = frequency) }
+        val empty = runCatching { session.getDustCollectionMode().requireOk("get_dust_collection_mode").result as? JsonObject }.getOrNull()
+        _dockSettings.update { it.copy(autoEmptyMode = (empty?.get("mode") as? JsonPrimitive)?.intOrNull) }
     }
 
     suspend fun setWashMode(mode: Int) {
-        session.setWashTowelMode(mode)
+        session.setWashTowelMode(mode).requireOk("set_wash_towel_mode")
         _dockSettings.update { it.copy(washMode = mode) }
     }
 
-    suspend fun setWashFreq(freq: Int) {
-        session.setSmartWashParams(freq)
-        _dockSettings.update { it.copy(washFreq = freq) }
+    suspend fun setWashFrequency(mode: Int, intervalMinutes: Int?) {
+        // Room/smart modes still carry an interval. Preserve the robot's current value.
+        val current = parseSmartWashSettings(session.getSmartWashParams().requireOk("get_smart_wash_params").result)
+            ?: throw IllegalStateException("The robot's mop washing frequency is unavailable")
+        _dockSettings.update { it.copy(smartWash = current) }
+        val updated = current.withFrequency(mode, intervalMinutes)
+        session.setSmartWashParams(updated).requireOk("set_smart_wash_params")
+        _dockSettings.update { it.copy(smartWash = updated) }
     }
 
     suspend fun setAutoEmptyMode(mode: Int) {
-        session.setDustCollectionMode(mode)
+        session.setDustCollectionMode(mode).requireOk("set_dust_collection_mode")
         _dockSettings.update { it.copy(autoEmptyMode = mode) }
     }
 
@@ -1113,6 +1123,8 @@ internal fun VacuumStatus.merge(fresh: VacuumStatus): VacuumStatus = fresh.copy(
     waterBoxCustomMode = fresh.waterBoxCustomMode ?: waterBoxCustomMode,
     chargeStatus = fresh.chargeStatus ?: chargeStatus,
     dockErrorStatus = fresh.dockErrorStatus ?: dockErrorStatus,
+    dockType = fresh.dockType ?: dockType,
+    dockStatus = fresh.dockStatus ?: dockStatus,
     dryStatus = fresh.dryStatus ?: dryStatus,
     remainingDryTimeSec = fresh.remainingDryTimeSec ?: remainingDryTimeSec,
     mapStatus = fresh.mapStatus ?: mapStatus,

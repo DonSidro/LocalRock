@@ -124,13 +124,26 @@ suspend fun VacuumSession.updTimer(id: String, enabled: Boolean): V1Response =
     ))))
 
 
-suspend fun VacuumSession.getSoundVolume(): V1Response = sendCommand("get_sound_volume")
-suspend fun VacuumSession.setSoundVolume(volume: Int): V1Response =
-    sendCommand("set_sound_volume", listOf(JsonPrimitive(volume)))
+// The robot answers "The method called is not recognized by the device" to set_sound_volume,
+// get_child_lock and set_child_lock (checked on a Qrevo Pro). The official app sets the volume with
+// change_sound_volume, and python-roborock names the child lock calls *_child_lock_status.
+internal const val GET_SOUND_VOLUME = "get_sound_volume"
+internal const val CHANGE_SOUND_VOLUME = "change_sound_volume"
+internal const val GET_CHILD_LOCK_STATUS = "get_child_lock_status"
+internal const val SET_CHILD_LOCK_STATUS = "set_child_lock_status"
 
-suspend fun VacuumSession.getChildLock(): V1Response = sendCommand("get_child_lock")
+suspend fun VacuumSession.getSoundVolume(): V1Response = sendCommand(GET_SOUND_VOLUME)
+suspend fun VacuumSession.setSoundVolume(volume: Int): V1Response =
+    sendCommand(CHANGE_SOUND_VOLUME, listOf(JsonPrimitive(volume)))
+
+suspend fun VacuumSession.getChildLock(): V1Response = sendCommand(GET_CHILD_LOCK_STATUS)
+// The lock is the bare object `{"lock_status": 1}`, not a one-item list: a Qrevo Pro answers the list
+// form `[{"lock_status": 1}]` with -10005 "Invalid parameters".
+internal fun childLockParams(locked: Boolean): JsonObject =
+    JsonObject(mapOf("lock_status" to JsonPrimitive(if (locked) 1 else 0)))
+
 suspend fun VacuumSession.setChildLock(locked: Boolean): V1Response =
-    sendCommand("set_child_lock", listOf(JsonObject(mapOf("lock_status" to JsonPrimitive(if (locked) 1 else 0)))))
+    sendCommandRaw(SET_CHILD_LOCK_STATUS, childLockParams(locked))
 
 suspend fun VacuumSession.getLedStatus(): V1Response = sendCommand("get_led_status")
 suspend fun VacuumSession.setLedStatus(enabled: Boolean): V1Response =
@@ -152,18 +165,15 @@ suspend fun VacuumSession.setCarpetCleanMode(mode: Int): V1Response =
 
 suspend fun VacuumSession.getWashTowelMode(): V1Response = sendCommand("get_wash_towel_mode")
 suspend fun VacuumSession.setWashTowelMode(mode: Int): V1Response =
-    sendCommand("set_wash_towel_mode", listOf(JsonObject(mapOf("wash_mode" to JsonPrimitive(mode)))))
+    sendCommandRaw("set_wash_towel_mode", JsonObject(mapOf("wash_mode" to JsonPrimitive(mode))))
 
 suspend fun VacuumSession.getSmartWashParams(): V1Response = sendCommand("get_smart_wash_params")
-suspend fun VacuumSession.setSmartWashParams(washFreq: Int): V1Response =
-    sendCommand("set_smart_wash_params", listOf(JsonObject(mapOf(
-        "smart_wash" to JsonPrimitive(0),
-        "wash_interval" to JsonPrimitive(washFreq + 1),
-    ))))
+suspend fun VacuumSession.setSmartWashParams(settings: SmartWashSettings): V1Response =
+    sendCommandRaw("set_smart_wash_params", encodeSmartWashParams(settings))
 
 suspend fun VacuumSession.getDustCollectionMode(): V1Response = sendCommand("get_dust_collection_mode")
 suspend fun VacuumSession.setDustCollectionMode(mode: Int): V1Response =
-    sendCommand("set_dust_collection_mode", listOf(JsonObject(mapOf("mode" to JsonPrimitive(mode)))))
+    sendCommandRaw("set_dust_collection_mode", JsonObject(mapOf("mode" to JsonPrimitive(mode))))
 
 
 suspend fun VacuumSession.getDndTimer(): V1Response = sendCommand("get_dnd_timer")

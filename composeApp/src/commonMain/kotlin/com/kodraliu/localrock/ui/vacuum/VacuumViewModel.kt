@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kodraliu.localrock.shared.AppContainer
 import com.kodraliu.localrock.shared.messages.MessageSeverity
+import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.MapEditException
+import com.kodraliu.localrock.shared.vacuum.RoomType
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
@@ -29,6 +31,7 @@ class VacuumViewModel(
     val firmwareVersion: String? = device.fv
     val supportsSmartPlan: Boolean = isSmartPlanSupported(device.newFeatureSet)
     val supportsWaterSlide: Boolean = isWaterSlideSupported(device.newFeatureSet)
+    val dockCapabilities = DockCapabilities(modelName, device.featureSet, device.newFeatureSet)
     val repository: VacuumRepository = container.vacuumRepositoryFor(device)
     val status = repository.status
 
@@ -120,14 +123,25 @@ class VacuumViewModel(
 
 
     /**
-     * Rename a map room the way the Roborock app does: get a cloud room for the name from the
-     * server, point the robot's segment at it with `name_segment`, then reload the home so the new
-     * name resolves. Throws with a user-facing message on any failure.
+     * Give a room a custom name the way the Roborock app does: the name becomes a cloud room and the
+     * segment points at it, keeping the room's type tag so the robot still treats it as that type.
      */
     suspend fun renameRoom(segment: Int, name: String) {
-        val clean = validateRoomName(name)
-        val room = container.deviceRepository.createRoom(clean)
+        val room = container.deviceRepository.createRoom(validateRoomName(name))
         repository.assignRoom(segment, room.id)
+        container.deviceRepository.refresh()
+        repository.setHomeRooms(container.deviceRepository.home.value?.rooms ?: emptyList())
+    }
+
+    /**
+     * Set a room's type the way the Roborock app does: get a cloud room for the type's label from
+     * the server, point the robot's segment at it with `name_segment` along with the type's tag
+     * (which the robot uses to adjust its cleaning), then reload the home so the name resolves.
+     * Throws with a user-facing message on any failure.
+     */
+    suspend fun setRoomType(segment: Int, type: RoomType) {
+        val room = container.deviceRepository.createRoom(type.label)
+        repository.assignRoom(segment, room.id, type.tag)
         container.deviceRepository.refresh()
         repository.setHomeRooms(container.deviceRepository.home.value?.rooms ?: emptyList())
     }
@@ -145,6 +159,22 @@ class VacuumViewModel(
     fun removeDefaultCleanOrder() {
         container.appSettings.setCleanOrder(device.duid, repository.currentFloorFlag.value, emptyList())
         container.messages.success("Default order removed")
+    }
+
+    /**
+     * Runs a settings change and shows the error if the robot refuses it. Unlike [run] it neither
+     * marks the screen busy nor reads the status back, which would be too heavy for a slider; the
+     * settings are read again on a failure so the screen goes back to what the robot really holds.
+     */
+    fun report(action: suspend (VacuumRepository) -> Unit) {
+        viewModelScope.launch {
+            try {
+                action(repository)
+            } catch (e: Throwable) {
+                container.messages.error(describe(e))
+                runCatching { repository.fetchRobotSettings() }
+            }
+        }
     }
 
     fun run(successMessage: String? = null, action: suspend (VacuumRepository) -> Unit) {

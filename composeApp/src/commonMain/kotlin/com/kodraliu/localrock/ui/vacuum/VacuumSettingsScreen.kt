@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -96,8 +98,10 @@ import com.kodraliu.localrock.shared.vacuum.CleanRecord
 import com.kodraliu.localrock.shared.vacuum.CleanSummary
 import com.kodraliu.localrock.shared.vacuum.ConsumableStatus
 import com.kodraliu.localrock.shared.vacuum.DndSettings
+import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.DockSettings
 import com.kodraliu.localrock.shared.vacuum.RobotSettings
+import com.kodraliu.localrock.shared.vacuum.washFrequencyLabel
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.ui.AppColors
 import kotlinx.coroutines.launch
@@ -129,6 +133,8 @@ fun VacuumSettingsScreen(
     val consumables by repository.consumableStatus.collectAsState()
     val robotSettings by repository.robotSettings.collectAsState()
     val dockSettings by repository.dockSettings.collectAsState()
+    val status by viewModel.status.collectAsState()
+    val busy by viewModel.busy.collectAsState()
     val dndSettings by repository.dndSettings.collectAsState()
     val cleanHistory by repository.cleanHistory.collectAsState()
     val cleanSummary by repository.cleanSummary.collectAsState()
@@ -167,17 +173,21 @@ fun VacuumSettingsScreen(
         )
         SettingsRoute.DockSettings -> DockSettingsScreen(
             dockSettings = dockSettings,
-            onWashModeChange = { scope.launch { runCatching { repository.setWashMode(it) } } },
-            onWashFreqChange = { scope.launch { runCatching { repository.setWashFreq(it) } } },
-            onAutoEmptyModeChange = { scope.launch { runCatching { repository.setAutoEmptyMode(it) } } },
+            dockCapabilities = viewModel.dockCapabilities,
+            dockType = status.dockType,
+            dockStatus = status.dockStatus,
+            busy = busy,
+            onWashModeChange = { mode -> viewModel.run { it.setWashMode(mode) } },
+            onWashFrequencyChange = { mode, minutes -> viewModel.run { it.setWashFrequency(mode, minutes) } },
+            onAutoEmptyModeChange = { mode -> viewModel.run { it.setAutoEmptyMode(mode) } },
             onEmptyWaterTank = { viewModel.run("Emptying the water tank") { it.emptyInbuiltWaterTank() } },
             onBack = { route = SettingsRoute.Root },
         )
         SettingsRoute.RobotSettings -> RobotSettingsScreen(
             robotSettings = robotSettings,
             onFindRobot = { scope.launch { runCatching { repository.findMe() } } },
-            onVolumeChange = { scope.launch { runCatching { repository.setVolume(it) } } },
-            onChildLockChange = { scope.launch { runCatching { repository.setChildLock(it) } } },
+            onVolumeChange = { volume -> viewModel.report { it.setVolume(volume) } },
+            onChildLockChange = { locked -> viewModel.report { it.setChildLock(locked) } },
             onLedChange = { scope.launch { runCatching { repository.setLed(it) } } },
             onCarpetModeChange = { scope.launch { runCatching { repository.setCarpetMode(it) } } },
             onBack = { route = SettingsRoute.Root },
@@ -842,8 +852,12 @@ private fun CleanRecordRow(record: CleanRecord) {
 @Composable
 private fun DockSettingsScreen(
     dockSettings: DockSettings,
+    dockCapabilities: DockCapabilities,
+    dockType: Int?,
+    dockStatus: Int?,
+    busy: Boolean,
     onWashModeChange: (Int) -> Unit,
-    onWashFreqChange: (Int) -> Unit,
+    onWashFrequencyChange: (Int, Int?) -> Unit,
     onAutoEmptyModeChange: (Int) -> Unit,
     onEmptyWaterTank: () -> Unit,
     onBack: () -> Unit,
@@ -851,9 +865,18 @@ private fun DockSettingsScreen(
     var dialogTarget by remember { mutableStateOf<String?>(null) }
     var confirmEmptyTank by remember { mutableStateOf(false) }
 
-    val washFreqOptions = listOf("Every trip", "Every 2 trips", "Every 3 trips")
-    val washModeOptions = listOf("Light", "Standard", "Intensive")
-    val autoEmptyOptions = listOf("Smart", "Max suction", "Normal")
+    val washFrequencyOptions = dockCapabilities.washFrequencyOptions
+    val smartWash = dockSettings.smartWash
+    val washFrequencyIndex = washFrequencyOptions.indexOfFirst {
+        smartWash != null && it.mode == smartWash.mode && (it.mode != 0 || it.intervalMinutes?.times(60) == smartWash.intervalSeconds)
+    }
+    val washModes = dockCapabilities.washModes(dockType, dockStatus)
+    val washModeIndex = washModes.indexOfFirst { it.first == dockCapabilities.washModeCode(dockSettings.washMode, dockType) }
+    val autoEmptyModes = dockCapabilities.autoEmptyModes
+    val dockKnown = dockType != null && dockType != 0
+    val washFrequencyEnabled = !busy && dockKnown && smartWash != null && washFrequencyOptions.isNotEmpty()
+    val washModeEnabled = !busy && dockKnown && dockSettings.washMode != null && washModes.isNotEmpty()
+    val autoEmptyEnabled = !busy && dockSettings.autoEmptyMode != null && autoEmptyModes.isNotEmpty()
 
     Scaffold(
         topBar = {
@@ -874,8 +897,9 @@ private fun DockSettingsScreen(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Default.WaterDrop,
                     iconTint = AppColors.Water,
-                    title = "Mop Wash Freq",
-                    value = washFreqOptions.getOrElse(dockSettings.washFreq) { "Every trip" },
+                    title = "Mop wash frequency",
+                    value = washFrequencyLabel(smartWash),
+                    enabled = washFrequencyEnabled,
                     onClick = { dialogTarget = "wash_freq" },
                 )
                 DockSettingCard(
@@ -883,7 +907,8 @@ private fun DockSettingsScreen(
                     icon = Icons.Default.WaterDrop,
                     iconTint = AppColors.AccentCyan,
                     title = "Washing mode",
-                    value = washModeOptions.getOrElse(dockSettings.washMode) { "Standard" },
+                    value = dockCapabilities.washModeLabel(dockSettings.washMode, dockType),
+                    enabled = washModeEnabled,
                     onClick = { dialogTarget = "wash_mode" },
                 )
             }
@@ -892,7 +917,8 @@ private fun DockSettingsScreen(
                 icon = Icons.Default.Delete,
                 iconTint = AppColors.Good,
                 title = "Auto-empty mode",
-                value = autoEmptyOptions.getOrElse(dockSettings.autoEmptyMode) { "Smart" },
+                value = dockCapabilities.autoEmptyModeLabel(dockSettings.autoEmptyMode),
+                enabled = autoEmptyEnabled,
                 onClick = { dialogTarget = "auto_empty" },
             )
             DockSettingCard(
@@ -901,6 +927,7 @@ private fun DockSettingsScreen(
                 iconTint = AppColors.Water,
                 title = "Internal water tank",
                 value = "Empty through the dock",
+                enabled = !busy,
                 onClick = { confirmEmptyTank = true },
             )
         }
@@ -921,23 +948,30 @@ private fun DockSettingsScreen(
     when (dialogTarget) {
         "wash_freq" -> SimplePickerDialog(
             title = "Mop wash frequency",
-            options = washFreqOptions,
-            selected = dockSettings.washFreq,
-            onSelect = { onWashFreqChange(it); dialogTarget = null },
+            options = washFrequencyOptions.map { it.label },
+            selected = washFrequencyIndex,
+            onSelect = {
+                val option = washFrequencyOptions[it]
+                onWashFrequencyChange(option.mode, option.intervalMinutes)
+                dialogTarget = null
+            },
+            enabled = washFrequencyEnabled,
             onDismiss = { dialogTarget = null },
         )
         "wash_mode" -> SimplePickerDialog(
             title = "Washing mode",
-            options = washModeOptions,
-            selected = dockSettings.washMode,
-            onSelect = { onWashModeChange(it); dialogTarget = null },
+            options = washModes.map { it.second },
+            selected = washModeIndex,
+            onSelect = { onWashModeChange(washModes[it].first); dialogTarget = null },
+            enabled = washModeEnabled,
             onDismiss = { dialogTarget = null },
         )
         "auto_empty" -> SimplePickerDialog(
             title = "Auto-empty mode",
-            options = autoEmptyOptions,
-            selected = dockSettings.autoEmptyMode,
-            onSelect = { onAutoEmptyModeChange(it); dialogTarget = null },
+            options = autoEmptyModes.map { it.second },
+            selected = autoEmptyModes.indexOfFirst { it.first == dockSettings.autoEmptyMode },
+            onSelect = { onAutoEmptyModeChange(autoEmptyModes[it].first); dialogTarget = null },
+            enabled = autoEmptyEnabled,
             onDismiss = { dialogTarget = null },
         )
     }
@@ -950,11 +984,13 @@ private fun DockSettingCard(
     iconTint: Color,
     title: String,
     value: String,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
     Surface(
         onClick = onClick,
         modifier = modifier,
+        enabled = enabled,
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
@@ -1002,13 +1038,14 @@ private fun SimplePickerDialog(
     options: List<String>,
     selected: Int,
     onSelect: (Int) -> Unit,
+    enabled: Boolean = true,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 options.forEachIndexed { index, option ->
                     Row(
                         modifier = Modifier
@@ -1016,7 +1053,7 @@ private fun SimplePickerDialog(
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        RadioButton(selected = index == selected, onClick = { onSelect(index) })
+                        RadioButton(selected = index == selected, enabled = enabled, onClick = { onSelect(index) })
                         Spacer(Modifier.width(8.dp))
                         Text(option, style = MaterialTheme.typography.bodyMedium)
                     }

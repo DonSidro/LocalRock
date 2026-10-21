@@ -15,6 +15,7 @@ import io.ktor.client.request.parameter
 import io.ktor.http.parameters
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 class DeviceApi(private val client: HttpClient) {
@@ -42,11 +43,12 @@ class DeviceApi(private val client: HttpClient) {
      * case-insensitively). Returns the room id the robot's segment table should point at.
      */
     suspend fun createRoom(homeId: Long, name: String): Room {
-        val response: ApiResponse<Room> = client.submitForm(
+        // Only `data` is read: the server puts the bare room id in `result` for the official app.
+        val response: CreateRoomResponse = client.submitForm(
             url = "/user/homes/$homeId/rooms",
             formParameters = parameters { append("name", name) },
         ).body()
-        ensureOk(response)
+        if (response.code != 200) throw DeviceApiException(response.code, response.msg)
         return response.data
     }
 
@@ -61,6 +63,9 @@ class DeviceApi(private val client: HttpClient) {
         return resp.body<FirmwareOtaResponse>().result
     }
 }
+
+@Serializable
+private data class CreateRoomResponse(val code: Int, val msg: String, val data: Room)
 
 class DeviceApiException(val responseCode: Int, message: String) : RuntimeException(message)
 
