@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kodraliu.localrock.shared.AppContainer
 import com.kodraliu.localrock.shared.messages.MessageSeverity
+import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.RoomType
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
@@ -30,6 +31,7 @@ class VacuumViewModel(
     val firmwareVersion: String? = device.fv
     val supportsSmartPlan: Boolean = isSmartPlanSupported(device.newFeatureSet)
     val supportsWaterSlide: Boolean = isWaterSlideSupported(device.newFeatureSet)
+    val dockCapabilities = DockCapabilities(modelName, device.featureSet, device.newFeatureSet)
     val repository: VacuumRepository = container.vacuumRepositoryFor(device)
     val status = repository.status
 

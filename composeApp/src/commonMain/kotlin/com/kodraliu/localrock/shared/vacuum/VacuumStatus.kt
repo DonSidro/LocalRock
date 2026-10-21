@@ -17,6 +17,8 @@ data class VacuumStatus(
     @SerialName("water_box_mode") val waterBoxCustomMode: Int? = null,
     @SerialName("charge_status") val chargeStatus: Int? = null,
     @SerialName("dock_error_status") val dockErrorStatus: Int? = null,
+    @SerialName("dock_type") val dockType: Int? = null,
+    @SerialName("dss") val dockStatus: Int? = null,
     @SerialName("dry_status") val dryStatus: Int? = null,
     @SerialName("rdt") val remainingDryTimeSec: Long? = null,
     /** Loaded map in the upper bits (see [loadedMapFlag]). */
