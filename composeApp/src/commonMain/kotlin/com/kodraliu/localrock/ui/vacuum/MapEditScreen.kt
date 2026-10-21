@@ -1230,6 +1230,7 @@ private fun RoomSheet(
                 materialId == null -> "This robot's map doesn't report the current floor type."
                 current != null -> "Current: ${current.label}"
                 FloorMaterial.fromId(materialId) == FloorMaterial.WOOD -> "Current: Wood"
+                FloorMaterial.fromId(materialId) == FloorMaterial.CARPET -> "Current: Carpet"
                 else -> "Current: a type LocalRock doesn't know (id $materialId)"
             },
             style = MaterialTheme.typography.bodySmall,
