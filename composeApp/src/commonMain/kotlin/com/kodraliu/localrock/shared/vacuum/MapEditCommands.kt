@@ -118,7 +118,7 @@ internal class DataParamsFormat {
     var plain = false
 }
 
-private fun V1Response.errorCode(): Int? =
+internal fun V1Response.errorCode(): Int? =
     runCatching { error?.get("code")?.jsonPrimitive?.contentOrNull?.toIntOrNull() }.getOrNull()
 
 /**
