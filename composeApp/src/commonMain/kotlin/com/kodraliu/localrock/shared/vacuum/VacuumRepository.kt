@@ -454,7 +454,8 @@ class VacuumRepository(
 
     suspend fun stopRemoteControl() { session.appRcEnd() }
 
-    suspend fun gotoTarget(x: Int, y: Int) { session.appGotoTarget(x, y) }
+    /** Sends the robot to ([x], [y]) in robot millimetres. A refusal is raised, not ignored. */
+    suspend fun gotoTarget(x: Int, y: Int) { session.appGotoTarget(x, y).requireOk("app_goto_target") }
 
     suspend fun cleanZones(zones: List<ZoneRect>) { session.appZonedClean(zones) }
 
