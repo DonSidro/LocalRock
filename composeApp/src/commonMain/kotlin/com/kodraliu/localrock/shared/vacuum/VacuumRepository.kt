@@ -817,13 +817,15 @@ class VacuumRepository(
             ?.let { _robotSettings.update { s -> s.copy(carpetMode = it) } }
     }
 
+    // The screen only changes once the robot has said ok, so a refused change is not shown as if it
+    // had been applied (#32).
     suspend fun setVolume(volume: Int) {
-        session.setSoundVolume(volume)
+        session.setSoundVolume(volume).requireOk(CHANGE_SOUND_VOLUME)
         _robotSettings.update { it.copy(volume = volume) }
     }
 
     suspend fun setChildLock(locked: Boolean) {
-        session.setChildLock(locked)
+        session.setChildLock(locked).requireOk(SET_CHILD_LOCK_STATUS)
         _robotSettings.update { it.copy(childLock = locked) }
     }
 

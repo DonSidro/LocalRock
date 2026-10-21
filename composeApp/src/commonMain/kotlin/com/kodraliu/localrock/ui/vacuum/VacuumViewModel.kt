@@ -147,6 +147,22 @@ class VacuumViewModel(
         container.messages.success("Default order removed")
     }
 
+    /**
+     * Runs a settings change and shows the error if the robot refuses it. Unlike [run] it neither
+     * marks the screen busy nor reads the status back, which would be too heavy for a slider; the
+     * settings are read again on a failure so the screen goes back to what the robot really holds.
+     */
+    fun report(action: suspend (VacuumRepository) -> Unit) {
+        viewModelScope.launch {
+            try {
+                action(repository)
+            } catch (e: Throwable) {
+                container.messages.error(describe(e))
+                runCatching { repository.fetchRobotSettings() }
+            }
+        }
+    }
+
     fun run(successMessage: String? = null, action: suspend (VacuumRepository) -> Unit) {
         viewModelScope.launch {
             _busy.value = true

@@ -113,13 +113,26 @@ suspend fun VacuumSession.updTimer(id: String, enabled: Boolean): V1Response =
     ))))
 
 
-suspend fun VacuumSession.getSoundVolume(): V1Response = sendCommand("get_sound_volume")
-suspend fun VacuumSession.setSoundVolume(volume: Int): V1Response =
-    sendCommand("set_sound_volume", listOf(JsonPrimitive(volume)))
+// The robot answers "The method called is not recognized by the device" to set_sound_volume,
+// get_child_lock and set_child_lock (checked on a Qrevo Pro). The official app sets the volume with
+// change_sound_volume, and python-roborock names the child lock calls *_child_lock_status.
+internal const val GET_SOUND_VOLUME = "get_sound_volume"
+internal const val CHANGE_SOUND_VOLUME = "change_sound_volume"
+internal const val GET_CHILD_LOCK_STATUS = "get_child_lock_status"
+internal const val SET_CHILD_LOCK_STATUS = "set_child_lock_status"
 
-suspend fun VacuumSession.getChildLock(): V1Response = sendCommand("get_child_lock")
+suspend fun VacuumSession.getSoundVolume(): V1Response = sendCommand(GET_SOUND_VOLUME)
+suspend fun VacuumSession.setSoundVolume(volume: Int): V1Response =
+    sendCommand(CHANGE_SOUND_VOLUME, listOf(JsonPrimitive(volume)))
+
+suspend fun VacuumSession.getChildLock(): V1Response = sendCommand(GET_CHILD_LOCK_STATUS)
+// The lock is the bare object `{"lock_status": 1}`, not a one-item list: a Qrevo Pro answers the list
+// form `[{"lock_status": 1}]` with -10005 "Invalid parameters".
+internal fun childLockParams(locked: Boolean): JsonObject =
+    JsonObject(mapOf("lock_status" to JsonPrimitive(if (locked) 1 else 0)))
+
 suspend fun VacuumSession.setChildLock(locked: Boolean): V1Response =
-    sendCommand("set_child_lock", listOf(JsonObject(mapOf("lock_status" to JsonPrimitive(if (locked) 1 else 0)))))
+    sendCommandRaw(SET_CHILD_LOCK_STATUS, childLockParams(locked))
 
 suspend fun VacuumSession.getLedStatus(): V1Response = sendCommand("get_led_status")
 suspend fun VacuumSession.setLedStatus(enabled: Boolean): V1Response =
