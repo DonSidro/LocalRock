@@ -30,6 +30,11 @@ final class CocoaMqttTransport: MqttNativeTransport {
         mqtt.cleanSession = true
         if tls {
             mqtt.enableSSL = true
+            // Send the host name in the TLS handshake (SNI). CocoaMQTT releases up to 2.1.x start TLS
+            // with only these settings and send no SNI, so a reverse proxy with strict SNI (Traefik)
+            // finds no certificate for "" and drops the connection (#29). Newer releases fill in the
+            // same value themselves, so setting it here is harmless there.
+            mqtt.sslSettings = [kCFStreamSSLPeerName as String: host as NSString]
             // Certificates are validated against the system trust store in the delegate's
             // `didReceive trust` handler below. If your server uses a private/self-signed CA,
             // install that CA profile on the device so it evaluates as trusted.
