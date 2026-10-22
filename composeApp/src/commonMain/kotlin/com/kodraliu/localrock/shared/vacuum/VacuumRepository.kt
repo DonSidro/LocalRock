@@ -86,9 +86,10 @@ class VacuumRepository(
     /**
      * The robot's segment table exactly as `get_room_mapping` returned it: segment, room id (kept
      * as the raw string) and tag. `name_segment` must be sent the whole table, so entries this app
-     * does not change are written back unchanged.
+     * does not change are written back unchanged. Null until read, or when the answer could not
+     * be parsed; empty when the robot has no rooms assigned yet.
      */
-    private var rawSegmentTable: List<SegmentEntry> = emptyList()
+    private var rawSegmentTable: List<SegmentEntry>? = null
 
     private val _consumableStatus = MutableStateFlow<ConsumableStatus?>(null)
     val consumableStatus: StateFlow<ConsumableStatus?> = _consumableStatus
@@ -251,14 +252,8 @@ class VacuumRepository(
     suspend fun rooms(): V1Response {
         val resp = session.appRooms()
         val result = resp.result
+        rawSegmentTable = parseSegmentTable(result)
         if (result is JsonArray) {
-            rawSegmentTable = result.mapNotNull { entry ->
-                if (entry is JsonArray && entry.size >= 3) {
-                    val segment = entry[0].jsonPrimitive.intOrNull ?: return@mapNotNull null
-                    val tag = entry[2].jsonPrimitive.intOrNull ?: return@mapNotNull null
-                    SegmentEntry(segment, entry[1].jsonPrimitive.content, tag)
-                } else null
-            }
             // Names resolve from the first two columns, which every firmware returns.
             val mapping = parseRoomMapping(result)
             if (mapping.isNotEmpty()) {
@@ -615,16 +610,26 @@ class VacuumRepository(
         }
 
     /**
+     * Fails when [segment] can't be given a room, so the caller can stop before it creates a cloud
+     * room that would be left unused (#33).
+     */
+    suspend fun checkRoomTable(segment: Int): Unit = mapEditMutex.withLock { readSegmentTable(segment) }
+
+    private suspend fun readSegmentTable(segment: Int): List<SegmentEntry> {
+        val map = editableMap()
+        if (map.rooms.none { it.id == segment }) throw MapEditException("That room is not on the current map")
+        rooms()
+        return rawSegmentTable
+            ?: throw MapEditException("The robot did not return its room table. Nothing was changed.")
+    }
+
+    /**
      * Point [segment] at cloud room [roomId] with name_segment, sending the robot's full table with
      * only this entry changed. The robot may renumber segments in its answer; the check follows
      * that. Confirmed by reading the table back.
      */
     suspend fun assignRoom(segment: Int, roomId: Long, tagId: Int? = null): Unit = mapEditMutex.withLock {
-        val map = editableMap()
-        if (map.rooms.none { it.id == segment }) throw MapEditException("That room is not on the current map")
-        rooms()
-        val table = rawSegmentTable
-        if (table.isEmpty()) throw MapEditException("The robot did not return its room table. Nothing was changed.")
+        val table = readSegmentTable(segment)
         val existing = table.find { it.segment == segment }
         val entry = SegmentEntry(segment, roomId.toString(), tagId ?: existing?.tagId ?: NEW_SEGMENT_TAG)
         val resp = session.nameSegment(table.filter { it.segment != segment } + entry)
@@ -634,7 +639,7 @@ class VacuumRepository(
         for (attempt in 0 until 3) {
             if (attempt > 0) delay(STATUS_READBACK_DELAY_MS)
             rooms()
-            confirmed = rawSegmentTable.find { it.segment == finalSegment }?.roomId == roomId.toString()
+            confirmed = rawSegmentTable?.find { it.segment == finalSegment }?.roomId == roomId.toString()
             if (confirmed) break
         }
         if (!confirmed) throw MapEditException(NOT_CONFIRMED)
@@ -679,7 +684,7 @@ class VacuumRepository(
         _parsedMap.value = null
         _mapBytes.value = null
         _rooms.value = emptyList()
-        rawSegmentTable = emptyList()
+        rawSegmentTable = null
     }
 
     /**
@@ -727,7 +732,7 @@ class VacuumRepository(
         if (!awaitStatus { it.multiLevelEnabled == enabled }) throw MapEditException(NOT_CONFIRMED)
         runCatching { fetchFloorMaps() }
         if (!enabled) {
-            rawSegmentTable = emptyList()
+            rawSegmentTable = null
             runCatching { fetchMap() }
             runCatching { rooms() }
         }
@@ -788,7 +793,7 @@ class VacuumRepository(
         val added = _floorMaps.value.map { it.mapFlag }.toSet() - before
         if (added.isEmpty()) throw MapEditException(if (stillUnsaved) NOT_CONFIRMED else MAP_NOT_KEPT)
         runCatching { refreshStatus() }
-        rawSegmentTable = emptyList()
+        rawSegmentTable = null
         runCatching { fetchMap() }
         runCatching { rooms() }
     }
@@ -989,7 +994,7 @@ class VacuumRepository(
         session.loadMultiMap(mapFlag)
         _currentFloorFlag.value = mapFlag
         runCatching { refreshStatus() }
-        rawSegmentTable = emptyList()
+        rawSegmentTable = null
         _parsedMap.value = null
         _mapBytes.value = null
         runCatching { fetchMap() }

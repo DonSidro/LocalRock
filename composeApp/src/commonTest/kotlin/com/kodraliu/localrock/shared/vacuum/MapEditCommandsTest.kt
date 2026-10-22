@@ -186,6 +186,25 @@ class MapEditCommandsTest {
     }
 
     @Test
+    fun segment_table_is_parsed() {
+        val result = Json.parseToJsonElement("""[[16,"33499526",14],[17,"12916427",6]]""")
+        assertEquals(
+            listOf(SegmentEntry(16, "33499526", 14), SegmentEntry(17, "12916427", 6)),
+            parseSegmentTable(result),
+        )
+    }
+
+    @Test
+    fun empty_segment_table_is_kept_apart_from_an_unreadable_one() {
+        // S7 Max Ultra and Qrevo Edge answer [] before any room has been named (#33).
+        assertEquals(emptyList(), parseSegmentTable(Json.parseToJsonElement("[]")))
+        assertNull(parseSegmentTable(null))
+        assertNull(parseSegmentTable(Json.parseToJsonElement("""["ok"]""")))
+        // One row this app can't write back makes the whole table unsafe to send.
+        assertNull(parseSegmentTable(Json.parseToJsonElement("""[[16,"33499526",14],[17,"12916427"]]""")))
+    }
+
+    @Test
     fun provisional_retry_is_recognised() {
         fun resp(result: String?, error: String? = null) = V1Response(
             id = 2107,

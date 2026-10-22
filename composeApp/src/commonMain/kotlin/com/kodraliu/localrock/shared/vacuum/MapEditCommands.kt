@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /*
@@ -206,6 +207,22 @@ internal fun encodeGroundMaterialParams(segment: Int, materialId: Int, direction
 
 /** One row of the robot's segment table, as `get_room_mapping` returns it. */
 data class SegmentEntry(val segment: Int, val roomId: String, val tagId: Int)
+
+/**
+ * The robot's `get_room_mapping` answer as `[segment, roomId, tag]` rows. An empty list means no
+ * room has been assigned yet (S7 Max Ultra, Qrevo Edge, #33). Null means the answer is not a table
+ * this app can write back whole, so name_segment must not be sent.
+ */
+internal fun parseSegmentTable(result: JsonElement?): List<SegmentEntry>? {
+    val rows = result as? JsonArray ?: return null
+    return rows.map { row ->
+        if (row !is JsonArray || row.size < 3) return null
+        val segment = (row[0] as? JsonPrimitive)?.intOrNull ?: return null
+        val roomId = (row[1] as? JsonPrimitive)?.content ?: return null
+        val tag = (row[2] as? JsonPrimitive)?.intOrNull ?: return null
+        SegmentEntry(segment, roomId, tag)
+    }
+}
 
 /**
  * `{"data": [{"iotRoomId", "robotRoomId", "robotTagId"}, ...], "need_retry": 1}` with the whole

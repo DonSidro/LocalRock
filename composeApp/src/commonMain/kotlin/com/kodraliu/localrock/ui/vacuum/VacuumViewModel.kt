@@ -127,7 +127,9 @@ class VacuumViewModel(
      * segment points at it, keeping the room's type tag so the robot still treats it as that type.
      */
     suspend fun renameRoom(segment: Int, name: String) {
-        val room = container.deviceRepository.createRoom(validateRoomName(name))
+        val validName = validateRoomName(name)
+        repository.checkRoomTable(segment)
+        val room = container.deviceRepository.createRoom(validName)
         repository.assignRoom(segment, room.id)
         container.deviceRepository.refresh()
         repository.setHomeRooms(container.deviceRepository.home.value?.rooms ?: emptyList())
@@ -140,6 +142,7 @@ class VacuumViewModel(
      * Throws with a user-facing message on any failure.
      */
     suspend fun setRoomType(segment: Int, type: RoomType) {
+        repository.checkRoomTable(segment)
         val room = container.deviceRepository.createRoom(type.label)
         repository.assignRoom(segment, room.id, type.tag)
         container.deviceRepository.refresh()
