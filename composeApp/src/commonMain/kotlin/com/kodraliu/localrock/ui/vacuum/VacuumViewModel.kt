@@ -12,10 +12,13 @@ import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class VacuumViewModel(
     duid: String,
@@ -39,6 +42,8 @@ class VacuumViewModel(
 
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
+    private val actionMutex = Mutex()
+    private var pendingActions = 0
 
     private val _firmwareUpdate = MutableStateFlow<FirmwareUpdateState>(FirmwareUpdateState.Idle)
     val firmwareUpdate: StateFlow<FirmwareUpdateState> = _firmwareUpdate.asStateFlow()
@@ -67,14 +72,21 @@ class VacuumViewModel(
 
     init {
         viewModelScope.launch {
+            pendingActions++
             _busy.value = true
             try {
-                container.ensureMqttConnected()
-                repository.attach()
-            } catch (e: Throwable) {
-                container.messages.error(describe(e))
+                actionMutex.withLock {
+                    try {
+                        container.ensureMqttConnected()
+                        repository.attach()
+                    } catch (e: Throwable) {
+                        coroutineContext.ensureActive()
+                        container.messages.error(describe(e))
+                    }
+                }
             } finally {
-                _busy.value = false
+                pendingActions--
+                _busy.value = pendingActions > 0
             }
             // One-shot reads: the link may still be coming up, so wait for it rather than let
             // them fail and leave the consumables and room names empty.
@@ -108,15 +120,24 @@ class VacuumViewModel(
 
     fun refreshMap() {
         viewModelScope.launch {
+            pendingActions++
             _busy.value = true
             try {
-                repository.fetchMap()
-                runCatching { repository.rooms() }
-            } catch (e: Throwable) {
-                container.messages.error(describe(e))
-                runCatching { repository.forceReconnect() }
+                actionMutex.withLock {
+                    try {
+                        repository.fetchMap()
+                        runCatching { repository.rooms() }
+                        coroutineContext.ensureActive()
+                    } catch (e: Throwable) {
+                        coroutineContext.ensureActive()
+                        container.messages.error(describe(e))
+                        runCatching { repository.forceReconnect() }
+                        coroutineContext.ensureActive()
+                    }
+                }
             } finally {
-                _busy.value = false
+                pendingActions--
+                _busy.value = pendingActions > 0
             }
         }
     }
@@ -179,16 +200,24 @@ class VacuumViewModel(
 
     fun run(successMessage: String? = null, action: suspend (VacuumRepository) -> Unit) {
         viewModelScope.launch {
+            pendingActions++
             _busy.value = true
             try {
-                action(repository)
+                actionMutex.withLock {
+                    try {
+                        action(repository)
 
-                runCatching { repository.refreshStatus() }
-                successMessage?.let { container.messages.success(it) }
-            } catch (e: Throwable) {
-                container.messages.error(describe(e))
+                        runCatching { repository.refreshStatus() }
+                        coroutineContext.ensureActive()
+                        successMessage?.let { container.messages.success(it) }
+                    } catch (e: Throwable) {
+                        coroutineContext.ensureActive()
+                        container.messages.error(describe(e))
+                    }
+                }
             } finally {
-                _busy.value = false
+                pendingActions--
+                _busy.value = pendingActions > 0
             }
         }
     }
