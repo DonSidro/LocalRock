@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -105,7 +106,8 @@ fun BoxScope.TransientMessageHost(center: MessageCenter) {
                 shape = MaterialTheme.shapes.medium,
                 tonalElevation = 6.dp,
                 shadowElevation = 6.dp,
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                // The app draws behind the navigation bar, so keep the toast above it (#51).
+                modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp),
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
