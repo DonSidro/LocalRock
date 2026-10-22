@@ -79,7 +79,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
@@ -121,7 +123,7 @@ private sealed interface SettingsRoute {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun VacuumSettingsScreen(
     viewModel: VacuumViewModel,
@@ -129,6 +131,8 @@ fun VacuumSettingsScreen(
 ) {
     val repository = viewModel.repository
     var route by remember { mutableStateOf<SettingsRoute>(SettingsRoute.Root) }
+    // Sub-pages are local state, not nav destinations, so system back would leave Settings (#52).
+    BackHandler(enabled = route != SettingsRoute.Root) { route = SettingsRoute.Root }
     val scope = rememberCoroutineScope()
     val consumables by repository.consumableStatus.collectAsState()
     val robotSettings by repository.robotSettings.collectAsState()
