@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.BatteryUnknown
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Battery1Bar
@@ -81,6 +82,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -134,6 +136,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kodraliu.localrock.shared.model.Scene
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.DockErrorCodes
 import com.kodraliu.localrock.shared.vacuum.DockSettings
@@ -221,6 +224,8 @@ fun VacuumDetailScreen(
     var showMoreSheet by remember { mutableStateOf(false) }
     var showCleaningModeSheet by remember { mutableStateOf(false) }
     var showRecoverSheet by remember { mutableStateOf(false) }
+    var showRoutinesSheet by remember { mutableStateOf(false) }
+    val routines by viewModel.routines.collectAsState()
     var recoverLoading by remember { mutableStateOf(false) }
     var recoverTick by remember { mutableIntStateOf(0) }
     var renamingMap by remember { mutableStateOf<FloorMap?>(null) }
@@ -266,6 +271,9 @@ fun VacuumDetailScreen(
     }
     LaunchedEffect(showDockSheet) {
         if (showDockSheet) runCatching { viewModel.repository.fetchDockSettings() }
+    }
+    LaunchedEffect(showRoutinesSheet) {
+        if (showRoutinesSheet) viewModel.loadRoutines()
     }
 
     LaunchedEffect(showRecoverSheet, recoverTick) {
@@ -371,8 +379,23 @@ fun VacuumDetailScreen(
                         MoreAction.HISTORY -> onHistory()
                         MoreAction.MAPS -> showRecoverSheet = true
                         MoreAction.EDIT_MAP -> onMapEdit()
+                        MoreAction.ROUTINES -> showRoutinesSheet = true
                     }
                 },
+            )
+        }
+    }
+
+    if (showRoutinesSheet) {
+        ModalBottomSheet(onDismissRequest = { showRoutinesSheet = false }) {
+            RoutinesSheetContent(
+                state = routines,
+                busy = busy,
+                onRun = { scene ->
+                    showRoutinesSheet = false
+                    viewModel.runRoutine(scene)
+                },
+                onRetry = { viewModel.loadRoutines() },
             )
         }
     }
@@ -1137,7 +1160,7 @@ private fun ControlBar(
 }
 
 
-private enum class MoreAction { ROOMS, ZONES, PIN_GO, REMOTE, SCHEDULE, CAMERA, DOCK, HISTORY, MAPS, EDIT_MAP }
+private enum class MoreAction { ROOMS, ZONES, PIN_GO, REMOTE, SCHEDULE, CAMERA, DOCK, HISTORY, MAPS, EDIT_MAP, ROUTINES }
 
 @Composable
 private fun MoreActionsSheetContent(onAction: (MoreAction) -> Unit) {
@@ -1171,6 +1194,74 @@ private fun MoreActionsSheetContent(onAction: (MoreAction) -> Unit) {
             MoreActionItem(Modifier.weight(1f), Icons.Default.Dock, "Dock & care", AppColors.Good) { onAction(MoreAction.DOCK) }
             MoreActionItem(Modifier.weight(1f), Icons.Default.History, "History", MaterialTheme.colorScheme.tertiary) { onAction(MoreAction.HISTORY) }
             MoreActionItem(Modifier.weight(1f), Icons.Default.Map, "Maps", AppColors.Warn) { onAction(MoreAction.MAPS) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MoreActionItem(Modifier.weight(1f), Icons.AutoMirrored.Filled.PlaylistPlay, "Routines", MaterialTheme.colorScheme.secondary) { onAction(MoreAction.ROUTINES) }
+            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.weight(1f))
+        }
+    }
+}
+
+/** Routines made in the official app. local_roborock_server stores and runs them; the app only lists and starts them. */
+@Composable
+private fun RoutinesSheetContent(
+    state: RoutinesState,
+    busy: Boolean,
+    onRun: (Scene) -> Unit,
+    onRetry: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp)
+            .navigationBarsPadding()
+            .padding(bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Routines", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "Routines saved in the Roborock app, kept by your server. Running one that is already going stops it.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        when (state) {
+            RoutinesState.Loading -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            is RoutinesState.Failed -> {
+                Text(state.reason, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                OutlinedButton(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
+            }
+            is RoutinesState.Loaded -> if (state.routines.isEmpty()) {
+                Text(
+                    "No routines for this robot. Routines are made in the Roborock app; once the server has them they show up here.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else {
+                state.routines.forEach { scene ->
+                    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                scene.name,
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            FilledTonalButton(onClick = { onRun(scene) }, enabled = !busy) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Run")
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

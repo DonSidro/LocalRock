@@ -6,9 +6,12 @@ import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
 import com.kodraliu.localrock.shared.model.HomeDetail
 import com.kodraliu.localrock.shared.model.Room
+import com.kodraliu.localrock.shared.model.Scene
+import com.kodraliu.localrock.shared.model.SceneRunResult
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.request.post
 import io.ktor.client.request.header
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.parameter
@@ -52,6 +55,28 @@ class DeviceApi(private val client: HttpClient) {
         return response.data
     }
 
+    /** The routines saved for one robot, in the order the server keeps them. */
+    suspend fun getScenes(duid: String): List<Scene> {
+        val resp = client.get("/user/scene/device/$duid")
+        if (!resp.status.isSuccess()) {
+            throw DeviceApiException(resp.status.value, "Routines unavailable (HTTP ${resp.status.value})")
+        }
+        val response: SceneListResponse = resp.body()
+        if (response.code != 200) throw DeviceApiException(response.code, response.msg)
+        return response.result ?: response.data ?: emptyList()
+    }
+
+    /** Asks the server to run a routine; the server sends the robot each step itself. */
+    suspend fun executeScene(sceneId: Long): SceneRunResult {
+        val resp = client.post("/user/scene/$sceneId/execute")
+        if (!resp.status.isSuccess()) {
+            throw DeviceApiException(resp.status.value, "The server could not run the routine (HTTP ${resp.status.value})")
+        }
+        val response: SceneRunResponse = resp.body()
+        if (response.code != 200) throw DeviceApiException(response.code, response.msg)
+        return response.result ?: response.data ?: SceneRunResult()
+    }
+
     suspend fun checkFirmwareUpdate(duid: String): FirmwareUpdateInfo? {
         val resp = client.get("/ota/firmware/$duid/updatev2") {
             parameter("lang", "en")
@@ -66,6 +91,22 @@ class DeviceApi(private val client: HttpClient) {
 
 @Serializable
 private data class CreateRoomResponse(val code: Int, val msg: String, val data: Room)
+
+@Serializable
+private data class SceneListResponse(
+    val code: Int,
+    val msg: String = "",
+    val data: List<Scene>? = null,
+    val result: List<Scene>? = null,
+)
+
+@Serializable
+private data class SceneRunResponse(
+    val code: Int,
+    val msg: String = "",
+    val data: SceneRunResult? = null,
+    val result: SceneRunResult? = null,
+)
 
 class DeviceApiException(val responseCode: Int, message: String) : RuntimeException(message)
 

@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kodraliu.localrock.shared.AppContainer
 import com.kodraliu.localrock.shared.messages.MessageSeverity
+import com.kodraliu.localrock.shared.model.Scene
+import com.kodraliu.localrock.shared.model.SceneRunResult
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.RoomType
@@ -47,6 +49,9 @@ class VacuumViewModel(
 
     private val _firmwareUpdate = MutableStateFlow<FirmwareUpdateState>(FirmwareUpdateState.Idle)
     val firmwareUpdate: StateFlow<FirmwareUpdateState> = _firmwareUpdate.asStateFlow()
+
+    private val _routines = MutableStateFlow<RoutinesState>(RoutinesState.Loading)
+    val routines: StateFlow<RoutinesState> = _routines.asStateFlow()
 
 
     fun checkFirmwareUpdate() {
@@ -170,6 +175,23 @@ class VacuumViewModel(
         repository.setHomeRooms(container.deviceRepository.home.value?.rooms ?: emptyList())
     }
 
+    fun loadRoutines() {
+        viewModelScope.launch {
+            _routines.value = RoutinesState.Loading
+            _routines.value = try {
+                RoutinesState.Loaded(container.deviceRepository.scenes(device.duid))
+            } catch (e: Throwable) {
+                RoutinesState.Failed(describe(e))
+            }
+        }
+    }
+
+    /** The server runs the routine's steps itself; the robot's status shows how far it got. */
+    fun runRoutine(scene: Scene) = run {
+        val result = container.deviceRepository.runScene(scene.id)
+        container.messages.success(routineRunMessage(scene.name, result))
+    }
+
     /** The room order a full clean follows on the loaded map; empty when none has been set. */
     fun defaultCleanOrder(): List<Int> =
         container.appSettings.cleanOrder(device.duid, repository.currentFloorFlag.value)
@@ -237,6 +259,27 @@ sealed interface FirmwareUpdateState {
         val force: Boolean,
     ) : FirmwareUpdateState
     data class Unavailable(val reason: String) : FirmwareUpdateState
+}
+
+sealed interface RoutinesState {
+    data object Loading : RoutinesState
+    data class Loaded(val routines: List<Scene>) : RoutinesState
+    data class Failed(val reason: String) : RoutinesState
+}
+
+/** What to tell the user once the server has answered a run request; a refusal is thrown. */
+internal fun routineRunMessage(name: String, result: SceneRunResult): String {
+    if (!result.accepted) {
+        val active = result.activeSceneName
+        throw IllegalStateException(
+            if (result.status == "routine_in_progress" && active != null) {
+                "\"$active\" is still running. Run it again to stop it first."
+            } else {
+                "The server did not start \"$name\"" + (result.status?.let { " ($it)" } ?: "")
+            }
+        )
+    }
+    return if (result.status == "cancel_requested") "Stopping \"$name\"" else "\"$name\" started"
 }
 
 /**

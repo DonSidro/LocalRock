@@ -7,6 +7,8 @@ import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
 import com.kodraliu.localrock.shared.model.Product
 import com.kodraliu.localrock.shared.model.Room
+import com.kodraliu.localrock.shared.model.Scene
+import com.kodraliu.localrock.shared.model.SceneRunResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -102,6 +104,17 @@ class DeviceRepository(
         if (isDemo()) error("Rooms can't be renamed in demo mode")
         val homeId = _home.value?.id ?: error("Home not loaded")
         return deviceApi.createRoom(homeId, name)
+    }
+
+    /** Routines saved for [duid] (made in the official app; local_roborock_server keeps them). */
+    suspend fun scenes(duid: String): List<Scene> {
+        if (isDemo()) return emptyList()
+        return deviceApi.getScenes(duid)
+    }
+
+    suspend fun runScene(sceneId: Long): SceneRunResult {
+        if (isDemo()) error("Routines can't be run in demo mode")
+        return deviceApi.executeScene(sceneId)
     }
 
     suspend fun checkFirmwareUpdate(duid: String): FirmwareUpdateInfo? {

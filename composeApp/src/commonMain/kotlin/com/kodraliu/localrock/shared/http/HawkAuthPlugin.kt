@@ -5,6 +5,7 @@ import com.kodraliu.localrock.shared.auth.HawkCreds
 import com.kodraliu.localrock.shared.auth.HawkPayload
 import io.ktor.client.plugins.api.createClientPlugin
 import io.ktor.client.request.forms.FormDataContent
+import io.ktor.client.utils.EmptyContent
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.Parameters
@@ -43,11 +44,13 @@ val HawkAuth = createClientPlugin("HawkAuth", ::HawkAuthConfig) {
         val path = Url(request.url.buildString()).encodedPath
         if (isHawkPublicPath(path)) return@onRequest
         val creds = credsProvider() ?: return@onRequest
-        // GETs have no body. The only other body signed is a url-encoded form, hashed as sorted
-        // k=v pairs exactly like local_roborock_server's _process_extra_hawk_values; anything else
-        // would be signed wrongly, so fail instead of sending a request the server will reject.
+        // GETs and bodyless POSTs have no body. The only other body signed is a url-encoded form,
+        // hashed as sorted k=v pairs exactly like local_roborock_server's _process_extra_hawk_values;
+        // anything else would be signed wrongly, so fail instead of sending a request the server
+        // will reject.
         val payload = when {
             request.method == HttpMethod.Get -> HawkPayload.None
+            request.method == HttpMethod.Post && request.body is EmptyContent -> HawkPayload.None
             request.method == HttpMethod.Post && request.body is FormDataContent ->
                 HawkPayload.Form(formPairs((request.body as FormDataContent).formData))
             else -> error(

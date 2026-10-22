@@ -6,6 +6,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
+import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.http.HttpHeaders
 import io.ktor.http.parameters
@@ -63,6 +64,14 @@ class HawkAuthPluginTest {
         var auth: String? = null
         client { auth = it }.get("/v3/user/homes/1234")
         assertTrue(auth!!.startsWith("Hawk id=\"rrid123\",s=\"sess456\",ts=\"1700000000\",nonce=\"abcdef0123456789\",mac=\""))
+    }
+
+    @Test
+    fun bodyless_post_is_signed_with_an_empty_body() = runTest {
+        // Running a routine is a POST with no body, as python-roborock sends it.
+        var auth: String? = null
+        client { auth = it }.post("/user/scene/42/execute")
+        assertEquals("X48lQ9deBiTvJy6d/0jLhSObKeZr72IlvtijWz9hT0M=", macOf(auth))
     }
 
     @Test
