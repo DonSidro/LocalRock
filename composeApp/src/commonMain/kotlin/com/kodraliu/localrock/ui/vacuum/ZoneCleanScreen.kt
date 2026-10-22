@@ -32,7 +32,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,7 +49,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.vacuum.ZoneRect
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,7 +57,7 @@ fun ZoneCleanScreen(
     onBack: () -> Unit,
 ) {
     val parsedMap by viewModel.repository.parsedMap.collectAsState()
-    val scope = rememberCoroutineScope()
+    val busy by viewModel.busy.collectAsState()
     var zones by remember { mutableStateOf<List<ZoneRect>>(emptyList()) }
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragCurrent by remember { mutableStateOf<Offset?>(null) }
@@ -92,9 +90,10 @@ fun ZoneCleanScreen(
                         }
                     }
                     if (zones.isNotEmpty() && !sent) {
-                        TextButton(onClick = {
-                            scope.launch {
-                                runCatching { viewModel.repository.cleanZones(zones) }
+                        TextButton(enabled = !busy, onClick = {
+                            val selectedZones = zones
+                            viewModel.run {
+                                it.cleanZones(selectedZones)
                                 sent = true
                             }
                         }) { Text("Start") }
@@ -150,13 +149,13 @@ fun ZoneCleanScreen(
                                         onDragEnd = {
                                             val start = dragStart ?: return@detectDragGestures
                                             val end = dragCurrent ?: return@detectDragGestures
-                                            val mapScaleX = pm.width.toFloat() / size.width
-                                            val mapScaleY = pm.height.toFloat() / size.height
-                                            val mx1 = (minOf(start.x, end.x) * mapScaleX).toInt()
-                                            val my1 = (minOf(start.y, end.y) * mapScaleY).toInt()
-                                            val mx2 = (maxOf(start.x, end.x) * mapScaleX).toInt()
-                                            val my2 = (maxOf(start.y, end.y) * mapScaleY).toInt()
-                                            if (mx2 - mx1 > 10 && my2 - my1 > 10) {
+                                            val a = pm.canvasToMm(start, size.width.toFloat(), size.height.toFloat())
+                                            val b = pm.canvasToMm(end, size.width.toFloat(), size.height.toFloat())
+                                            val mx1 = minOf(a.first, b.first)
+                                            val my1 = minOf(a.second, b.second)
+                                            val mx2 = maxOf(a.first, b.first)
+                                            val my2 = maxOf(a.second, b.second)
+                                            if (mx2 - mx1 > 500 && my2 - my1 > 500) {
                                                 zones = zones + ZoneRect(mx1, my1, mx2, my2)
                                             }
                                             dragStart = null
@@ -192,15 +191,15 @@ fun ZoneCleanScreen(
                                 filterQuality = FilterQuality.None,
                             )
 
-                            val canvasScaleX = size.width / pm.width
-                            val canvasScaleY = size.height / pm.height
                             val strokePx = (2.dp.toPx() / mapScale).coerceAtLeast(1f)
 
                             for (zone in zones) {
-                                val left = zone.x1 * canvasScaleX
-                                val top = zone.y1 * canvasScaleY
-                                val w = (zone.x2 - zone.x1) * canvasScaleX
-                                val h = (zone.y2 - zone.y1) * canvasScaleY
+                                val a = pm.mmToCanvas(zone.x1, zone.y1, size.width, size.height)
+                                val b = pm.mmToCanvas(zone.x2, zone.y2, size.width, size.height)
+                                val left = minOf(a.x, b.x)
+                                val top = minOf(a.y, b.y)
+                                val w = maxOf(a.x, b.x) - left
+                                val h = maxOf(a.y, b.y) - top
                                 drawRect(color = zoneColor.copy(alpha = 0.3f), topLeft = Offset(left, top), size = Size(w, h))
                                 drawRect(color = zoneColor, topLeft = Offset(left, top), size = Size(w, h), style = Stroke(strokePx))
                             }
