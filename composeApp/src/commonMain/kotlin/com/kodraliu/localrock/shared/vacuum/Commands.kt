@@ -3,6 +3,7 @@ package com.kodraliu.localrock.shared.vacuum
 import com.kodraliu.localrock.shared.protocol.V1Response
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -86,19 +87,26 @@ suspend fun VacuumSession.appRcMove(velocity: Double, omega: Double, durationMs:
 
 suspend fun VacuumSession.appRcEnd(): V1Response = sendCommand("app_rc_end")
 
-suspend fun VacuumSession.appGotoTarget(x: Int, y: Int): V1Response =
-    sendCommand("app_goto_target", listOf(JsonArray(listOf(JsonPrimitive(x), JsonPrimitive(y)))))
+// The target is the bare point `[x, y]` in robot mm, as python-miio and Valetudo send it. The
+// wrapped form `[[x, y]]` was answered ["ok"] by an S8 Pro Ultra (fw 02.20.30) that then stayed on
+// the dock.
+internal fun gotoTargetParams(x: Int, y: Int): List<JsonElement> = listOf(JsonPrimitive(x), JsonPrimitive(y))
 
-suspend fun VacuumSession.appZonedClean(zones: List<ZoneRect>): V1Response {
-    val params = zones.map { z ->
-        JsonArray(listOf(
-            JsonPrimitive(z.x1), JsonPrimitive(z.y1),
-            JsonPrimitive(z.x2), JsonPrimitive(z.y2),
-            JsonPrimitive(z.times),
-        ))
-    }
-    return sendCommand("app_zoned_clean", params)
+suspend fun VacuumSession.appGotoTarget(x: Int, y: Int): V1Response =
+    sendCommand("app_goto_target", gotoTargetParams(x, y))
+
+// One `[x1, y1, x2, y2, times]` per zone, directly in the params list. Captured from the official
+// app on an S8 Pro Ultra: `[[28050,26300,29050,27300,1]]`.
+internal fun zonedCleanParams(zones: List<ZoneRect>): List<JsonElement> = zones.map { z ->
+    JsonArray(listOf(
+        JsonPrimitive(z.x1), JsonPrimitive(z.y1),
+        JsonPrimitive(z.x2), JsonPrimitive(z.y2),
+        JsonPrimitive(z.times),
+    ))
 }
+
+suspend fun VacuumSession.appZonedClean(zones: List<ZoneRect>): V1Response =
+    sendCommand("app_zoned_clean", zonedCleanParams(zones))
 
 suspend fun VacuumSession.getTimer(): V1Response = sendCommand("get_timer")
 
