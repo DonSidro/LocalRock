@@ -32,6 +32,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import com.kodraliu.localrock.ui.rememberUse24HourClock
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -135,7 +136,7 @@ private fun TimerRow(timer: CleanTimer, onToggle: () -> Unit, onDelete: () -> Un
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                formatTime(timer.hour, timer.minute),
+                formatClock(timer.hour, timer.minute, rememberUse24HourClock()),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = if (timer.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -165,11 +166,7 @@ private fun AddTimerDialog(onAdd: (hour: Int, minute: Int, weekdays: Set<Int>) -
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Time", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    NumberStepper("Hour", hour, 0, 23) { hour = it }
-                    Text(":", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    NumberStepper("Min", minute, 0, 59, step = 15) { minute = it }
-                }
+                ClockStepper(hour, minute, onHourChange = { hour = it }, onMinuteChange = { minute = it })
                 Text("Days", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     val dayLabels = listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")
@@ -204,23 +201,22 @@ private fun AddTimerDialog(onAdd: (hour: Int, minute: Int, weekdays: Set<Int>) -
 }
 
 @Composable
-private fun NumberStepper(label: String, value: Int, min: Int, max: Int, step: Int = 1, onChange: (Int) -> Unit) {
+internal fun NumberStepper(label: String, value: Int, min: Int, max: Int, step: Int = 1, onChange: (Int) -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedButton(onClick = { onChange(if (value + step > max) min else value + step) }, modifier = Modifier.size(36.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
-            Text("+")
-        }
+        StepButton("+") { onChange(steppedWithWrap(value, step, min, max)) }
         Text(value.toString().padStart(2, '0'), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        OutlinedButton(onClick = { onChange(if (value - step < min) max else value - step) }, modifier = Modifier.size(36.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
-            Text("−")
-        }
+        StepButton("−") { onChange(steppedWithWrap(value, -step, min, max)) }
     }
 }
 
-private fun formatTime(hour: Int, minute: Int): String {
-    val h = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
-    val amPm = if (hour < 12) "AM" else "PM"
-    return "${h.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} $amPm"
+/**
+ * [value] moved by [delta] within [min]..[max], wrapping around the ends of the range like a clock.
+ * Minutes in steps of 15 go 45, 30, 15, 0 and back to 45, not 0 then 59, 44, 29, 14.
+ */
+internal fun steppedWithWrap(value: Int, delta: Int, min: Int, max: Int): Int {
+    val size = max - min + 1
+    return ((value - min + delta) % size + size) % size + min
 }
 
 private fun formatWeekdays(days: Set<Int>): String {
