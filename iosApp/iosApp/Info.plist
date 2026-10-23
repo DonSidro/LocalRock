@@ -4,6 +4,11 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>de</string>
+	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>LocalRock talks directly to your robot vacuum over your local network: to your own self-hosted server, and to the robot's own Wi-Fi access point while you set it up. Nothing is sent to the developer.</string>
 	<key>NSCameraUsageDescription</key>

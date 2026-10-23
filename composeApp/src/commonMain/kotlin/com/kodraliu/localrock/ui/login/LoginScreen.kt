@@ -33,9 +33,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import com.kodraliu.localrock.resources.Res
+import com.kodraliu.localrock.resources.common_change
+import com.kodraliu.localrock.resources.login_code
+import com.kodraliu.localrock.resources.login_demo
+import com.kodraliu.localrock.resources.login_email
+import com.kodraliu.localrock.resources.login_error_failed
+import com.kodraliu.localrock.resources.login_intro
+import com.kodraliu.localrock.resources.login_server
+import com.kodraliu.localrock.resources.login_sign_in
 import com.kodraliu.localrock.shared.auth.AuthRepository
 import com.kodraliu.localrock.shared.demo.isDemoCredentials
 import com.kodraliu.localrock.ui.LocalAppContainer
+import org.jetbrains.compose.resources.stringResource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -75,7 +85,8 @@ class LoginModel(
             try {
                 auth.login(_email.value.trim(), _code.value.trim())
             } catch (e: Throwable) {
-                _error.value = e.message ?: "Sign-in failed"
+                // Server messages stay as they are; an empty one is shown as a translated fallback.
+                _error.value = e.message ?: ""
             } finally {
                 _busy.value = false
             }
@@ -106,10 +117,9 @@ fun LoginScreen(onServerSetup: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Spacer(Modifier.height(8.dp))
-        Text("Sign in", style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(Res.string.login_sign_in), style = MaterialTheme.typography.headlineSmall)
         Text(
-            "Use the email and login code you set up on your LocalRock server. " +
-                "These are your server's credentials — not a new Roborock account.",
+            stringResource(Res.string.login_intro),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -136,7 +146,7 @@ fun LoginScreen(onServerSetup: () -> Unit) {
                     )
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "Server",
+                            stringResource(Res.string.login_server),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -148,7 +158,7 @@ fun LoginScreen(onServerSetup: () -> Unit) {
                         )
                     }
                     Text(
-                        "Change",
+                        stringResource(Res.string.common_change),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -159,7 +169,7 @@ fun LoginScreen(onServerSetup: () -> Unit) {
         OutlinedTextField(
             value = email,
             onValueChange = model::setEmail,
-            label = { Text("Email") },
+            label = { Text(stringResource(Res.string.login_email)) },
             singleLine = true,
             enabled = !busy,
             isError = error != null,
@@ -169,7 +179,7 @@ fun LoginScreen(onServerSetup: () -> Unit) {
         OutlinedTextField(
             value = code,
             onValueChange = model::setCode,
-            label = { Text("Login code") },
+            label = { Text(stringResource(Res.string.login_code)) },
             singleLine = true,
             enabled = !busy,
             isError = error != null,
@@ -195,7 +205,7 @@ fun LoginScreen(onServerSetup: () -> Unit) {
                         tint = MaterialTheme.colorScheme.onErrorContainer,
                     )
                     Text(
-                        message,
+                        message.ifEmpty { stringResource(Res.string.login_error_failed) },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
@@ -213,7 +223,7 @@ fun LoginScreen(onServerSetup: () -> Unit) {
                 strokeWidth = 2.dp,
                 color = MaterialTheme.colorScheme.onPrimary,
             )
-            else Text("Sign in")
+            else Text(stringResource(Res.string.login_sign_in))
         }
 
         TextButton(
@@ -221,7 +231,7 @@ fun LoginScreen(onServerSetup: () -> Unit) {
             enabled = !busy,
             modifier = Modifier.align(Alignment.CenterHorizontally),
         ) {
-            Text("Explore the demo (no server needed)")
+            Text(stringResource(Res.string.login_demo))
         }
     }
 }
