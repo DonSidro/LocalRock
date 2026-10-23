@@ -6,7 +6,6 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,10 +44,12 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.toSize
 import com.kodraliu.localrock.shared.vacuum.ZoneRect
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,6 +67,7 @@ fun ZoneCleanScreen(
     var drawMode by remember { mutableStateOf(true) } // true = draw zones, false = pan/zoom
     var mapScale by remember { mutableStateOf(1f) }
     var mapOffset by remember { mutableStateOf(Offset.Zero) }
+    var viewport by remember { mutableStateOf(Size.Zero) }
 
     Scaffold(
         topBar = {
@@ -121,36 +124,44 @@ fun ZoneCleanScreen(
             } else {
                 val pm = parsedMap!!
                 val bitmap = rememberMapBitmap(pm)
-                val mapAspect = pm.width.toFloat() / pm.height.toFloat()
                 val zoneColor = MaterialTheme.colorScheme.primary
+
+                // Whole map, centred; again whenever the view or the map changes size (e.g. on rotation).
+                LaunchedEffect(viewport, pm.width, pm.height) {
+                    mapScale = 1f
+                    mapOffset = clampMapOffset(Offset.Zero, 1f, pm.fittedSize(viewport), viewport)
+                }
 
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Canvas(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(mapAspect)
+                            .fillMaxSize()
                             .clipToBounds()
+                            .onSizeChanged { viewport = it.toSize() }
                             .pointerInput(drawMode, pm) {
+                                // Screen position -> map canvas position, kept on the map.
+                                fun mapPoint(p: Offset): Offset {
+                                    val content = pm.fittedSize(size.toSize())
+                                    val c = (p - mapOffset) / mapScale
+                                    return Offset(c.x.coerceIn(0f, content.width), c.y.coerceIn(0f, content.height))
+                                }
                                 if (drawMode) {
                                     detectDragGestures(
                                         onDragStart = { offset ->
-                                            // Convert screen offset to canvas coordinates
-                                            dragStart = Offset(
-                                                (offset.x - mapOffset.x) / mapScale,
-                                                (offset.y - mapOffset.y) / mapScale,
-                                            )
+                                            dragStart = mapPoint(offset)
                                             dragCurrent = dragStart
                                             sent = false
                                         },
-                                        onDrag = { change, delta ->
+                                        onDrag = { change, _ ->
                                             change.consume()
-                                            dragCurrent = dragCurrent?.plus(delta / mapScale)
+                                            dragCurrent = mapPoint(change.position)
                                         },
                                         onDragEnd = {
                                             val start = dragStart ?: return@detectDragGestures
                                             val end = dragCurrent ?: return@detectDragGestures
-                                            val a = pm.canvasToMm(start, size.width.toFloat(), size.height.toFloat())
-                                            val b = pm.canvasToMm(end, size.width.toFloat(), size.height.toFloat())
+                                            val content = pm.fittedSize(size.toSize())
+                                            val a = pm.canvasToMm(start, content.width, content.height)
+                                            val b = pm.canvasToMm(end, content.width, content.height)
                                             val mx1 = minOf(a.first, b.first)
                                             val my1 = minOf(a.second, b.second)
                                             val mx2 = maxOf(a.first, b.first)
@@ -165,19 +176,16 @@ fun ZoneCleanScreen(
                                     )
                                 } else {
                                     detectTransformGestures { centroid, pan, zoom, _ ->
-                                        val newScale = (mapScale * zoom).coerceIn(1f, 8f)
-                                        mapOffset = centroid - (centroid - mapOffset) * (newScale / mapScale) + pan
-                                        val maxX = size.width * (newScale - 1f)
-                                        val maxY = size.height * (newScale - 1f)
-                                        mapOffset = Offset(
-                                            mapOffset.x.coerceIn(-maxX, 0f),
-                                            mapOffset.y.coerceIn(-maxY, 0f),
-                                        )
+                                        val view = size.toSize()
+                                        val (newScale, newOffset) =
+                                            zoomMap(mapScale, mapOffset, centroid, pan, zoom, pm.fittedSize(view), view)
                                         mapScale = newScale
+                                        mapOffset = newOffset
                                     }
                                 }
                             },
                     ) {
+                        val content = pm.fittedSize(size)
                         withTransform({
                             translate(left = mapOffset.x, top = mapOffset.y)
                             scale(mapScale, mapScale, pivot = Offset.Zero)
@@ -187,15 +195,15 @@ fun ZoneCleanScreen(
                                 srcOffset = IntOffset.Zero,
                                 srcSize = IntSize(bitmap.width, bitmap.height),
                                 dstOffset = IntOffset.Zero,
-                                dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                                dstSize = IntSize(content.width.toInt(), content.height.toInt()),
                                 filterQuality = FilterQuality.None,
                             )
 
                             val strokePx = (2.dp.toPx() / mapScale).coerceAtLeast(1f)
 
                             for (zone in zones) {
-                                val a = pm.mmToCanvas(zone.x1, zone.y1, size.width, size.height)
-                                val b = pm.mmToCanvas(zone.x2, zone.y2, size.width, size.height)
+                                val a = pm.mmToCanvas(zone.x1, zone.y1, content.width, content.height)
+                                val b = pm.mmToCanvas(zone.x2, zone.y2, content.width, content.height)
                                 val left = minOf(a.x, b.x)
                                 val top = minOf(a.y, b.y)
                                 val w = maxOf(a.x, b.x) - left

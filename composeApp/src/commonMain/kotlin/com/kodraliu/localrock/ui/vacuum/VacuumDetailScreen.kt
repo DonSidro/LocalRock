@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -134,6 +133,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kodraliu.localrock.shared.model.Scene
@@ -742,7 +742,6 @@ private fun VacuumMapImage(
     modifier: Modifier = Modifier,
 ) {
     val bitmap = rememberMapBitmap(map)
-    val aspectRatio = map.width.toFloat() / map.height.toFloat()
     val labelRooms = remember(map.rooms) { map.rooms.filter { it.labelNormX != null && it.labelNormY != null } }
     val textMeasurer = rememberTextMeasurer()
     // Labels follow the scheme rather than being a fixed black scrim: over a light map a dark
@@ -760,74 +759,65 @@ private fun VacuumMapImage(
 
     // A parsed map is mostly blank grid, so open framed on the floor plan rather than on padding.
     val bounds = remember(map) { map.contentBoundsNorm() }
-    var canvasSize by remember(map) { mutableStateOf(IntSize.Zero) }
-    // Null until the canvas has been measured, so the framing is never applied from a stale size.
-    val fit: Pair<Float, Offset>? = remember(bounds, canvasSize) {
-        if (!bounds.isUsable || canvasSize.width == 0 || canvasSize.height == 0) {
-            null
-        } else {
-            val scale = minOf(1f / bounds.width, 1f / bounds.height).coerceIn(1f, 8f)
-            val w = canvasSize.width.toFloat()
-            val h = canvasSize.height.toFloat()
-            val cx = (bounds.left + bounds.right) / 2f
-            val cy = (bounds.top + bounds.bottom) / 2f
-            val offset = Offset(
-                (w * (0.5f - scale * cx)).coerceIn(-w * (scale - 1f), 0f),
-                (h * (0.5f - scale * cy)).coerceIn(-h * (scale - 1f), 0f),
-            )
-            scale to offset
-        }
+    var viewport by remember { mutableStateOf(Size.Zero) }
+    // Null until the view has been measured, so the framing is never applied from a stale size.
+    val fit: Pair<Float, Offset>? = remember(bounds, viewport) {
+        if (viewport.width == 0f || viewport.height == 0f) null
+        else frameMap(bounds, map.fittedSize(viewport), viewport)
     }
+    val currentFit by rememberUpdatedState(fit)
 
     var mapScale by remember(map) { mutableStateOf(1f) }
     var mapOffset by remember(map) { mutableStateOf(Offset.Zero) }
-    var framed by remember(map) { mutableStateOf(false) }
+    // Framed again when the view changes size, e.g. when the phone is rotated.
+    var framedFor by remember(map) { mutableStateOf<Size?>(null) }
     LaunchedEffect(fit) {
-        val target = fit
-        if (!framed && target != null) {
+        val target = fit ?: return@LaunchedEffect
+        if (framedFor != viewport) {
             mapScale = target.first
             mapOffset = target.second
-            framed = true
+            framedFor = viewport
         }
     }
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Canvas(
             modifier = Modifier
-
-                .aspectRatio(aspectRatio)
+                .fillMaxSize()
                 .clipToBounds()
-                .onSizeChanged { canvasSize = it }
+                .onSizeChanged { viewport = it.toSize() }
                 .pointerInput(map) {
                     detectTransformGestures { centroid, pan, zoom, _ ->
-                        val newScale = (mapScale * zoom).coerceIn(1f, 8f)
-                        mapOffset = centroid - (centroid - mapOffset) * (newScale / mapScale) + pan
-                        // Clamp so the map can't be panned fully off-screen
-                        val maxX = size.width * (newScale - 1f)
-                        val maxY = size.height * (newScale - 1f)
-                        mapOffset = Offset(
-                            mapOffset.x.coerceIn(-maxX, 0f),
-                            mapOffset.y.coerceIn(-maxY, 0f),
-                        )
+                        val view = size.toSize()
+                        val (newScale, newOffset) =
+                            zoomMap(mapScale, mapOffset, centroid, pan, zoom, map.fittedSize(view), view)
                         mapScale = newScale
+                        mapOffset = newOffset
                     }
                 }
                 .pointerInput(map) {
                     detectTapGestures(
                         // Double tap returns to the framed view, not to the padded whole grid.
                         onDoubleTap = {
-                            mapScale = fit?.first ?: 1f
-                            mapOffset = fit?.second ?: Offset.Zero
+                            currentFit?.let { (s, o) ->
+                                mapScale = s
+                                mapOffset = o
+                            }
                         },
                         onTap = { tapOffset ->
-                            val mapX = (tapOffset.x - mapOffset.x) / mapScale
-                            val mapY = (tapOffset.y - mapOffset.y) / mapScale
-                            map.roomAtNorm(mapX / size.width, mapY / size.height)
-                                ?.let { currentOnRoomTap(it.id) }
+                            val content = map.fittedSize(size.toSize())
+                            val p = (tapOffset - mapOffset) / mapScale
+                            val normX = p.x / content.width
+                            val normY = p.y / content.height
+                            // The view is larger than the map; a tap beside it is not on a room.
+                            if (normX in 0f..1f && normY in 0f..1f) {
+                                map.roomAtNorm(normX, normY)?.let { currentOnRoomTap(it.id) }
+                            }
                         },
                     )
                 },
         ) {
+            val content = map.fittedSize(size)
             withTransform({
                 translate(left = mapOffset.x, top = mapOffset.y)
                 scale(mapScale, mapScale, pivot = Offset.Zero)
@@ -837,7 +827,7 @@ private fun VacuumMapImage(
                     srcOffset = IntOffset.Zero,
                     srcSize = IntSize(bitmap.width, bitmap.height),
                     dstOffset = IntOffset.Zero,
-                    dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                    dstSize = IntSize(content.width.toInt(), content.height.toInt()),
                     filterQuality = FilterQuality.None,
                 )
             }
@@ -848,8 +838,8 @@ private fun VacuumMapImage(
             for (room in labelRooms) {
                 val normX = room.labelNormX ?: continue
                 val normY = room.labelNormY ?: continue
-                val cx = mapOffset.x + normX * size.width * mapScale
-                val cy = mapOffset.y + normY * size.height * mapScale
+                val cx = mapOffset.x + normX * content.width * mapScale
+                val cy = mapOffset.y + normY * content.height * mapScale
                 if (cx < 0f || cx > size.width || cy < 0f || cy > size.height) continue
                 val order = selectedRoomIds.indexOf(room.id)
                 val selected = order >= 0
