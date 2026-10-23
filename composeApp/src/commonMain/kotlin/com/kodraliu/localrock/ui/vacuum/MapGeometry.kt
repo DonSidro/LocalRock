@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.ui.vacuum
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import com.kodraliu.localrock.shared.vacuum.MAX_MAP_COORD_MM
 import com.kodraliu.localrock.shared.vacuum.map.MapZone
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
@@ -40,6 +41,64 @@ internal fun ParsedMap.mmToCanvas(xMm: Int, yMm: Int, canvasW: Float, canvasH: F
 
 internal fun ParsedMap.canvasToMm(p: Offset, canvasW: Float, canvasH: Float): Pair<Int, Int> =
     cellToMm(Offset(p.x * width / canvasW, p.y * height / canvasH))
+
+/*
+ * The map views draw, clip and take gestures over their whole area (the viewport), not just the
+ * map's own rectangle, so a zoomed map runs to the edge of the screen (issue #57). At zoom 1 the
+ * map is fitted inside the viewport; that fitted size is the canvas size above, and
+ * screen = canvas * scale + offset.
+ */
+
+internal const val MAX_MAP_SCALE = 8f
+
+/** Size of the map fitted inside [viewport] with its aspect ratio kept. */
+internal fun ParsedMap.fittedSize(viewport: Size): Size {
+    if (viewport.width <= 0f || viewport.height <= 0f) return Size.Zero
+    val fit = minOf(viewport.width / width, viewport.height / height)
+    return Size(width * fit, height * fit)
+}
+
+/**
+ * [offset] limited so the scaled map leaves no gap at an edge of the viewport it is larger than,
+ * and stays centred along an axis it is smaller than.
+ */
+internal fun clampMapOffset(offset: Offset, scale: Float, content: Size, viewport: Size): Offset {
+    fun axis(o: Float, c: Float, v: Float): Float {
+        val scaled = c * scale
+        return if (scaled <= v) (v - scaled) / 2f else o.coerceIn(v - scaled, 0f)
+    }
+    return Offset(axis(offset.x, content.width, viewport.width), axis(offset.y, content.height, viewport.height))
+}
+
+/** Zoom by [zoom] about [centroid], then move by [pan]. Returns the new scale and offset. */
+internal fun zoomMap(
+    scale: Float,
+    offset: Offset,
+    centroid: Offset,
+    pan: Offset,
+    zoom: Float,
+    content: Size,
+    viewport: Size,
+): Pair<Float, Offset> {
+    val newScale = (scale * zoom).coerceIn(1f, MAX_MAP_SCALE)
+    val moved = centroid - (centroid - offset) * (newScale / scale) + pan
+    return newScale to clampMapOffset(moved, newScale, content, viewport)
+}
+
+/** Scale and offset that fit [bounds] (the floor plan) in the middle of the viewport. */
+internal fun frameMap(bounds: MapContentBounds, content: Size, viewport: Size): Pair<Float, Offset> {
+    if (!bounds.isUsable || content.width <= 0f || content.height <= 0f) {
+        return 1f to clampMapOffset(Offset.Zero, 1f, content, viewport)
+    }
+    val scale = minOf(
+        viewport.width / (bounds.width * content.width),
+        viewport.height / (bounds.height * content.height),
+    ).coerceIn(1f, MAX_MAP_SCALE)
+    val cx = (bounds.left + bounds.right) / 2f * content.width
+    val cy = (bounds.top + bounds.bottom) / 2f * content.height
+    val offset = Offset(viewport.width / 2f - cx * scale, viewport.height / 2f - cy * scale)
+    return scale to clampMapOffset(offset, scale, content, viewport)
+}
 
 /** Even-odd ray cast over the zone's four corners, so rotated zones hit-test correctly. */
 internal fun MapZone.contains(xMm: Int, yMm: Int): Boolean {

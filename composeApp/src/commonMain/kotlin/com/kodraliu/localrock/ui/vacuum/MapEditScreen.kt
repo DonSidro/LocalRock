@@ -39,7 +39,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -94,6 +93,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.center
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
@@ -112,6 +112,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.toSize
 import com.kodraliu.localrock.shared.vacuum.MAX_RESTRICTION_VERTICES
 import com.kodraliu.localrock.shared.vacuum.mapIndexBlocker
 import com.kodraliu.localrock.shared.vacuum.restrictionSaveBlocker
@@ -657,23 +658,18 @@ private fun EditorCanvas(
     var offset by viewport::offset
 
     // Open framed on the floor plan rather than the mostly empty grid, like the main map does.
-    // Done once per map size so later map polls don't undo the user's own zoom.
+    // Done once per map size and view size so later map polls don't undo the user's own zoom,
+    // while a rotated phone gets the floor plan fitted again.
     val bounds = remember(map.width, map.height) { map.contentBoundsNorm() }
-    var canvasSize by viewport::canvasSize
-    var framed by viewport::framed
-    LaunchedEffect(bounds, canvasSize) {
-        if (framed || !bounds.isUsable || canvasSize.width == 0 || canvasSize.height == 0) return@LaunchedEffect
-        val fitScale = minOf(1f / bounds.width, 1f / bounds.height).coerceIn(1f, 8f)
-        val cw = canvasSize.width.toFloat()
-        val ch = canvasSize.height.toFloat()
-        val cx = (bounds.left + bounds.right) / 2f
-        val cy = (bounds.top + bounds.bottom) / 2f
-        offset = Offset(
-            (cw * (0.5f - fitScale * cx)).coerceIn(-cw * (fitScale - 1f), 0f),
-            (ch * (0.5f - fitScale * cy)).coerceIn(-ch * (fitScale - 1f), 0f),
-        )
+    // Kept here, not in the viewport: a new map size brings a new viewport but no new layout pass.
+    var viewSize by remember { mutableStateOf(Size.Zero) }
+    LaunchedEffect(viewport, bounds, viewSize) {
+        viewport.viewSize = viewSize
+        if (viewport.framedFor == viewSize || viewSize.width == 0f || viewSize.height == 0f) return@LaunchedEffect
+        val (fitScale, fitOffset) = frameMap(bounds, map.fittedSize(viewSize), viewSize)
         scale = fitScale
-        framed = true
+        offset = fitOffset
+        viewport.framedFor = viewSize
     }
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragEnd by remember { mutableStateOf<Offset?>(null) }
@@ -696,16 +692,20 @@ private fun EditorCanvas(
     Box(modifier.clipToBounds(), contentAlignment = Alignment.Center) {
         Canvas(
             modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(map.width.toFloat() / map.height.toFloat())
-                .onSizeChanged { canvasSize = it }
+                .fillMaxSize()
+                .onSizeChanged { viewSize = it.toSize() }
                 .pointerInput(map, mode) {
                     detectTapGestures { tap ->
-                        val w = size.width.toFloat()
-                        val h = size.height.toFloat()
+                        val fitted = map.fittedSize(size.toSize())
+                        val w = fitted.width
+                        val h = fitted.height
                         val content = (tap - offset) / scale
                         if (mode == EditMode.ROOMS) {
-                            currentOnRoomTap(map.roomAtNorm(content.x / w, content.y / h)?.id)
+                            val normX = content.x / w
+                            val normY = content.y / h
+                            // The view is larger than the map; a tap beside it is not on a room.
+                            val onMap = normX in 0f..1f && normY in 0f..1f
+                            currentOnRoomTap(if (onMap) map.roomAtNorm(normX, normY)?.id else null)
                             return@detectTapGestures
                         }
                         val (xMm, yMm) = map.canvasToMm(content, w, h)
@@ -730,9 +730,11 @@ private fun EditorCanvas(
                         currentOnSelect(if (hit == currentSelection) null else hit)
                     }
                 }
-                .pointerInput(map, mode, drawEnabled) {
-                    val w = size.width.toFloat()
-                    val h = size.height.toFloat()
+                .pointerInput(map, mode, drawEnabled, viewSize) {
+                    val view = size.toSize()
+                    val fitted = map.fittedSize(view)
+                    val w = fitted.width
+                    val h = fitted.height
                     fun clampToMap(p: Offset) = Offset(p.x.coerceIn(0f, w), p.y.coerceIn(0f, h))
                     fun contentOf(p: Offset) = (p - offset) / scale
                     val handleRadius = HANDLE_TOUCH_RADIUS.toPx()
@@ -788,13 +790,9 @@ private fun EditorCanvas(
                                 val zoom = event.calculateZoom()
                                 val pan = event.calculatePan()
                                 val centroid = event.calculateCentroid(useCurrent = true)
-                                val newScale = (scale * zoom).coerceIn(1f, 8f)
-                                val moved = centroid - (centroid - offset) * (newScale / scale) + pan
-                                offset = Offset(
-                                    moved.x.coerceIn(-w * (newScale - 1f), 0f),
-                                    moved.y.coerceIn(-h * (newScale - 1f), 0f),
-                                )
+                                val (newScale, newOffset) = zoomMap(scale, offset, centroid, pan, zoom, fitted, view)
                                 scale = newScale
+                                offset = newOffset
                                 event.changes.forEach { it.consume() }
                                 continue
                             }
@@ -807,13 +805,7 @@ private fun EditorCanvas(
                             }
                             change.consume()
                             when (gesture) {
-                                Gesture.PAN -> {
-                                    val moved = offset + (pos - last)
-                                    offset = Offset(
-                                        moved.x.coerceIn(-w * (scale - 1f), 0f),
-                                        moved.y.coerceIn(-h * (scale - 1f), 0f),
-                                    )
-                                }
+                                Gesture.PAN -> offset = clampMapOffset(offset + (pos - last), scale, fitted, view)
                                 Gesture.DRAW -> dragEnd = clampToMap(contentOf(pos))
                                 Gesture.EDIT -> {
                                     val nowMm = map.canvasToMm(clampToMap(contentOf(pos)), w, h)
@@ -830,8 +822,9 @@ private fun EditorCanvas(
                     }
                 },
         ) {
-            val w = size.width
-            val h = size.height
+            val fitted = map.fittedSize(size)
+            val w = fitted.width
+            val h = fitted.height
             withTransform({
                 translate(left = offset.x, top = offset.y)
                 scale(scale, scale, pivot = Offset.Zero)
@@ -946,16 +939,17 @@ private fun EditorCanvas(
 private class MapViewport {
     var scale by mutableStateOf(1f)
     var offset by mutableStateOf(Offset.Zero)
-    var canvasSize by mutableStateOf(IntSize.Zero)
-    var framed by mutableStateOf(false)
+    /** Size of the whole map view on screen. */
+    var viewSize by mutableStateOf(Size.Zero)
+    /** The view size the map was last framed for; framed again when it changes. */
+    var framedFor by mutableStateOf<Size?>(null)
 
-    /** Robot mm under the centre of the visible map, kept away from the map's edges. */
+    /** Robot mm under the centre of the view, kept away from the map's edges. */
     fun centerMm(map: ParsedMap): Pair<Int, Int>? {
-        val w = canvasSize.width.toFloat()
-        val h = canvasSize.height.toFloat()
-        if (w <= 0f || h <= 0f) return null
-        val content = (Offset(w / 2f, h / 2f) - offset) / scale
-        val (x, y) = map.canvasToMm(content, w, h)
+        val fitted = map.fittedSize(viewSize)
+        if (fitted.width <= 0f || fitted.height <= 0f) return null
+        val content = (viewSize.center - offset) / scale
+        val (x, y) = map.canvasToMm(content, fitted.width, fitted.height)
         return x.coerceIn(NEW_SHAPE_MARGIN_MM, MAX_MAP_COORD_MM - NEW_SHAPE_MARGIN_MM) to
             y.coerceIn(NEW_SHAPE_MARGIN_MM, MAX_MAP_COORD_MM - NEW_SHAPE_MARGIN_MM)
     }

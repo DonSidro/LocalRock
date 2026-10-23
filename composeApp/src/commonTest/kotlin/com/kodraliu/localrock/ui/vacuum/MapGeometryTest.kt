@@ -1,5 +1,7 @@
 package com.kodraliu.localrock.ui.vacuum
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.thresholdStrip
 import com.kodraliu.localrock.shared.vacuum.map.MapFormat
@@ -143,5 +145,61 @@ class MapGeometryTest {
         assertFailsWith<MapEditException> { validateRoomName("a".repeat(24)) }
         assertFailsWith<MapEditException> { validateRoomName("{json") }
         assertFailsWith<MapEditException> { validateRoomName("[x]") }
+    }
+
+    // Issue #57: a long, narrow map in a square view. Zoomed in, it must reach the view's edges.
+    private val narrow = ParsedMap(
+        width = 100, height = 400, grid = ByteArray(100 * 400), rooms = emptyList(), resolution = 0.05f,
+        pixelOffsetLeft = 0, pixelOffsetTop = 0, format = MapFormat.LEGACY,
+    )
+    private val view = Size(1000f, 1000f)
+
+    @Test
+    fun map_is_fitted_inside_the_view_with_its_aspect_ratio() {
+        assertEquals(Size(250f, 1000f), narrow.fittedSize(view))
+        assertEquals(Size.Zero, narrow.fittedSize(Size.Zero))
+    }
+
+    @Test
+    fun map_narrower_than_the_view_stays_centred() {
+        val content = narrow.fittedSize(view)
+        assertEquals(Offset(375f, 0f), clampMapOffset(Offset(-300f, 50f), 1f, content, view))
+        // At 2x the map is 500 wide: still narrower than the view, so centred; taller, so it pans.
+        assertEquals(Offset(250f, -600f), clampMapOffset(Offset(0f, -600f), 2f, content, view))
+    }
+
+    @Test
+    fun zoomed_map_pans_to_the_view_edges_and_no_further() {
+        val content = narrow.fittedSize(view)
+        // At 8x the map is 2000 x 8000: either edge can be brought to the edge of the view.
+        assertEquals(Offset(0f, 0f), clampMapOffset(Offset(400f, 400f), 8f, content, view))
+        assertEquals(Offset(-1000f, -7000f), clampMapOffset(Offset(-5000f, -9000f), 8f, content, view))
+        assertEquals(Offset(-600f, -3000f), clampMapOffset(Offset(-600f, -3000f), 8f, content, view))
+    }
+
+    @Test
+    fun zoom_keeps_the_point_under_the_fingers() {
+        val content = narrow.fittedSize(view)
+        val start = clampMapOffset(Offset.Zero, 4f, content, view)
+        val centroid = Offset(500f, 500f)
+        val before = (centroid - start) / 4f
+        val (scale, offset) = zoomMap(4f, start, centroid, Offset.Zero, 1.5f, content, view)
+        assertEquals(6f, scale)
+        val after = (centroid - offset) / scale
+        assertEquals(before.x, after.x, 0.01f)
+        assertEquals(before.y, after.y, 0.01f)
+        assertEquals(MAX_MAP_SCALE, zoomMap(4f, start, centroid, Offset.Zero, 100f, content, view).first)
+        assertEquals(1f, zoomMap(4f, start, centroid, Offset.Zero, 0.01f, content, view).first)
+    }
+
+    @Test
+    fun framing_fits_the_floor_plan_in_the_middle_of_the_view() {
+        val content = narrow.fittedSize(view)
+        // Floor plan in the top half of the map: 250 x 500 at zoom 1, so it fits at 2x.
+        val (scale, offset) = frameMap(MapContentBounds(0f, 0f, 1f, 0.5f), content, view)
+        assertEquals(2f, scale)
+        assertEquals(Offset(250f, 0f), offset)
+        // No usable floor plan: the whole map, centred.
+        assertEquals(1f to Offset(375f, 0f), frameMap(MapContentBounds(0f, 0f, 0f, 0f), content, view))
     }
 }
