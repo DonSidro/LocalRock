@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shared -->
+    <string name="common_change">Change</string>
+
+    <!-- Login -->
+    <string name="login_sign_in">Sign in</string>
+    <string name="login_intro">Use the email and login code you set up on your LocalRock server. These are your server's credentials — not a new Roborock account.</string>
+    <string name="login_server">Server</string>
+    <string name="login_email">Email</string>
+    <string name="login_code">Login code</string>
+    <string name="login_error_failed">Sign-in failed</string>
+    <string name="login_demo">Explore the demo (no server needed)</string>
+</resources>
