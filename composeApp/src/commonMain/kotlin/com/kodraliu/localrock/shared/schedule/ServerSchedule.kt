@@ -98,7 +98,7 @@ data class WeeklyTime(val hour: Int, val minute: Int, val days: Set<Int>) {
 fun nativeTimerState(result: JsonElement?, name: String): String {
     val entries = result as? JsonArray ?: return "Unknown"
     val matches = entries.filterIsInstance<JsonArray>().filter {
-        (it.getOrNull(0) as? JsonPrimitive)?.contentOrNull == name
+        (it.getOrNull(0) as? JsonPrimitive)?.let { id -> id.isString && id.content == name } == true
     }
     if (matches.isEmpty()) return "Missing"
     if (matches.size != 1) return "Ambiguous"

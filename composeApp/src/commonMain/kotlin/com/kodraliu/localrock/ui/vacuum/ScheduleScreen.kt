@@ -119,7 +119,7 @@ fun ScheduleScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
         }
     }
     if (creating || editing != null) {
-        ScheduleEditor(editing, rooms, busy, error,
+        ScheduleEditor(editing, viewModel.scheduleTimezone, rooms, busy, error,
             onDismiss = { if (!busy) { creating = false; editing = null; error = null } },
             onSave = { body ->
                 val existing = editing
@@ -147,13 +147,13 @@ fun ScheduleScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
 private val DAY_NAMES = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 
 @Composable
-private fun ScheduleEditor(job: ServerSchedule?, rooms: List<ParsedMapRoom>, busy: Boolean, error: String?,
+private fun ScheduleEditor(job: ServerSchedule?, defaultTimezone: String, rooms: List<ParsedMapRoom>, busy: Boolean, error: String?,
     onDismiss: () -> Unit, onSave: (JsonObject) -> Unit) {
     val initial = job?.weekly ?: WeeklyTime(8, 0, setOf(1, 2, 3, 4, 5))
     var hour by remember { mutableStateOf(initial.hour.toString().padStart(2, '0')) }
     var minute by remember { mutableStateOf(initial.minute.toString().padStart(2, '0')) }
     var days by remember { mutableStateOf(initial.days) }
-    var zone by remember { mutableStateOf(job?.timezone.orEmpty()) }
+    var zone by remember { mutableStateOf(job?.timezone ?: defaultTimezone) }
     var roomEditing by remember { mutableStateOf(false) }
     var wholeHome by remember { mutableStateOf(job == null || job.settingsText("segments") == "0") }
     var selected by remember { mutableStateOf(job?.settingsText("segments").orEmpty().split(',', ';').mapNotNull { it.trim().toIntOrNull()?.takeIf { n -> n > 0 } }) }
@@ -228,7 +228,7 @@ private fun ScheduleChoice(label: String, key: String, job: ServerSchedule?, cha
         Text(label, style = MaterialTheme.typography.labelLarge)
         Box {
             OutlinedButton(enabled = enabled, onClick = { expanded = true }) {
-                Text(options.firstOrNull { it.first == value }?.second ?: if (current.isBlank()) "Robot default" else "Keep current ($current)")
+                Text(options.firstOrNull { it.first == value }?.second ?: if (current.isBlank()) "Robot default" else "Keep current: ${options.firstOrNull { it.first.toString() == current }?.second ?: "Custom"}")
             }
             DropdownMenu(expanded, { expanded = false }) {
                 DropdownMenuItem(text = { Text("Keep existing / default") }, onClick = { onChange(changes - key); expanded = false })

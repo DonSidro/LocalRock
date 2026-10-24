@@ -38,6 +38,7 @@ class VacuumViewModel(
     val supportsWaterSlide: Boolean = isWaterSlideSupported(device.newFeatureSet)
     val dockCapabilities = DockCapabilities(modelName, device.featureSet, device.newFeatureSet)
     val repository: VacuumRepository = container.vacuumRepositoryFor(device)
+    val scheduleTimezone: String = device.timeZoneId.orEmpty()
     val scheduleApi = container.scheduleApi
     val scheduleDemoMode: Boolean get() = container.appSettings.demoMode.value
     val status = repository.status
