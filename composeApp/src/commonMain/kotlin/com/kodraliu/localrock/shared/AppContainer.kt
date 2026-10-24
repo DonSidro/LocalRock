@@ -5,6 +5,7 @@ import com.kodraliu.localrock.shared.auth.AuthRepository
 import com.kodraliu.localrock.shared.auth.LoginApi
 import com.kodraliu.localrock.shared.device.DeviceApi
 import com.kodraliu.localrock.shared.device.DeviceRepository
+import com.kodraliu.localrock.shared.device.ScheduleApi
 import com.kodraliu.localrock.shared.http.HttpClientConfig
 import com.kodraliu.localrock.shared.http.buildAdminHttpClient
 import com.kodraliu.localrock.shared.http.buildVacLocalHttpClient
@@ -78,6 +79,7 @@ class AppContainer(
 
     private val loginApi = LoginApi(httpClient)
     private val deviceApi = DeviceApi(httpClient)
+    private val scheduleApi = ScheduleApi(httpClient)
     val onboardingAdminApi: OnboardingAdminApi = OnboardingAdminApi(adminHttpClient)
 
     val authRepository: AuthRepository = AuthRepository(appSettings, loginApi)
@@ -431,6 +433,7 @@ class AppContainer(
             topicsProvider = topicsProvider,
             nowEpochSeconds = { currentEpochSeconds().toInt() },
             demo = isDemo,
+            scheduleMirror = scheduleApi,
         ).apply {
             setHomeRooms(deviceRepository.home.value?.rooms ?: emptyList())
         }
