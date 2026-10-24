@@ -10,6 +10,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.Parameters
 import io.ktor.http.Url
+import io.ktor.http.ContentType
+import io.ktor.http.content.TextContent
 import kotlin.random.Random
 
 internal expect fun currentEpochSeconds(): Long
@@ -44,17 +46,19 @@ val HawkAuth = createClientPlugin("HawkAuth", ::HawkAuthConfig) {
         val path = Url(request.url.buildString()).encodedPath
         if (isHawkPublicPath(path)) return@onRequest
         val creds = credsProvider() ?: return@onRequest
-        // GETs and bodyless POSTs have no body. The only other body signed is a url-encoded form,
-        // hashed as sorted k=v pairs exactly like local_roborock_server's _process_extra_hawk_values;
-        // anything else would be signed wrongly, so fail instead of sending a request the server
-        // will reject.
+        // JSON writes hash the exact outgoing UTF-8 bytes. Form POSTs retain the server's
+        // sorted k=v hash. Reject unknown body types instead of silently signing them wrongly.
         val payload = when {
             request.method == HttpMethod.Get -> HawkPayload.None
-            request.method == HttpMethod.Post && request.body is EmptyContent -> HawkPayload.None
+            request.method in listOf(HttpMethod.Post, HttpMethod.Delete) && request.body is EmptyContent -> HawkPayload.None
+            request.method in listOf(HttpMethod.Post, HttpMethod.Put, HttpMethod.Patch) &&
+                request.body is TextContent &&
+                (request.body as TextContent).contentType.match(ContentType.Application.Json) ->
+                HawkPayload.Json((request.body as TextContent).bytes())
             request.method == HttpMethod.Post && request.body is FormDataContent ->
                 HawkPayload.Form(formPairs((request.body as FormDataContent).formData))
             else -> error(
-                "HawkAuthPlugin signs GETs and url-encoded form POSTs only; ${request.method.value} on $path is neither"
+                "Unsupported Hawk request body for ${request.method.value} on $path"
             )
         }
         val query = buildMap {
@@ -78,3 +82,4 @@ val HawkAuth = createClientPlugin("HawkAuth", ::HawkAuthConfig) {
 internal fun formPairs(formData: Parameters): Map<String, String> = buildMap {
     formData.entries().forEach { (k, v) -> if (v.isNotEmpty()) put(k, v.first()) }
 }
+
