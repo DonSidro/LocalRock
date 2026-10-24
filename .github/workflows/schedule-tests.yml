@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  checks: write
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -15,10 +16,26 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
-      - run: ./gradlew :composeApp:testDebugUnitTest :composeApp:assembleDebug --stacktrace
+      - name: Build and test Android
+        run: |
+          set -o pipefail
+          ./gradlew :composeApp:testDebugUnitTest :composeApp:assembleDebug --stacktrace 2>&1 | tee build.log
+      - name: Publish build diagnostics
+        if: always() && github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.existsSync('build.log') ? fs.readFileSync('build.log', 'utf8') : 'Build did not start.';
+            await github.rest.checks.create({
+              owner: context.repo.owner, repo: context.repo.repo, head_sha: context.sha,
+              name: '${{ github.job }} build diagnostics', status: 'completed',
+              conclusion: '${{ job.status }}' === 'success' ? 'success' : 'failure',
+              output: { title: 'Compiler and test output', summary: 'Build diagnostics for schedule support.',
+                text: '```text\n' + log.slice(-50000) + '\n```' }
+            });
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -38,4 +55,21 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
-      - run: ./gradlew :composeApp:compileKotlinIosSimulatorArm64 --stacktrace
+      - name: Compile iOS
+        run: |
+          set -o pipefail
+          ./gradlew :composeApp:compileKotlinIosSimulatorArm64 --stacktrace 2>&1 | tee build.log
+      - name: Publish build diagnostics
+        if: always() && github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.existsSync('build.log') ? fs.readFileSync('build.log', 'utf8') : 'Build did not start.';
+            await github.rest.checks.create({
+              owner: context.repo.owner, repo: context.repo.repo, head_sha: context.sha,
+              name: '${{ github.job }} build diagnostics', status: 'completed',
+              conclusion: '${{ job.status }}' === 'success' ? 'success' : 'failure',
+              output: { title: 'Compiler and test output', summary: 'Build diagnostics for schedule support.',
+                text: '```text\n' + log.slice(-50000) + '\n```' }
+            });

@@ -103,7 +103,10 @@ fun ScheduleScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
                                 }
                             })
                         }
-                        if (job.nativeName != null) Text("Robot timer: ${nativeStates[job.id] ?: "Not checked"}")
+                        if (job.nativeName != null) {
+                            Text("Robot timer (last check): ${nativeStates[job.id] ?: "Not checked"}")
+                            if (nativeStates[job.id] != "On") Text("Enabling this server job does not enable its robot timer.")
+                        }
                         if (!job.editable) Text("Time and settings are read-only for this schedule format.")
                         Row {
                             TextButton(enabled = !busy && job.editable, onClick = { editing = job; error = null }) { Text("Edit") }
@@ -157,7 +160,7 @@ private fun ScheduleEditor(job: ServerSchedule?, rooms: List<ParsedMapRoom>, bus
     var changes by remember { mutableStateOf<Map<String, JsonElement>>(emptyMap()) }
     var localError by remember { mutableStateOf<String?>(null) }
     // Stable across a failed POST, so retry cannot create a duplicate with a new identity.
-    val creationId = remember { Random.nextLong(1, Long.MAX_VALUE) }
+    val creationId = remember { Random.nextLong(1, 1L shl 53) }
     AlertDialog(onDismissRequest = { if (!busy) onDismiss() },
         title = { Text(if (job == null) "New server schedule" else "Edit schedule") },
         text = {
