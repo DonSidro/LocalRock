@@ -36,6 +36,16 @@ fun ScheduleScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     val api = viewModel.scheduleApi
     val repository = viewModel.repository
     val scope = rememberCoroutineScope()
+    val enablement = remember(api, repository) {
+        ScheduleEnablement(
+            readJobs = { api.list(repository.duid) },
+            writeJob = { expected, patch -> api.update(repository.duid, expected, patch) },
+            readTimers = { repository.session.sendCommand("get_server_timer").requireOk("get_server_timer").result },
+            writeTimer = { name, enabled ->
+                repository.session.sendCommand("upd_server_timer", nativeTimerUpdateParams(name, enabled)).requireOk("upd_server_timer")
+            },
+        )
+    }
     var jobs by remember { mutableStateOf<List<ServerSchedule>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -68,6 +78,11 @@ fun ScheduleScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
             catch (_: Exception) { /* Timer diagnostics remain unknown in More details. */ }
         }
     }
+    suspend fun refreshAfterSave() {
+        try { refresh() }
+        catch (e: CancellationException) { throw e }
+        catch (_: Exception) { notice = "Save confirmed. The list could not be refreshed; tap Refresh." }
+    }
     fun action(block: suspend () -> Unit) {
         if (busy || viewModel.scheduleDemoMode) return
         busy = true; error = null; notice = null
@@ -75,6 +90,7 @@ fun ScheduleScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
             try { block() }
             catch (e: CancellationException) { throw e }
             catch (e: Exception) {
+                nativeStates = emptyMap() // A partial operation must not leave stale diagnostics visible.
                 error = if (e is ScheduleException || e is IllegalArgumentException) e.message
                     else "Request could not be confirmed. Refresh before retrying; a write may already have reached the server."
             } finally { busy = false }
@@ -114,8 +130,9 @@ fun ScheduleScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
                                 maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Switch(checked = job.enabled, enabled = !busy && (job.editable || job.repeated || job.enabled),
                                 onCheckedChange = { enabled -> action {
-                                    api.update(repository.duid, job, buildJsonObject { put("enabled", enabled) })
-                                    refresh()
+                                    val saved = enablement.save(job, buildJsonObject { put("enabled", enabled) }, synchronizeEnabled = true)
+                                    jobs = jobs.map { if (it.id == saved.id) saved else it }
+                                    refreshAfterSave()
                                 } })
                         }
                         HorizontalDivider(Modifier.padding(vertical = 6.dp))
@@ -140,13 +157,17 @@ fun ScheduleScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
             nativeState = editing?.let { nativeStates[it.id] } ?: "Not checked",
             onDelete = { editing?.let { deleting = it; editing = null } },
             onDismiss = { if (!busy) { creating = false; editing = null; error = null } },
-            onSave = { body ->
+            onSave = { body, synchronizeEnabled ->
                 val existing = editing
                 action {
-                    if (existing == null) api.create(repository.duid, body) else api.update(repository.duid, existing, body)
+                    if (existing == null) api.create(repository.duid, body)
+                    else {
+                        val saved = enablement.save(existing, body, synchronizeEnabled)
+                        jobs = jobs.map { if (it.id == saved.id) saved else it }
+                    }
                     creating = false; editing = null
                     notice = "Schedule saved."
-                    refresh()
+                    refreshAfterSave()
                 }
             })
     }
@@ -170,13 +191,14 @@ private fun formatScheduleTime(hour: Int, minute: Int) =
 @Composable
 private fun ScheduleEditor(job: ServerSchedule?, defaultTimezone: String, rooms: List<ParsedMapRoom>,
     map: ParsedMap?, mapName: String, currentFlag: Int, busy: Boolean, error: String?, nativeState: String,
-    onDelete: () -> Unit, onDismiss: () -> Unit, onSave: (JsonObject) -> Unit) {
+    onDelete: () -> Unit, onDismiss: () -> Unit, onSave: (JsonObject, Boolean) -> Unit) {
     val initial = job?.weekly ?: WeeklyTime(8, 0, (1..5).toSet())
     var hour by remember { mutableStateOf(initial.hour) }
     var minute by remember { mutableStateOf(initial.minute) }
     var days by remember { mutableStateOf(initial.days) }
     var repeated by remember { mutableStateOf(job?.repeated ?: true) }
     var enabled by remember { mutableStateOf(job?.enabled ?: false) }
+    var enablementRequested by remember { mutableStateOf(false) }
     var zone by remember { mutableStateOf(job?.timezone ?: defaultTimezone) }
     var wholeHome by remember { mutableStateOf(job == null || job.settingsText("segments") == "0") }
     var selected by remember { mutableStateOf(job?.settingsText("segments").orEmpty().split(',', ';')
@@ -207,7 +229,9 @@ private fun ScheduleEditor(job: ServerSchedule?, defaultTimezone: String, rooms:
                     put("id", JsonPrimitive(creationId)); put("enabled", JsonPrimitive(enabled))
                 })
             localError = null
-            onSave(payload)
+            // A time/settings edit must not synchronize or overwrite enablement.
+            val patch = if (job != null && !enablementRequested) JsonObject(payload - "enabled") else payload
+            onSave(patch, enablementRequested)
         } catch (e: IllegalArgumentException) { localError = e.message }
     }
 
@@ -261,7 +285,7 @@ private fun ScheduleEditor(job: ServerSchedule?, defaultTimezone: String, rooms:
                 Card(shape = RoundedCornerShape(20.dp)) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Enabled", Modifier.weight(1f))
-                        Switch(enabled, { enabled = it }, enabled = !busy && editable)
+                        Switch(enabled, { enabled = it; enablementRequested = true }, enabled = !busy && editable)
                     }
                 }
                 if (!repeated) Text("Runs once at the next matching start time after you enable it, then turns off.", style = MaterialTheme.typography.bodySmall)
@@ -269,7 +293,12 @@ private fun ScheduleEditor(job: ServerSchedule?, defaultTimezone: String, rooms:
                 if (details) {
                     if (job?.nativeName != null) {
                         Text("Robot timer (last check): $nativeState", style = MaterialTheme.typography.bodySmall)
-                        Text("This is separate from Enabled. Imported schedules require the robot timer to be on; the Enabled switch only changes the server schedule.",
+                        Text("Enabled synchronizes this native timer and the server job, with read-back verification. Time and cleaning edits leave the timer state unchanged.",
+                            style = MaterialTheme.typography.bodySmall)
+                        TextButton(enabled = !busy && editable, onClick = { enablementRequested = true }) {
+                            Text("Synchronize enabled state")
+                        }
+                        if (enablementRequested) Text("The selected Enabled state will be synchronized when you save.",
                             style = MaterialTheme.typography.bodySmall)
                     }
                     OutlinedTextField(zone, { zone = it }, label = { Text("Timezone") }, enabled = !busy && editable,
