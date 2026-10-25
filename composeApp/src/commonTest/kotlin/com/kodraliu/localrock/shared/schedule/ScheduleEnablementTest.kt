@@ -2,6 +2,9 @@ package com.kodraliu.localrock.shared.schedule
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
 import kotlin.test.*
@@ -33,6 +36,8 @@ class ScheduleEnablementTest {
         var failJobReadAt: Int? = null
         var applyTimer = true
         var failTimerWrite = false
+        var timeoutTimerWrite = false
+        var timeoutTimerReadAt: Int? = null
         var applyJob = true
         var failJobWrite = false
         var gate: CompletableDeferred<Unit>? = null
@@ -52,6 +57,7 @@ class ScheduleEnablementTest {
                 timerReads++; events += "readTimer"
                 gate?.await()
                 if (failTimerReadAt == timerReads) error("MQTT unavailable")
+                if (timeoutTimerReadAt == timerReads) withTimeout(1) { delay(2) }
                 timerResponse?.invoke() ?: JsonArray(listOf(JsonArray(listOf(
                     JsonPrimitive("1680623937705"), JsonPrimitive(if (robot) "on" else "off"), JsonObject(emptyMap())
                 ))))
@@ -60,6 +66,7 @@ class ScheduleEnablementTest {
                 assertEquals("1680623937705", name)
                 timerWrites++; events += "writeTimer"
                 if (applyTimer) robot = enabled
+                if (timeoutTimerWrite) withTimeout(1) { delay(2) }
                 if (failTimerWrite) error("MQTT reply lost")
             },
         )
@@ -227,6 +234,28 @@ class ScheduleEnablementTest {
         val error = assertFailsWith<ScheduleException> { f.set(true) }
         assertTrue(error.message!!.contains("Robot timer was verified on"))
         assertTrue(f.robot); assertEquals(0, f.jobWrites)
+    }
+
+    @Test fun mqtt_timeout_is_verified_but_real_cancellation_stops_work() = runTest {
+        val lostReply = Fixture()
+        lostReply.timeoutTimerWrite = true
+        assertTrue(lostReply.set(true).enabled)
+        assertEquals(1, lostReply.timerWrites); assertEquals(1, lostReply.jobWrites)
+        for (at in listOf(1, 2)) {
+            val failedRead = Fixture()
+            failedRead.timeoutTimerReadAt = at
+            assertFailsWith<ScheduleException> { failedRead.set(true) }
+            assertEquals(0, failedRead.jobWrites)
+            assertEquals(if (at == 1) 0 else 1, failedRead.timerWrites)
+        }
+        val cancelled = Fixture()
+        cancelled.gate = CompletableDeferred()
+        val pending = async { cancelled.set(true) }
+        testScheduler.runCurrent()
+        pending.cancelAndJoin()
+        assertEquals(0, cancelled.timerWrites); assertEquals(0, cancelled.jobWrites)
+        cancelled.gate = null
+        assertTrue(cancelled.set(true).enabled) // Cancellation released the mutex.
     }
 
     @Test fun native_rpc_uses_timer_name_in_a_nested_array() {

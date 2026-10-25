@@ -21,6 +21,8 @@ import com.kodraliu.localrock.shared.schedule.*
 import com.kodraliu.localrock.shared.vacuum.*
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
 import kotlin.random.Random
@@ -67,20 +69,23 @@ fun ScheduleScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
         jobs = api.list(repository.duid)
         loaded = true
         try { repository.fetchFloorMaps() }
-        catch (e: CancellationException) { throw e }
+        catch (e: CancellationException) { currentCoroutineContext().ensureActive() }
         catch (_: Exception) { /* Schedule editing remains available offline. */ }
         nativeStates = emptyMap()
         if (jobs.any { it.nativeName != null }) {
             try {
                 val reply = repository.session.sendCommand("get_server_timer").requireOk("get_server_timer")
                 nativeStates = jobs.mapNotNull { job -> job.nativeName?.let { job.id to nativeTimerState(reply.result, it) } }.toMap()
-            } catch (e: CancellationException) { throw e }
+            } catch (e: CancellationException) { currentCoroutineContext().ensureActive() }
             catch (_: Exception) { /* Timer diagnostics remain unknown in More details. */ }
         }
     }
     suspend fun refreshAfterSave() {
         try { refresh() }
-        catch (e: CancellationException) { throw e }
+        catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            notice = "Save confirmed. The list could not be refreshed; tap Refresh."
+        }
         catch (_: Exception) { notice = "Save confirmed. The list could not be refreshed; tap Refresh." }
     }
     fun action(block: suspend () -> Unit) {

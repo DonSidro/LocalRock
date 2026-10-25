@@ -1,6 +1,8 @@
 package com.kodraliu.localrock.shared.schedule
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.*
 
@@ -34,7 +36,7 @@ class ScheduleEnablement(
                     val name = rawName?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
                         ?: throw ScheduleException("The native timer reference is invalid. No writes were sent.")
                     val desired = if (enabled) "On" else "Off"
-                    val initial = nativeTimerState(readTimers(), name)
+                    val initial = nativeTimerState(request { readTimers() }, name)
                     if (initial !in listOf("On", "Off")) {
                         throw ScheduleException("Native timer is ${initial.lowercase()}. Nothing was changed; refresh and check More details. Timers are not recreated automatically.")
                     }
@@ -46,10 +48,10 @@ class ScheduleEnablement(
                         }
                         robotProgress = "A robot update was attempted; its current state is unconfirmed."
                         // A lost MQTT reply isn't proof of failure. Read back once, never resend.
-                        try { writeTimer(name, enabled) }
+                        try { request { writeTimer(name, enabled) } }
                         catch (e: CancellationException) { throw e }
                         catch (_: Exception) { /* Read-back determines whether the state was applied. */ }
-                        val verified = try { nativeTimerState(readTimers(), name) }
+                        val verified = try { nativeTimerState(request { readTimers() }, name) }
                         catch (e: CancellationException) { throw e }
                         catch (_: Exception) {
                             throw ScheduleException("$robotProgress Server job was not saved. Refresh before retrying; no rollback was attempted.")
@@ -67,10 +69,11 @@ class ScheduleEnablement(
             if (current == null || snapshot(current) != snapshot(expected)) {
                 throw ScheduleException("$robotProgress Server job changed or was deleted; it was not overwritten. Refresh. No rollback was attempted.")
             }
-            val target = ServerSchedule(JsonObject(current.raw + patch))
-            if (snapshot(target) == snapshot(current)) return current
+            val baseline = current
+            val target = ServerSchedule(JsonObject(baseline.raw + patch))
+            if (snapshot(target) == snapshot(baseline)) return baseline
             var writeFailed = false
-            try { writeJob(current, patch) }
+            try { request { writeJob(baseline, patch) } }
             catch (e: CancellationException) { throw e }
             catch (_: Exception) { writeFailed = true }
             // HTTP success alone isn't confirmation; a failed response can also hide a saved write.
@@ -82,7 +85,7 @@ class ScheduleEnablement(
             if (confirmed != null && snapshot(confirmed) == snapshot(target)) return confirmed
             val reason = when {
                 confirmed == null -> "The server job is missing."
-                snapshot(confirmed) == snapshot(current) -> if (writeFailed) "Server save failed; the job is unchanged." else "Server did not retain the requested changes."
+                snapshot(confirmed) == snapshot(baseline) -> if (writeFailed) "Server save failed; the job is unchanged." else "Server did not retain the requested changes."
                 else -> "Server read-back conflicts with the requested changes."
             }
             throw ScheduleException("$robotProgress $reason The combined save is incomplete. Refresh before retrying; no rollback was attempted.")
@@ -101,7 +104,7 @@ class ScheduleEnablement(
     }
 
     private suspend fun readCurrent(id: String, validateReference: Boolean): ServerSchedule? {
-        val jobs = readJobs()
+        val jobs = request { readJobs() }
         val matches = jobs.filter { it.id == id }
         if (matches.size > 1) throw ScheduleException("Ambiguous server job ID. Refresh; no further writes were sent.")
         val job = matches.singleOrNull() ?: return null
@@ -120,6 +123,14 @@ class ScheduleEnablement(
             }
         }
         return job
+    }
+
+    /** Session timeouts cancel an inner await, not this save. Preserve actual caller cancellation. */
+    private suspend fun <T> request(block: suspend () -> T): T = try {
+        block()
+    } catch (e: CancellationException) {
+        currentCoroutineContext().ensureActive()
+        throw ScheduleException("Connection closed or request timed out.")
     }
 
     private fun snapshot(job: ServerSchedule): JsonObject = JsonObject(job.snapshot().toMutableMap().apply {
