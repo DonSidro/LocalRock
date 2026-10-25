@@ -10,7 +10,8 @@ Hardware execution remains to be validated.
 ## Schedule editor
 
 - Compact tappable cards show start time, repeat summary, Full/Rooms, cleaning mode,
-  and an enable switch. Native timer problems remain visible on enabled cards.
+  and an enable switch. Robot timer diagnostics appear only in the editor’s
+  More details section, using neutral text rather than an error warning.
 - A full-screen editor groups Start, Repeat and Task controls. Timezone, saved map
   reference and next UTC time are available under More details.
 - Repeat presets: Once, Every day, Weekdays, Weekends, and Custom weekday selection.

@@ -65,7 +65,7 @@ fun ScheduleScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
                 val reply = repository.session.sendCommand("get_server_timer").requireOk("get_server_timer")
                 nativeStates = jobs.mapNotNull { job -> job.nativeName?.let { job.id to nativeTimerState(reply.result, it) } }.toMap()
             } catch (e: CancellationException) { throw e }
-            catch (_: Exception) { notice = "Schedules loaded. Robot timer state could not be checked." }
+            catch (_: Exception) { /* Timer diagnostics remain unknown in More details. */ }
         }
     }
     fun action(block: suspend () -> Unit) {
@@ -126,10 +126,6 @@ fun ScheduleScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
                             Text(ScheduleCleanMode.from(job.settings)?.label ?: "Saved settings",
                                 style = MaterialTheme.typography.bodySmall)
                         }
-                        if (job.enabled && job.nativeName != null && nativeStates[job.id] != "On") {
-                            Text("Robot timer: ${nativeStates[job.id] ?: "Not checked"}",
-                                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
-                        }
                     }
                 }
             }
@@ -141,6 +137,7 @@ fun ScheduleScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
         dismissButton = { TextButton(enabled = !busy, onClick = { help = false; legacy = true }) { Text("Legacy timers") } })
     if (creating || editing != null) {
         ScheduleEditor(editing, viewModel.scheduleTimezone, rooms, map, mapName, currentFlag, busy, error,
+            nativeState = editing?.let { nativeStates[it.id] } ?: "Not checked",
             onDelete = { editing?.let { deleting = it; editing = null } },
             onDismiss = { if (!busy) { creating = false; editing = null; error = null } },
             onSave = { body ->
@@ -172,7 +169,7 @@ private fun formatScheduleTime(hour: Int, minute: Int) =
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ScheduleEditor(job: ServerSchedule?, defaultTimezone: String, rooms: List<ParsedMapRoom>,
-    map: ParsedMap?, mapName: String, currentFlag: Int, busy: Boolean, error: String?,
+    map: ParsedMap?, mapName: String, currentFlag: Int, busy: Boolean, error: String?, nativeState: String,
     onDelete: () -> Unit, onDismiss: () -> Unit, onSave: (JsonObject) -> Unit) {
     val initial = job?.weekly ?: WeeklyTime(8, 0, (1..5).toSet())
     var hour by remember { mutableStateOf(initial.hour) }
@@ -270,6 +267,11 @@ private fun ScheduleEditor(job: ServerSchedule?, defaultTimezone: String, rooms:
                 if (!repeated) Text("Runs once at the next matching start time after you enable it, then turns off.", style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { details = !details }) { Text(if (details) "Hide details" else "More details") }
                 if (details) {
+                    if (job?.nativeName != null) {
+                        Text("Robot timer (last check): $nativeState", style = MaterialTheme.typography.bodySmall)
+                        Text("This is separate from Enabled. Imported schedules require the robot timer to be on; the Enabled switch only changes the server schedule.",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
                     OutlinedTextField(zone, { zone = it }, label = { Text("Timezone") }, enabled = !busy && editable,
                         singleLine = true, modifier = Modifier.fillMaxWidth())
                     Text("Times follow this timezone, including daylight-saving changes.", style = MaterialTheme.typography.bodySmall)
