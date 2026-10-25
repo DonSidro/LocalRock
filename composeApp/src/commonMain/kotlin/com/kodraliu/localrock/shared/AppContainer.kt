@@ -77,6 +77,7 @@ class AppContainer(
     )
 
     private val loginApi = LoginApi(httpClient)
+    val scheduleApi = com.kodraliu.localrock.shared.schedule.ScheduleApi(httpClient)
     private val deviceApi = DeviceApi(httpClient)
     val onboardingAdminApi: OnboardingAdminApi = OnboardingAdminApi(adminHttpClient)
 
@@ -461,3 +462,4 @@ class AppContainer(
         const val PROBE_LINK_RETRY_DELAY_MS = 500L
     }
 }
+
