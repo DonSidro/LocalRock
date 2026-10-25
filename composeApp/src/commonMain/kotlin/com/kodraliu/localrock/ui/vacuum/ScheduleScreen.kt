@@ -300,11 +300,6 @@ private fun ScheduleEditor(job: ServerSchedule?, defaultTimezone: String, rooms:
                         Text("Robot timer (last check): $nativeState", style = MaterialTheme.typography.bodySmall)
                         Text("Enabled synchronizes this native timer and the server job, with read-back verification. Time and cleaning edits leave the timer state unchanged.",
                             style = MaterialTheme.typography.bodySmall)
-                        TextButton(enabled = !busy && editable, onClick = { enablementRequested = true }) {
-                            Text("Synchronize enabled state")
-                        }
-                        if (enablementRequested) Text("The selected Enabled state will be synchronized when you save.",
-                            style = MaterialTheme.typography.bodySmall)
                     }
                     OutlinedTextField(zone, { zone = it }, label = { Text("Timezone") }, enabled = !busy && editable,
                         singleLine = true, modifier = Modifier.fillMaxWidth())

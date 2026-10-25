@@ -31,9 +31,9 @@ Hardware execution remains to be validated.
   `param.params[0].name`, read `get_server_timer`, update only if needed using
   `upd_server_timer` with `[[name, "on"/"off"]]`, and verify through another read
   before saving and confirming the HTTP job. Native names are not HTTP job IDs.
-- More details contains a Synchronize enabled state action: it applies the selected
-  Enabled value when Save is pressed, even if the server already has that value.
-  This repairs an enabled server job whose native timer is off without off/on taps.
+- Enabled is the only enablement control. To reconcile an existing mismatch,
+  disable the schedule and wait for confirmation, then enable it again.
+  In the editor, save each change. More details contains read-only diagnostics.
 - Time/settings-only edits omit `enabled` and never read or mutate native enablement
   as part of the save. Routine refresh may still read native state for diagnostics.
 - Jobs without a native name remain server-only, including LocalRock-created jobs
