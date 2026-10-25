@@ -29,13 +29,15 @@ class ServerScheduleTest {
             assertEquals(job.settings!!.filterKeys { it != "segments" }, entry.filterKeys { it != "segments" })
         }
     }
-    @Test fun complex_or_one_time_schedules_are_not_rewritten() {
+    @Test fun complex_schedules_are_not_rewritten() {
         for (cron in listOf("*/5 8 * * *", "0 8 24 10 *", "0 8,9 * * 1", "0 24 * * 1", "0 8 * * 8", "0 8 * * 1,")) {
             assertNull(WeeklyTime.parse(cron), cron)
         }
         val once = ServerSchedule(JsonObject(imported().raw + ("repeated" to JsonPrimitive(false))))
-        assertFalse(once.editable)
-        assertFailsWith<IllegalArgumentException> { once.update(WeeklyTime(8, 0, setOf(1)), "UTC", true) }
+        assertTrue(once.editable)
+        val patch = once.update(WeeklyTime(8, 0, setOf(1)), "UTC", true)
+        assertFalse(patch["repeated"]!!.jsonPrimitive.boolean)
+        assertFalse("param" in patch)
     }
     @Test fun weekday_ranges_and_sunday_alias_are_supported() {
         assertEquals(setOf(1,2,3,4,5), WeeklyTime.parse("10 8 * * 1-5")!!.days)

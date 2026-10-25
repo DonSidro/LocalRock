@@ -18,14 +18,14 @@ data class ServerSchedule(val raw: JsonObject) {
     val settings: JsonObject? get() = (param?.get("params") as? JsonArray)?.singleOrNull() as? JsonObject
     val nativeName: String? get() = (settings?.get("name") as? JsonPrimitive)?.contentOrNull
     val mapIndex: String? get() = (settings?.get("map_index") as? JsonPrimitive)?.contentOrNull
-    val weekly: WeeklyTime? get() = if (repeated) WeeklyTime.parse(cron) else null
+    val weekly: WeeklyTime? get() = WeeklyTime.parse(cron)
     val editable: Boolean get() = weekly != null && timezone.isNotBlank() && settings != null &&
         (param?.get("method") as? JsonPrimitive)?.content == "server_scheduled_start"
 
     fun settingsText(key: String): String = (settings?.get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
 
     /** Only changed settings are supplied; omitted model fields and native timer identity survive. */
-    fun update(time: WeeklyTime, zone: String, enabled: Boolean, changes: Map<String, JsonElement> = emptyMap()): JsonObject {
+    fun update(time: WeeklyTime, zone: String, enabled: Boolean, changes: Map<String, JsonElement> = emptyMap(), repeated: Boolean = this.repeated): JsonObject {
         require(editable) { "This schedule format is read-only" }
         require(zone.isNotBlank()) { "Enter an IANA timezone" }
         require(changes.keys.all { it in EDITABLE_SETTINGS }) { "Unsupported setting" }
@@ -33,6 +33,7 @@ data class ServerSchedule(val raw: JsonObject) {
             put("cron", time.cron())
             put("timeZoneId", zone.trim())
             put("enabled", enabled)
+            put("repeated", repeated)
             if (changes.isNotEmpty()) {
                 put("param", JsonObject(param!!.toMutableMap().apply {
                     put("params", JsonArray(listOf(JsonObject(settings!!.toMutableMap().apply { putAll(changes) }))))
@@ -46,13 +47,13 @@ data class ServerSchedule(val raw: JsonObject) {
 
     companion object {
         val EDITABLE_SETTINGS = setOf("segments", "repeat", "fan_power", "water_box_mode", "mop_mode")
-        fun create(time: WeeklyTime, zone: String, settings: Map<String, JsonElement>): JsonObject {
+        fun create(time: WeeklyTime, zone: String, settings: Map<String, JsonElement>, repeated: Boolean = true): JsonObject {
             require(zone.isNotBlank()) { "Enter an IANA timezone" }
             require(settings.keys.all { it in EDITABLE_SETTINGS })
             return buildJsonObject {
                 put("cron", time.cron()); put("timeZoneId", zone.trim())
                 // New jobs are explicitly enabled after review, not while editing.
-                put("enabled", false); put("repeated", true); put("type", "clean")
+                put("enabled", false); put("repeated", repeated); put("type", "clean")
                 put("param", buildJsonObject {
                     put("id", 1); put("method", "server_scheduled_start")
                     put("params", JsonArray(listOf(buildJsonObject {
