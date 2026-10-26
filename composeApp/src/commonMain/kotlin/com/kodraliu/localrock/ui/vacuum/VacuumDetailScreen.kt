@@ -305,6 +305,7 @@ fun VacuumDetailScreen(
         // never scrolls out of view and the primary action never moves under the thumb.
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             MapHeroSection(
+                deviceId = viewModel.repository.duid,
                 parsedMap = parsedMap,
                 busy = busy,
                 selectedRoomIds = selectedRoomIds,
@@ -578,6 +579,7 @@ fun VacuumDetailScreen(
 
 @Composable
 private fun MapHeroSection(
+    deviceId: String,
     parsedMap: ParsedMap?,
     busy: Boolean,
     selectedRoomIds: List<Int>,
@@ -606,6 +608,7 @@ private fun MapHeroSection(
         if (parsedMap != null) {
             VacuumMapImage(
                 map = parsedMap,
+                viewportScope = deviceId to currentFloorFlag,
                 selectedRoomIds = selectedRoomIds,
                 onRoomTap = onRoomTap,
                 modifier = Modifier.fillMaxSize(),
@@ -740,6 +743,7 @@ private fun VacuumMapImage(
     selectedRoomIds: List<Int>,
     onRoomTap: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    viewportScope: Any? = null,
 ) {
     val bitmap = rememberMapBitmap(map)
     val labelRooms = remember(map.rooms) { map.rooms.filter { it.labelNormX != null && it.labelNormY != null } }
@@ -767,17 +771,11 @@ private fun VacuumMapImage(
     }
     val currentFit by rememberUpdatedState(fit)
 
-    var mapScale by remember(map) { mutableStateOf(1f) }
-    var mapOffset by remember(map) { mutableStateOf(Offset.Zero) }
-    // Framed again when the view changes size, e.g. when the phone is rotated.
-    var framedFor by remember(map) { mutableStateOf<Size?>(null) }
-    LaunchedEffect(fit) {
-        val target = fit ?: return@LaunchedEffect
-        if (framedFor != viewport) {
-            mapScale = target.first
-            mapOffset = target.second
-            framedFor = viewport
-        }
+    val identity = map.viewportIdentity(viewportScope)
+    val mapViewport = remember { LiveMapViewport() }
+    val currentMap by rememberUpdatedState(map)
+    LaunchedEffect(identity, viewport, fit) {
+        mapViewport.frameIfNeeded(identity, viewport, fit)
     }
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
@@ -786,32 +784,32 @@ private fun VacuumMapImage(
                 .fillMaxSize()
                 .clipToBounds()
                 .onSizeChanged { viewport = it.toSize() }
-                .pointerInput(map) {
+                .pointerInput(identity) {
                     detectTransformGestures { centroid, pan, zoom, _ ->
                         val view = size.toSize()
                         val (newScale, newOffset) =
-                            zoomMap(mapScale, mapOffset, centroid, pan, zoom, map.fittedSize(view), view)
-                        mapScale = newScale
-                        mapOffset = newOffset
+                            zoomMap(mapViewport.scale, mapViewport.offset, centroid, pan, zoom, currentMap.fittedSize(view), view)
+                        mapViewport.scale = newScale
+                        mapViewport.offset = newOffset
                     }
                 }
-                .pointerInput(map) {
+                .pointerInput(identity) {
                     detectTapGestures(
                         // Double tap returns to the framed view, not to the padded whole grid.
                         onDoubleTap = {
                             currentFit?.let { (s, o) ->
-                                mapScale = s
-                                mapOffset = o
+                                mapViewport.scale = s
+                                mapViewport.offset = o
                             }
                         },
                         onTap = { tapOffset ->
-                            val content = map.fittedSize(size.toSize())
-                            val p = (tapOffset - mapOffset) / mapScale
+                            val content = currentMap.fittedSize(size.toSize())
+                            val p = (tapOffset - mapViewport.offset) / mapViewport.scale
                             val normX = p.x / content.width
                             val normY = p.y / content.height
                             // The view is larger than the map; a tap beside it is not on a room.
                             if (normX in 0f..1f && normY in 0f..1f) {
-                                map.roomAtNorm(normX, normY)?.let { currentOnRoomTap(it.id) }
+                                currentMap.roomAtNorm(normX, normY)?.let { currentOnRoomTap(it.id) }
                             }
                         },
                     )
@@ -819,8 +817,8 @@ private fun VacuumMapImage(
         ) {
             val content = map.fittedSize(size)
             withTransform({
-                translate(left = mapOffset.x, top = mapOffset.y)
-                scale(mapScale, mapScale, pivot = Offset.Zero)
+                translate(left = mapViewport.offset.x, top = mapViewport.offset.y)
+                scale(mapViewport.scale, mapViewport.scale, pivot = Offset.Zero)
             }) {
                 drawImage(
                     image = bitmap,
@@ -838,8 +836,8 @@ private fun VacuumMapImage(
             for (room in labelRooms) {
                 val normX = room.labelNormX ?: continue
                 val normY = room.labelNormY ?: continue
-                val cx = mapOffset.x + normX * content.width * mapScale
-                val cy = mapOffset.y + normY * content.height * mapScale
+                val cx = mapViewport.offset.x + normX * content.width * mapViewport.scale
+                val cy = mapViewport.offset.y + normY * content.height * mapViewport.scale
                 if (cx < 0f || cx > size.width || cy < 0f || cy > size.height) continue
                 val order = selectedRoomIds.indexOf(room.id)
                 val selected = order >= 0
@@ -867,7 +865,7 @@ private fun VacuumMapImage(
 
         // Zoom is reported relative to the framed view, which is now the resting state.
         val baseScale = fit?.first ?: 1f
-        val relativeZoom = if (baseScale > 0f) mapScale / baseScale else mapScale
+        val relativeZoom = if (baseScale > 0f) mapViewport.scale / baseScale else mapViewport.scale
         if (relativeZoom > 1.05f) {
             Surface(
                 modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
