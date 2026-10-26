@@ -6,7 +6,7 @@ If the jobs collection is unavailable with HTTP 404 or 405, the app uses the leg
 
 ## Editing and enablement
 
-Tap a schedule to edit its time, repetition or cleaning settings. Model-specific SmartPlan, water and mop-route options are retained. Jobs in an unsupported format remain visible with a read-only editor rather than being silently converted.
+The compact list is sorted by start time and shows repetition, Full or selected rooms, cleaning mode and an enable switch. Tap a schedule to open the editor, with separate Start, Repeat, Cleaning Mode and Map controls. Select Full or choose rooms from the loaded map; imported map references are preserved. Confirm the intended map before replacing saved rooms. Model-specific SmartPlan, water and mop-route options are retained. Jobs in an unsupported format remain visible with a read-only editor rather than being silently converted.
 
 Server jobs retain their IDs, native references, room order and unedited settings. Time and cleaning-setting edits do not recreate native timers. Changing Enabled verifies a linked native timer, changes it only when necessary, then saves and reads back the server job. Jobs without a native reference use only the server API. The HTTP job ID and native timer name are different identifiers.
 

@@ -1071,7 +1071,7 @@ class VacuumRepository(
         val id = robotId(timer, useServerTimer)
         // The new settings come from the edit dialog's own choices, which know nothing of the
         // mirror link; carry it forward so a second edit can still find the real robot-side id.
-        val newSettings = settings.copy(serverTimerId = timer.settings.serverTimerId, segments = timer.settings.segments, mapIndex = timer.settings.mapIndex, cleanMop = timer.settings.cleanMop)
+        val newSettings = settings.copy(serverTimerId = timer.settings.serverTimerId, segments = settings.segments ?: timer.settings.segments, mapIndex = timer.settings.mapIndex, cleanMop = timer.settings.cleanMop)
         if (useServerTimer) session.delServerTimer(id).requireOk("del_server_timer")
         else session.delTimer(id).requireOk("del_timer")
         try {

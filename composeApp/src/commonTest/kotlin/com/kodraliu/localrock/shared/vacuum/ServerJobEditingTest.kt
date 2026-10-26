@@ -47,4 +47,19 @@ class ServerJobEditingTest {
     @Test fun weekly_ranges_are_not_silently_lost() {
         assertEquals(setOf(1,2,3,4,5), job("10 9 ? * 1-5").toCleanTimer().weekdays)
     }
+    @Test fun explicit_room_change_preserves_map_native_name_and_room_order() {
+        val original = job(); val timer = original.toCleanTimer()
+        val patch = serverJobEditPatch(timer,9,10,setOf(0,6),timer.settings.copy(segments = "17,20,18"),false,null,true,false)
+        val saved = ServerSchedule(JsonObject(original.raw + patch))
+        assertEquals("17,20,18", saved.settingsText("segments"))
+        assertEquals(original.settings!! - "segments", saved.settings!! - "segments")
+        assertFalse("enabled" in patch)
+    }
+    @Test fun custom_and_smartplan_remain_distinct_cleaning_modes() {
+        val custom = timerSettingsFor(TimerKind.CUSTOM, null,null,null,1)
+        val smart = timerSettingsFor(TimerKind.SMART_PLAN,null,null,null,1)
+        assertEquals(TimerKind.CUSTOM,custom.kind)
+        assertEquals(TimerKind.SMART_PLAN,smart.kind)
+        assertNotEquals(custom.toActionObject(),smart.toActionObject())
+    }
 }
