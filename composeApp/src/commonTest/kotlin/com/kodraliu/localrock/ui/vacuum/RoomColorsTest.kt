@@ -7,9 +7,9 @@ import kotlin.test.assertEquals
 
 class RoomColorsTest {
     private fun mapOf(vararg rooms: Int): ParsedMap {
-        val raw = ByteArray(rooms.size) { ((rooms[it] shl 3) or 7).toByte() }
+        val raw = ByteArray(rooms.size) { if (rooms[it] < 0) 1 else ((rooms[it] shl 3) or 7).toByte() }
         return ParsedMap(
-            width = rooms.size, height = 1, grid = ByteArray(rooms.size) { 128.toByte() },
+            width = rooms.size, height = 1, grid = ByteArray(rooms.size) { if (rooms[it] < 0) 127.toByte() else 128.toByte() },
             rooms = emptyList(), resolution = 0.05f, originalGrid = raw,
         )
     }
@@ -20,6 +20,12 @@ class RoomColorsTest {
         assertNotEquals(slots[1], slots[2])
         assertNotEquals(slots[2], slots[3])
         assertNotEquals(slots[3], slots[1])
+    }
+
+    @Test
+    fun rooms_split_by_a_wall_still_count_as_touching() {
+        val slots = roomColorSlots(mapOf(1, 1, -1, -1, 2, 2), 4)
+        assertNotEquals(slots[1], slots[2])
     }
 
     @Test
