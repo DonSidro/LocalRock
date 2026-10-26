@@ -293,6 +293,9 @@ private fun renderLayer(map: ParsedMap, palette: MapPalette, scale: Int, overlay
 }
 
 private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
+    // Cells are clipped to a rounded outline of the plan, so its edges are not stair steps.
+    canvas.save()
+    canvas.clipPath(mapOutlinePath(map))
     val wallPaint = Paint().apply { color = palette.wall }
     val floorPaint = Paint().apply { color = palette.floor }
     val roomPaint = Paint()
@@ -331,6 +334,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
             )
         }
     }
+    canvas.restore()
 }
 
 private fun drawOverlays(canvas: Canvas, map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean) {
