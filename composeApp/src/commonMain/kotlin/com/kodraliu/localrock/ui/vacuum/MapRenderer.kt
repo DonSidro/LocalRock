@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import com.kodraliu.localrock.shared.vacuum.map.MapZone
@@ -61,7 +62,7 @@ private val LightPalette = MapPalette(
     rooms = OfficialRoomColors,
     // Deep enough to read as ink rather than neon against the pastels.
     path = Color(0xF2FFFFFF),
-    charger = Color(0xFF1565C0),
+    charger = Color(0xFF1FB36A),
     robot = Color(0xFF1FB36A),
     markerRing = Color(0xFFFFFFFF),
 )
@@ -71,7 +72,7 @@ private val DarkPalette = MapPalette(
     floor = Color(0xFF17201F),
     rooms = OfficialRoomColors,
     path = Color(0xF2FFFFFF),
-    charger = Color(0xFF64B5F6),
+    charger = Color(0xFF2ED47E),
     robot = Color(0xFF2ED47E),
     markerRing = Color(0xFF0B1112),
 )
@@ -393,13 +394,20 @@ private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
             gfxPath.lineTo(cellX, cellY)
         }
     }
-    val pathPaint = Paint().apply {
+    // A wide faint band for the ground the robot has covered, under the thin line of its route.
+    canvas.drawPath(gfxPath, Paint().apply {
+        color = Color(0x38FFFFFF)
+        style = PaintingStyle.Stroke
+        strokeWidth = 6.5f
+        strokeCap = StrokeCap.Round
+        strokeJoin = StrokeJoin.Round
+    })
+    canvas.drawPath(gfxPath, Paint().apply {
         color = palette.path
         style = PaintingStyle.Stroke
         strokeWidth = 0.6f
         strokeCap = StrokeCap.Round
-    }
-    canvas.drawPath(gfxPath, pathPaint)
+    })
 }
 
 private fun drawMarker(
@@ -420,11 +428,21 @@ private fun drawMarker(
     val ringPaint = Paint().apply { this.color = ring }
     val fillPaint = Paint().apply { this.color = color }
     if (square) {
-        canvas.drawRect(
-            Rect(cellX - radius - 1f, cellY - radius - 1f, cellX + radius + 1f, cellY + radius + 1f),
-            ringPaint,
-        )
-        canvas.drawRect(Rect(cellX - radius, cellY - radius, cellX + radius, cellY + radius), fillPaint)
+        val r = radius * 0.8f
+        canvas.drawRoundRect(cellX - r - 1f, cellY - r - 1f, cellX + r + 1f, cellY + r + 1f, 2.5f, 2.5f, ringPaint)
+        canvas.drawRoundRect(cellX - r, cellY - r, cellX + r, cellY + r, 2f, 2f, fillPaint)
+        // A small house for the dock.
+        val house = Path().apply {
+            moveTo(cellX, cellY - r * 0.6f)
+            lineTo(cellX + r * 0.6f, cellY - r * 0.05f)
+            lineTo(cellX + r * 0.4f, cellY - r * 0.05f)
+            lineTo(cellX + r * 0.4f, cellY + r * 0.55f)
+            lineTo(cellX - r * 0.4f, cellY + r * 0.55f)
+            lineTo(cellX - r * 0.4f, cellY - r * 0.05f)
+            lineTo(cellX - r * 0.6f, cellY - r * 0.05f)
+            close()
+        }
+        canvas.drawPath(house, Paint().apply { this.color = Color.White })
     } else {
         canvas.drawCircle(Offset(cellX, cellY), radius + 1.5f, ringPaint)
         canvas.drawCircle(Offset(cellX, cellY), radius, fillPaint)

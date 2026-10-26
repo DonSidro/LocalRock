@@ -126,6 +126,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
@@ -685,12 +686,9 @@ private fun MapHeroSection(
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val heroBackground = if (scheme.surface.luminance() < 0.5f) {
-        scheme.surfaceVariant
-    } else {
-        // Near-white, so the tinted rooms advance instead of sinking into a grey slab.
-        scheme.surfaceContainerLowest
-    }
+    // Black in both themes, as in the Roborock app: the bright room colours need it, and the gaps in
+    // the plan then read as unscanned instead of grey floor.
+    val heroBackground = Color(0xFF0B0F10)
     Box(
         modifier = modifier
             .clipToBounds()
@@ -900,12 +898,12 @@ private fun VacuumMapImage(
     val labelStyle = TextStyle(
         fontSize = 11.sp,
         fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurface,
+        color = Color.White,
+        shadow = Shadow(color = Color(0xE6000000), offset = Offset(0f, 1f), blurRadius = 5f),
     )
-    val bgColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
     val selectedBgColor = MaterialTheme.colorScheme.primary
     // In dark mode `primary` is a bright cyan, so white-on-primary would be unreadable.
-    val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary)
+    val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary, shadow = null)
     val currentOnRoomTap by rememberUpdatedState(onRoomTap)
     val currentOnObstacleTap by rememberUpdatedState(onObstacleTap)
     val currentYaw by rememberUpdatedState(yawDegrees)
@@ -1042,12 +1040,14 @@ private fun VacuumMapImage(
                 val th = measured.size.height.toFloat()
                 val padX = 6.dp.toPx()
                 val padY = 3.dp.toPx()
-                drawRoundRect(
-                    color = if (selected) selectedBgColor else bgColor,
-                    topLeft = Offset(cx - tw / 2 - padX, cy - th / 2 - padY),
-                    size = Size(tw + padX * 2, th + padY * 2),
-                    cornerRadius = CornerRadius(6.dp.toPx()),
-                )
+                if (selected) {
+                    drawRoundRect(
+                        color = selectedBgColor,
+                        topLeft = Offset(cx - tw / 2 - padX, cy - th / 2 - padY),
+                        size = Size(tw + padX * 2, th + padY * 2),
+                        cornerRadius = CornerRadius(6.dp.toPx()),
+                    )
+                }
                 drawText(
                     textMeasurer = textMeasurer,
                     text = text,
