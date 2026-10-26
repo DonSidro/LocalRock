@@ -850,18 +850,19 @@ class VacuumRepository(
         _timers.value = _timers.value.filter { it.id != timer.id }
     }
 
+    // Each read stands alone: a Qrevo answers the volume as [45], the LED as [1] and the carpet mode
+    // as [{...}], and one read that threw used to skip every read after it.
     suspend fun fetchRobotSettings() {
-        runCatching { session.getSoundVolume() }.getOrNull()
-            ?.result?.jsonPrimitive?.intOrNull
+        suspend fun read(key: String?, ask: suspend () -> V1Response): Int? =
+            runCatching { ask().result.asAnswerInt(key) }.getOrNull()
+
+        read(null) { session.getSoundVolume() }
             ?.let { _robotSettings.update { s -> s.copy(volume = it) } }
-        runCatching { session.getChildLock() }.getOrNull()
-            ?.result?.jsonObject?.get("lock_status")?.jsonPrimitive?.intOrNull
+        read("lock_status") { session.getChildLock() }
             ?.let { _robotSettings.update { s -> s.copy(childLock = it == 1) } }
-        runCatching { session.getLedStatus() }.getOrNull()
-            ?.result?.jsonObject?.get("led_status")?.jsonPrimitive?.intOrNull
+        read("led_status") { session.getLedStatus() }
             ?.let { _robotSettings.update { s -> s.copy(ledEnabled = it == 1) } }
-        runCatching { session.getCarpetCleanMode() }.getOrNull()
-            ?.result?.jsonObject?.get("carpet_clean_mode")?.jsonPrimitive?.intOrNull
+        read("carpet_clean_mode") { session.getCarpetCleanMode() }
             ?.let { _robotSettings.update { s -> s.copy(carpetMode = it) } }
     }
 
@@ -1257,4 +1258,15 @@ internal fun VacuumStatus.applyDpsPush(push: Map<Int, JsonElement>): VacuumStatu
         chargeStatus = chargeStatus,
         dryStatus = dryStatus,
     )
+}
+
+/**
+ * A number out of a command answer, whatever shape the firmware used: `45`, `[45]`, `{"key": 45}`
+ * or `[{"key": 45}]`. [key] names the field when the answer is an object. Any other shape is null.
+ */
+internal fun JsonElement?.asAnswerInt(key: String? = null): Int? = when (this) {
+    is JsonPrimitive -> intOrNull
+    is JsonArray -> firstOrNull().asAnswerInt(key)
+    is JsonObject -> if (key == null) null else get(key).asAnswerInt()
+    else -> null
 }
