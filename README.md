@@ -311,7 +311,7 @@ cd LocalRock
 - Use the server **root** URL (`https://host:555`), not `/admin`.
 
 **Can't connect behind a reverse proxy (Traefik and others)**
-- A proxy with strict SNI picks its certificate by the host name in the TLS handshake. The app sends it on Android since 1.3.0 and on iOS from the next release; on an older build, update. Traefik logs `No certificate found for domain: ""` when it is missing.
+- A proxy with strict SNI picks its certificate by the host name in the TLS handshake. The app sends it on Android since 1.3.0 and on iOS since 1.4.0; on an older build, update. Traefik logs `No certificate found for domain: ""` when it is missing.
 
 **Add vacuum can't reach the robot**
 - Turn off any VPN on the phone while pairing. The phone has to join the vacuum's own Wi‑Fi, and a VPN can route that traffic away from it.

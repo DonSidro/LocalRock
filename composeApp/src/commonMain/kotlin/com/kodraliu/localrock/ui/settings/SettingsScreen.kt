@@ -51,7 +51,7 @@ import com.kodraliu.localrock.ui.rememberNotificationPermissionRequest
 import com.kodraliu.localrock.ui.whatsnew.WhatsNewSheet
 import com.kodraliu.localrock.ui.whatsnew.whatsNewFor
 
-const val APP_VERSION: String = "1.3.0"
+const val APP_VERSION: String = "1.4.0"
 
 private const val PROJECT_URL = "https://github.com/DonSidro/LocalRock/"
 
