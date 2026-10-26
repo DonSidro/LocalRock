@@ -62,7 +62,7 @@ private val LightPalette = MapPalette(
     // Deep enough to read as ink rather than neon against the pastels.
     path = Color(0xF2FFFFFF),
     charger = Color(0xFF1565C0),
-    robot = Color(0xFF00595A),
+    robot = Color(0xFF1FB36A),
     markerRing = Color(0xFFFFFFFF),
 )
 
@@ -72,7 +72,7 @@ private val DarkPalette = MapPalette(
     rooms = OfficialRoomColors,
     path = Color(0xF2FFFFFF),
     charger = Color(0xFF64B5F6),
-    robot = Color(0xFF4CDADA),
+    robot = Color(0xFF2ED47E),
     markerRing = Color(0xFF0B1112),
 )
 
@@ -409,7 +409,7 @@ private fun drawMarker(
     color: Color,
     ring: Color,
     square: Boolean,
-    radius: Float = 4f,
+    radius: Float = 5.5f,
 ) {
 
     val cellX = (point.x / 50f) - map.pixelOffsetLeft
@@ -428,5 +428,11 @@ private fun drawMarker(
     } else {
         canvas.drawCircle(Offset(cellX, cellY), radius + 1.5f, ringPaint)
         canvas.drawCircle(Offset(cellX, cellY), radius, fillPaint)
+        // The robot seen from above: a white ring for its body and a dot for the lidar turret.
+        val white = Paint().apply { this.color = Color.White }
+        val hole = Paint().apply { this.color = color }
+        canvas.drawCircle(Offset(cellX, cellY), radius * 0.62f, white)
+        canvas.drawCircle(Offset(cellX, cellY), radius * 0.46f, hole)
+        canvas.drawCircle(Offset(cellX, cellY - radius * 0.12f), radius * 0.2f, white)
     }
 }
