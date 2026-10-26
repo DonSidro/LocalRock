@@ -33,6 +33,9 @@ data class DockSettings(
     val washMode: Int? = null,
     val smartWash: SmartWashSettings? = null,
     val autoEmptyMode: Int? = null,
+    val mopDrying: Boolean? = null,
+    val dryTimeSeconds: Int? = null,
+    val washWaterTemperature: Int? = null,
 )
 
 data class SmartWashSettings(val mode: Int, val intervalSeconds: Int) {
@@ -77,6 +80,15 @@ data class DndSettings(
     val startHour: Int = 22,
     val startMinute: Int = 0,
     val endHour: Int = 8,
+    val endMinute: Int = 0,
+)
+
+/** The off-peak electricity window the robot is limited to, in the robot's local time. */
+data class ValleySettings(
+    val enabled: Boolean = false,
+    val startHour: Int = 22,
+    val startMinute: Int = 0,
+    val endHour: Int = 6,
     val endMinute: Int = 0,
 )
 
