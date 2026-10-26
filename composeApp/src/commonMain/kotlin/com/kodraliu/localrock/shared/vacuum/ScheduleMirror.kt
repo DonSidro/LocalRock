@@ -1,5 +1,6 @@
 package com.kodraliu.localrock.shared.vacuum
 
+import com.kodraliu.localrock.shared.schedule.ServerSchedule
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -13,6 +14,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * from, so a schedule without one never shows in this app's own list either. Both confirmed live.
  */
 interface ScheduleMirror {
+    suspend fun list(duid: String): List<ServerSchedule>
     /** Adds the record and returns the id the cloud gave it. */
     suspend fun create(duid: String, job: JsonObject): String
     suspend fun update(duid: String, jobId: String, job: JsonObject)
@@ -59,3 +61,4 @@ internal fun mirrorJobBody(
     fields["param"] = param
     return JsonObject(fields)
 }
+

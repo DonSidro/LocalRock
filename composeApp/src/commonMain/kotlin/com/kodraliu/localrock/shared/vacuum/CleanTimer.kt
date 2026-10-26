@@ -1,5 +1,6 @@
 package com.kodraliu.localrock.shared.vacuum
 
+import com.kodraliu.localrock.shared.schedule.ServerSchedule
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -14,6 +15,8 @@ data class CleanTimer(
     val weekdays: Set<Int>, // 0=Sun, 1=Mon … 6=Sat; empty means every day, unless [date] is set
     val settings: TimerSettings = TimerSettings(),
     val date: TimerDate? = null, // set for a one-time schedule, which runs on that day only
+    val serverJob: ServerSchedule? = null,
+    val editable: Boolean = true,
 )
 
 /**
@@ -30,7 +33,7 @@ data class TimerSettings(
     val waterBoxMode: Int? = null,
     val mopMode: Int? = null,
     val repeat: Int? = null,
-    // Carried by server_timer schedules, never set by this app's own UI yet: which rooms to
+    // Carried by server_timer schedules: which rooms to
     // clean ("0" for the whole home), whether mopping is on, and which saved map to use.
     val segments: String? = null,
     val cleanMop: Int? = null,
@@ -38,9 +41,8 @@ data class TimerSettings(
     // The official app maintains a second, independent copy of a server_timer schedule over
     // HTTP (POST/PUT /user/devices/{duid}/jobs), its own cloud-sync record with its own id, not
     // the robot's. That copy's settings carry this "name" field, the real server_timer id it
-    // mirrors, confirmed live. get_timer answers from that HTTP-side store, so a schedule read
-    // from it is this mirror, not the robot's real entry: editing or deleting it must use this
-    // id, not the timer's own [CleanTimer.id], or the write lands on nothing the robot has.
+    // mirrors. HTTP jobs carry this native reference separately from the job ID. Native
+    // commands must use this name, not [CleanTimer.id]. A job without it is server-only.
     // Never sent back out in [toActionObject]; the robot's own entries never carry it.
     val serverTimerId: String? = null,
 )
@@ -161,3 +163,4 @@ fun TimerSettings.summary(): String? {
     repeat?.takeIf { it > 1 }?.let { parts += "$it passes" }
     return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
+
