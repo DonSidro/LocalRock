@@ -48,10 +48,11 @@ data class TimerSettings(
 )
 
 /** The cleaning choice a schedule offers, as the official app words it. */
-enum class TimerKind { CURRENT, SMART_PLAN, VACUUM, VAC_AND_MOP, MOP }
+enum class TimerKind { CURRENT, SMART_PLAN, CUSTOM, VACUUM, VAC_AND_MOP, MOP }
 
 val TimerSettings.kind: TimerKind
     get() = when {
+        isCustomizeModeSet(fanPower, waterBoxMode, mopMode) -> TimerKind.CUSTOM
         isSmartModeSet(fanPower, waterBoxMode, mopMode) -> TimerKind.SMART_PLAN
         waterBoxMode == WaterBoxMode.OFF -> TimerKind.VACUUM
         fanPower == VacuumFanPower.OFF -> TimerKind.MOP
@@ -71,6 +72,7 @@ fun timerSettingsFor(
     mopMode: Int?,
     repeat: Int?,
 ): TimerSettings = when (kind) {
+    TimerKind.CUSTOM -> TimerSettings(VacuumFanPower.CUSTOM, WaterBoxMode.CUSTOM, MopRoute.CUSTOM, repeat)
     TimerKind.CURRENT -> TimerSettings(repeat = repeat)
     TimerKind.SMART_PLAN -> TimerSettings(VacuumFanPower.SMART, WaterBoxMode.SMART, MopRoute.SMART, repeat)
     TimerKind.VACUUM -> TimerSettings(fanPower, WaterBoxMode.OFF, null, repeat)
@@ -143,6 +145,7 @@ fun TimerSettings.summary(): String? {
         return parts.joinToString(" · ")
     }
     when (kind) {
+        TimerKind.CUSTOM -> parts += "Custom"
         TimerKind.SMART_PLAN -> Unit
         TimerKind.VACUUM -> parts += "Vacuum"
         TimerKind.VAC_AND_MOP -> parts += "Vacuum and mop"

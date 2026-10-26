@@ -45,8 +45,8 @@ internal fun serverJobEditPatch(
             val before = timer.settings.toActionObject()
             val after = settings.toActionObject()
             val edited = job.settings!!.toMutableMap()
-            // Only the dialog's cleaning controls can change these fields. Rooms/map/name stay intact.
-            for (key in listOf("fan_power", "water_box_mode", "mop_mode", "repeat")) {
+            // Only the dialog's cleaning controls can change these fields. Only explicit room changes replace segments; map/name stay intact.
+            for (key in listOf("fan_power", "water_box_mode", "mop_mode", "repeat", "segments")) {
                 if (before[key] != after[key]) {
                     val value = after[key]
                     if (value == null) edited.remove(key) else edited[key] = value
