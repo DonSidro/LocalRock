@@ -59,7 +59,11 @@ private fun dropCollinear(points: List<Long>, h: Int): List<Offset> {
     return kept
 }
 
-/** Corner cutting: each pass replaces a corner with two points a quarter of the way along its sides. */
+/**
+ * Corner cutting: each pass replaces a corner with two points a quarter of the way along its sides,
+ * but never more than [MAX_CUT_CELLS] from the corner, so a long straight wall keeps its square
+ * ends and only the stair steps along an edge are rounded.
+ */
 private fun smooth(points: List<Offset>, passes: Int): List<Offset> {
     var cur = points
     repeat(passes) {
@@ -67,13 +71,18 @@ private fun smooth(points: List<Offset>, passes: Int): List<Offset> {
         for (i in cur.indices) {
             val a = cur[i]
             val b = cur[(i + 1) % cur.size]
-            out += Offset(a.x * 0.75f + b.x * 0.25f, a.y * 0.75f + b.y * 0.25f)
-            out += Offset(a.x * 0.25f + b.x * 0.75f, a.y * 0.25f + b.y * 0.75f)
+            val len = kotlin.math.hypot(b.x - a.x, b.y - a.y)
+            if (len == 0f) continue
+            val cut = minOf(len * 0.25f, MAX_CUT_CELLS) / len
+            out += Offset(a.x + (b.x - a.x) * cut, a.y + (b.y - a.y) * cut)
+            out += Offset(b.x - (b.x - a.x) * cut, b.y - (b.y - a.y) * cut)
         }
         cur = out
     }
     return cur
 }
+
+private const val MAX_CUT_CELLS = 0.7f
 
 internal fun mapOutlinePath(map: ParsedMap): Path = Path().apply {
     fillType = PathFillType.EvenOdd
