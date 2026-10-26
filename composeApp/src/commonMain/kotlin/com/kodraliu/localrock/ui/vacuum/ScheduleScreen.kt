@@ -67,6 +67,9 @@ import com.kodraliu.localrock.shared.vacuum.kind
 import com.kodraliu.localrock.shared.vacuum.summary
 import com.kodraliu.localrock.shared.vacuum.timerSettingsFor
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,20 +82,34 @@ fun ScheduleScreen(
     val timers by repository.timers.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<CleanTimer?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var refresh by remember { mutableIntStateOf(0) }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(Unit) { runCatching { repository.fetchTimers() } }
+    LaunchedEffect(refresh) {
+        loading = true
+        loadError = null
+        try { repository.fetchTimers() }
+        catch (e: CancellationException) { currentCoroutineContext().ensureActive(); loadError = "Schedule request timed out. Retry to refresh." }
+        catch (e: Exception) { loadError = e.message ?: "Could not load schedules" }
+        finally { loading = false }
+    }
 
     // A refused save is shown, and the list is read back so it matches what the robot really holds.
     fun saveTimer(action: suspend () -> Unit) {
+        if (saving) return
+        saving = true
         scope.launch {
             try {
                 action()
-            } catch (e: Exception) {
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
                 runCatching { repository.fetchTimers() }
                 snackbarHostState.showSnackbar(e.message ?: "The schedule could not be saved")
-            }
+            } finally { saving = false }
         }
     }
 
@@ -107,12 +124,17 @@ fun ScheduleScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
+            if (!saving && !loading && loadError == null) FloatingActionButton(onClick = { showAddDialog = true }) {
                 Icon(Icons.Default.Add, "Add schedule")
             }
         },
     ) { padding ->
-        if (timers.isEmpty()) {
+        if (loading || loadError != null) {
+            Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(if (loading) "Loading schedules…" else loadError.orEmpty())
+                if (!loading) TextButton(onClick = { refresh++ }) { Text("Retry") }
+            }
+        } else if (timers.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Icon(Icons.Default.Schedule, null, Modifier.size(48.dp), MaterialTheme.colorScheme.onSurfaceVariant)
@@ -127,10 +149,11 @@ fun ScheduleScreen(
             }
         } else {
             LazyColumn(contentPadding = padding) {
-                items(timers, key = { it.id }) { timer ->
+                items(timers.sortedWith(compareBy<CleanTimer> { it.hour }.thenBy { it.minute }.thenBy { it.id }), key = { it.id }) { timer ->
                     TimerRow(
                         timer = timer,
-                        onEdit = { editing = timer },
+                        busy = saving,
+                        onEdit = { if (timer.editable) editing = timer },
                         onToggle = { saveTimer { repository.toggleTimer(timer) } },
                         onDelete = { saveTimer { repository.deleteTimer(timer) } },
                     )
@@ -146,7 +169,7 @@ fun ScheduleScreen(
             supportsSmartPlan = viewModel.supportsSmartPlan,
             supportsFastRoute = viewModel.supportsFastRoute,
             supportsWaterSlide = viewModel.supportsWaterSlide,
-            onSave = { hour, minute, weekdays, settings, once ->
+            onSave = { hour, minute, weekdays, settings, once, _, _, _ ->
                 showAddDialog = false
                 saveTimer { repository.createTimer(hour, minute, weekdays, settings, once) }
             },
@@ -160,19 +183,20 @@ fun ScheduleScreen(
             supportsSmartPlan = viewModel.supportsSmartPlan,
             supportsFastRoute = viewModel.supportsFastRoute,
             supportsWaterSlide = viewModel.supportsWaterSlide,
-            onSave = { hour, minute, weekdays, settings, once ->
+            onSave = { hour, minute, weekdays, settings, once, settingsChanged, timingChanged, enabled ->
                 editing = null
-                saveTimer { repository.updateTimer(timer, hour, minute, weekdays, settings, once) }
+                saveTimer { repository.updateTimer(timer, hour, minute, weekdays, settings, once, settingsChanged, timingChanged, enabled) }
             },
+            readNativeState = { repository.nativeScheduleState(timer) },
             onDismiss = { editing = null },
         )
     }
 }
 
 @Composable
-private fun TimerRow(timer: CleanTimer, onEdit: () -> Unit, onToggle: () -> Unit, onDelete: () -> Unit) {
+private fun TimerRow(timer: CleanTimer, busy: Boolean, onEdit: () -> Unit, onToggle: () -> Unit, onDelete: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onEdit).padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().clickable(enabled = !busy && timer.editable, onClick = onEdit).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -187,7 +211,7 @@ private fun TimerRow(timer: CleanTimer, onEdit: () -> Unit, onToggle: () -> Unit
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                formatClock(timer.hour, timer.minute, rememberUse24HourClock()),
+                if (timer.editable) formatClock(timer.hour, timer.minute, rememberUse24HourClock()) else timer.serverJob?.cron.orEmpty(),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = if (timer.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -197,6 +221,10 @@ private fun TimerRow(timer: CleanTimer, onEdit: () -> Unit, onToggle: () -> Unit
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (!timer.editable) Text("Unsupported format · read-only editor", style = MaterialTheme.typography.bodySmall)
+            timer.settings.segments?.let { rooms ->
+                Text(if (rooms == "0" || rooms.isBlank()) "Full" else "Rooms: $rooms", style = MaterialTheme.typography.bodySmall)
+            }
             timer.settings.summary()?.let { summary ->
                 Text(
                     summary,
@@ -205,10 +233,10 @@ private fun TimerRow(timer: CleanTimer, onEdit: () -> Unit, onToggle: () -> Unit
                 )
             }
         }
-        IconButton(onClick = onDelete) {
+        IconButton(onClick = onDelete, enabled = !busy) {
             Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked = timer.enabled, onCheckedChange = { onToggle() })
+        Switch(checked = timer.enabled, enabled = !busy, onCheckedChange = { onToggle() })
     }
 }
 
@@ -219,10 +247,17 @@ private fun TimerDialog(
     supportsSmartPlan: Boolean,
     supportsFastRoute: Boolean,
     supportsWaterSlide: Boolean,
-    onSave: (hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings, once: Boolean) -> Unit,
+    onSave: (hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings, once: Boolean, settingsChanged: Boolean, timingChanged: Boolean, enabled: Boolean) -> Unit,
+    readNativeState: (suspend () -> String)? = null,
     onDismiss: () -> Unit,
 ) {
     val start = initial?.settings ?: TimerSettings()
+    var enabled by remember { mutableStateOf(initial?.enabled ?: true) }
+    var touchedSettings by remember { mutableStateOf(emptySet<String>()) }
+    val settingsChanged = touchedSettings.isNotEmpty()
+    var moreDetails by remember { mutableStateOf(false) }
+    var nativeState by remember { mutableStateOf("Not checked") }
+    val detailScope = rememberCoroutineScope()
     var hour by remember { mutableIntStateOf(initial?.hour ?: 8) }
     var minute by remember { mutableIntStateOf(initial?.minute ?: 0) }
     // Once is the official app's default for a new schedule.
@@ -254,6 +289,12 @@ private fun TimerDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                if (initial?.serverJob != null) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Enabled")
+                        Switch(checked = enabled, onCheckedChange = { enabled = it })
+                    }
+                }
                 Text("Time", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 ClockStepper(hour, minute, onHourChange = { hour = it }, onMinuteChange = { minute = it })
                 ChipRow(
@@ -293,7 +334,7 @@ private fun TimerDialog(
                         add(TimerKind.VACUUM to "Vacuum")
                     },
                     selected = kind,
-                    onSelect = { kind = it },
+                    onSelect = { kind = it; touchedSettings = touchedSettings + setOf("fan", "water", "route") },
                 )
                 if (kind == TimerKind.VACUUM || kind == TimerKind.VAC_AND_MOP) {
                     ChipRow(
@@ -305,7 +346,7 @@ private fun TimerDialog(
                             VacuumFanPower.MAX to "Max",
                         ),
                         selected = fanPower,
-                        onSelect = { fanPower = it },
+                        onSelect = { fanPower = it; touchedSettings = touchedSettings + "fan" },
                     )
                 }
                 if (kind == TimerKind.VAC_AND_MOP || kind == TimerKind.MOP) {
@@ -317,7 +358,7 @@ private fun TimerDialog(
                             WaterBoxMode.HIGH to "High",
                         ),
                         selected = waterBoxMode,
-                        onSelect = { waterBoxMode = it },
+                        onSelect = { waterBoxMode = it; touchedSettings = touchedSettings + "water" },
                     )
                     ChipRow(
                         label = "Mop route",
@@ -332,15 +373,32 @@ private fun TimerDialog(
                             if (mopMode == MopRoute.DEEP_PLUS) add(MopRoute.DEEP_PLUS to "Deep+")
                         },
                         selected = mopMode,
-                        onSelect = { mopMode = it },
+                        onSelect = { mopMode = it; touchedSettings = touchedSettings + "route" },
                     )
                 }
                 ChipRow(
                     label = "Passes",
                     options = listOf(1 to "1", 2 to "2", 3 to "3"),
                     selected = repeat,
-                    onSelect = { repeat = it },
+                    onSelect = { repeat = it; touchedSettings = touchedSettings + "repeat" },
                 )
+                if (initial?.serverJob != null) {
+                    TextButton(onClick = { moreDetails = !moreDetails }) { Text("More details") }
+                    if (moreDetails) {
+                        Text("Enabled updates the server job and verifies its linked native timer when present.", style = MaterialTheme.typography.bodySmall)
+                        Text("Job: ${initial.id}", style = MaterialTheme.typography.bodySmall)
+                        Text("Timezone: ${initial.serverJob.timezone.ifBlank { "Server default" }}", style = MaterialTheme.typography.bodySmall)
+                        Text("Native timer: $nativeState", style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = {
+                            detailScope.launch {
+                                nativeState = "Checking…"
+                                try { nativeState = readNativeState?.invoke() ?: "Not checked" }
+                                catch (e: CancellationException) { currentCoroutineContext().ensureActive(); nativeState = "Unknown — request timed out" }
+                                catch (_: Exception) { nativeState = "Unknown — could not read timer" }
+                            }
+                        }) { Text("Check native timer") }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -348,12 +406,18 @@ private fun TimerDialog(
                 // Custom with no day picked would never run.
                 enabled = repeatChoice != RepeatChoice.CUSTOM || weekdays.isNotEmpty(),
                 onClick = {
-                    val settings = timerSettingsFor(
+                    val selectedSettings = timerSettingsFor(
                         kind = kind,
                         fanPower = fanPower,
                         waterBoxMode = if (supportsWaterSlide) WaterBoxMode.forSlide(waterBoxMode) else waterBoxMode,
                         mopMode = mopMode,
                         repeat = repeat,
+                    )
+                    val settings = if (initial == null) selectedSettings else start.copy(
+                        fanPower = if ("fan" in touchedSettings) selectedSettings.fanPower else start.fanPower,
+                        waterBoxMode = if ("water" in touchedSettings) selectedSettings.waterBoxMode else start.waterBoxMode,
+                        mopMode = if ("route" in touchedSettings) selectedSettings.mopMode else start.mopMode,
+                        repeat = if ("repeat" in touchedSettings) selectedSettings.repeat else start.repeat,
                     )
                     val days = when (repeatChoice) {
                         RepeatChoice.ONCE, RepeatChoice.EVERY_DAY -> emptySet()
@@ -361,7 +425,11 @@ private fun TimerDialog(
                         RepeatChoice.WEEKENDS -> WEEKENDS
                         RepeatChoice.CUSTOM -> weekdays
                     }
-                    onSave(hour, minute, days, settings, repeatChoice == RepeatChoice.ONCE)
+                    val timingChanged = initial == null || hour != initial.hour || minute != initial.minute ||
+                        repeatChoice != repeatChoiceOf(initial) ||
+                        (repeatChoice == RepeatChoice.CUSTOM && days != initial.weekdays)
+                    onSave(hour, minute, days, if (initial != null && !settingsChanged) start else settings,
+                        repeatChoice == RepeatChoice.ONCE, settingsChanged, timingChanged, enabled)
                 },
             ) { Text("Save") }
         },
@@ -423,7 +491,7 @@ private enum class RepeatChoice(val label: String) {
 }
 
 private fun repeatChoiceOf(timer: CleanTimer): RepeatChoice = when {
-    timer.date != null -> RepeatChoice.ONCE
+    timer.date != null || timer.serverJob?.repeated == false -> RepeatChoice.ONCE
     timer.weekdays.isEmpty() || timer.weekdays.size == 7 -> RepeatChoice.EVERY_DAY
     timer.weekdays == WEEKDAYS -> RepeatChoice.WEEKDAYS
     timer.weekdays == WEEKENDS -> RepeatChoice.WEEKENDS
@@ -443,3 +511,4 @@ private fun formatRepeat(timer: CleanTimer): String {
         else -> choice.label
     }
 }
+

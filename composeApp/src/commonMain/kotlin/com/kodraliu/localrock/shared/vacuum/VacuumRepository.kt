@@ -1,6 +1,9 @@
 package com.kodraliu.localrock.shared.vacuum
 
 import com.kodraliu.localrock.shared.device.DeviceApiException
+import com.kodraliu.localrock.shared.schedule.*
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import com.kodraliu.localrock.shared.model.Room
 import com.kodraliu.localrock.shared.mqtt.MqttClient
 import com.kodraliu.localrock.shared.mqtt.MqttTopics
@@ -845,7 +848,7 @@ class VacuumRepository(
 
     /** A server_timer id is a millisecond timestamp, confirmed live; legacy ones are second-based. */
     private fun newTimerId(useServerTimer: Boolean): String =
-        if (useServerTimer) (nowEpochSeconds().toLong() * 1000).toString() else nowEpochSeconds().toString()
+        if (useServerTimer) (nowEpochSeconds().toLong() * 1000 + kotlin.random.Random.nextInt(1000)).toString() else nowEpochSeconds().toString()
 
     private suspend fun saveTimerEntry(
         useServerTimer: Boolean,
@@ -855,6 +858,8 @@ class VacuumRepository(
         settings: TimerSettings,
     ) {
         if (useServerTimer) {
+            val existing = session.getServerTimer().also { it.requireOk("get_server_timer") }.result
+            if (nativeTimerState(existing, id) != "Missing") throw ScheduleException("Native timer ID already exists or could not be checked. No timer was overwritten.")
             // The robot refuses a server_timer entry that leaves any field out ("Param error"); the
             // official app always sends every one, so what the schedule leaves open is filled in.
             session.setServerTimer(id, cron, settings.completedForServerTimer()).requireOk("set_server_timer")
@@ -863,20 +868,53 @@ class VacuumRepository(
         }
     }
 
-    // get_server_timer's own answer has no cron or settings to show (just id, on/off, and a map
-    // index), so the list always reads from legacy get_timer instead. For a server_timer robot
-    // that answer is not the robot's own state either: it is the official app's separate HTTP-side
-    // mirror (POST/PUT /user/devices/{duid}/jobs), confirmed live, which is why its settings carry
-    // the "name" field [parseTimerSettings] reads into [TimerSettings.serverTimerId], the real
-    // robot-side id to use when writing back. A robot that never mirrors there just won't show its
-    // server_timer schedules here, a known gap, not a silently wrong answer.
-    suspend fun fetchTimers() {
-        val resp = session.getTimer()
-        val result = resp.result as? JsonArray ?: return
-        _timers.value = parseTimerList(result)
+    private val scheduleWrites = Mutex()
+    private suspend fun <T> scheduleWrite(action: suspend () -> T): T {
+        if (!scheduleWrites.tryLock()) throw ScheduleException("A schedule save is already in progress. No additional write was sent.")
+        try { return action() }
+        catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            throw ScheduleException("Schedule request timed out. Its final state is unconfirmed; refresh before retrying. No automatic retry was sent.")
+        } finally { scheduleWrites.unlock() }
     }
 
-    suspend fun createTimer(
+    private val scheduleEnablement by lazy {
+        ScheduleEnablement(
+            readJobs = { requireNotNull(scheduleMirror).list(duid) },
+            writeJob = { job, patch -> requireNotNull(scheduleMirror).update(duid, job.id, patch) },
+            readTimers = { session.getServerTimer().also { it.requireOk("get_server_timer") }.result },
+            writeTimer = { name, enabled -> session.updServerTimer(name, enabled).requireOk("upd_server_timer") },
+        )
+    }
+
+    /** Only an unavailable collection permits legacy fallback; an empty jobs list does not. */
+    suspend fun fetchTimers() {
+        if (scheduleMirror != null && !demo) {
+            try {
+                _timers.value = scheduleMirror.list(duid).map { it.toCleanTimer() }
+                    .sortedWith(compareBy<CleanTimer> { it.hour }.thenBy { it.minute }.thenBy { it.id })
+                return
+            } catch (e: DeviceApiException) {
+                if (e.responseCode != 404 && e.responseCode != 405) throw e
+            }
+        }
+        val resp = session.getTimer()
+        resp.requireOk("get_timer")
+        _timers.value = parseTimerList(resp.result)
+    }
+
+    suspend fun nativeScheduleState(timer: CleanTimer): String {
+        val job = timer.serverJob ?: return "Not checked"
+        val name = job.nativeName ?: return "No native timer reference"
+        val reply = session.getServerTimer()
+        reply.requireOk("get_server_timer")
+        return nativeTimerState(reply.result, name)
+    }
+
+    suspend fun createTimer(hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings = TimerSettings(), once: Boolean = false): CleanTimer =
+        scheduleWrite { createTimerInternal(hour, minute, weekdays, settings, once) }
+
+    private suspend fun createTimerInternal(
         hour: Int,
         minute: Int,
         weekdays: Set<Int>,
@@ -885,12 +923,19 @@ class VacuumRepository(
     ): CleanTimer {
         val date = if (once) nextOccurrence(hour, minute) else null
         val cron = buildCron(minute, hour, if (once) emptySet() else weekdays, date)
-        var useServerTimer = prefersServerTimer()
+        val jobsSupported = if (scheduleMirror == null || demo) false else try {
+            scheduleMirror.list(duid)
+            true
+        } catch (e: DeviceApiException) {
+            if (e.responseCode != 404 && e.responseCode != 405) throw e
+            false
+        }
+        var useServerTimer = prefersServerTimer() && jobsSupported
         var id = newTimerId(useServerTimer)
         try {
             saveTimerEntry(useServerTimer, id, cron, enabled = true, settings = settings)
         } catch (e: RobotCommandException) {
-            if (!e.isTimerTypeMismatch()) throw e
+            if (!e.isTimerTypeMismatch() || !jobsSupported) throw e
             useServerTimer = !useServerTimer
             serverTimerPreferred = useServerTimer
             id = newTimerId(useServerTimer)
@@ -901,24 +946,21 @@ class VacuumRepository(
         var timerId = id
         if (useServerTimer) {
             timerSettings = settings.completedForServerTimer().copy(serverTimerId = id)
-            try {
-                timerId = createCloudRecord(id, minute, hour, newWeekdays, date, timerSettings)
-            } catch (e: DeviceApiException) {
-                // A server without the jobs endpoint (not yet on a release with it) answers 404 or
-                // 405. The robot's own schedule was already removed, so save it the legacy way,
-                // which robots that carry the server_timer flag still accept on such a server.
-                if (e.responseCode != 404 && e.responseCode != 405) throw e
-                serverTimerPreferred = false
-                id = newTimerId(false)
-                saveTimerEntry(false, id, cron, enabled = true, settings = settings)
-                timerSettings = settings
-                timerId = id
-            }
+            timerId = createCloudRecord(id, minute, hour, newWeekdays, date, timerSettings)
+            val confirmed = requireNotNull(scheduleMirror).list(duid).singleOrNull { it.id == timerId }
+                ?: throw ScheduleException("Native timer was created but the server job could not be confirmed. Refresh; do not repeat creation.")
+            fetchTimers()
+            return confirmed.toCleanTimer()
         }
+
         val timer = CleanTimer(
             id = timerId, enabled = true, hour = hour, minute = minute,
             weekdays = newWeekdays, settings = timerSettings, date = date,
         )
+        if (jobsSupported) {
+            fetchTimers()
+            return _timers.value.singleOrNull { it.id == timer.id } ?: timer
+        }
         _timers.value = _timers.value + timer
         return timer
     }
@@ -927,7 +969,7 @@ class VacuumRepository(
      * Adds the cloud's record of the server_timer schedule [robotId] just saved on the robot, and
      * returns the record's own id. Without it the official app deletes the robot's schedule as a
      * stray, and this app's list, which reads the records, would not show it. If the record cannot
-     * be written the robot's schedule is removed again, so nothing is left half saved.
+     * be confirmed, preserve the native entry and report the partial save for explicit recovery.
      */
     private suspend fun createCloudRecord(
         robotId: String,
@@ -946,12 +988,11 @@ class VacuumRepository(
             robotId = robotId,
             forCreate = true,
         )
-        try {
-            return mirror.create(duid, body)
-        } catch (e: Exception) {
-            runCatching { session.delServerTimer(robotId) }
-            throw e
-        }
+        return ServerJobCreation(
+            readTimers = { session.getServerTimer().also { it.requireOk("get_server_timer") }.result },
+            createJob = { mirror.create(duid, it) },
+            readJobs = { mirror.list(duid) },
+        ).confirm(robotId, body).id
     }
 
     /** Rewrites the cloud record [jobId] of a server_timer schedule to match what the robot now holds. */
@@ -989,11 +1030,31 @@ class VacuumRepository(
         if (useServerTimer) timer.settings.serverTimerId ?: timer.id else timer.id
 
     /**
-     * Rewrites [timer]'s time, days and options; its id and on/off state are kept. The old schedule
-     * is deleted and added again rather than overwritten, so an option that was dropped is simply
-     * absent and no firmware has to accept a null. If the new one is refused the old one is put back.
+     * Server jobs are patched without recreating native entries or changing enablement unless
+     * explicitly requested. Legacy-only records retain their protocol-specific edit path.
      */
     suspend fun updateTimer(
+        timer: CleanTimer, hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings,
+        once: Boolean = false, settingsChanged: Boolean = true, timingChanged: Boolean = true,
+        enabled: Boolean = timer.enabled,
+    ): CleanTimer = scheduleWrite {
+        val job = timer.serverJob
+        if (job != null) {
+            val date = if (once) {
+                if (timer.date != null && hour == timer.hour && minute == timer.minute) timer.date
+                else nextTimerDate(nowEpochSeconds().toLong(),
+                    if (job.timezone.isBlank()) TimeZone.currentSystemDefault() else TimeZone.of(job.timezone), hour, minute)
+            } else null
+            val patch = serverJobEditPatch(timer, hour, minute, weekdays, settings, once, date, settingsChanged, timingChanged)
+            val sync = enabled != timer.enabled
+            val combined = if (sync) JsonObject(patch + ("enabled" to JsonPrimitive(enabled))) else patch
+            val saved = scheduleEnablement.save(job, combined, sync).toCleanTimer()
+            _timers.value = _timers.value.map { if (it.id == saved.id) saved else it }
+            saved
+        } else updateTimerInternal(timer, hour, minute, weekdays, settings, once)
+    }
+
+    private suspend fun updateTimerInternal(
         timer: CleanTimer,
         hour: Int,
         minute: Int,
@@ -1004,22 +1065,23 @@ class VacuumRepository(
         val date = if (once) nextOccurrence(hour, minute) else null
         val newWeekdays = if (once) emptySet() else weekdays
         val cron = buildCron(minute, hour, newWeekdays, date)
-        val useServerTimer = prefersServerTimer()
+        // A legacy-view record without a native name must use its legacy ID, even on a
+        // model whose feature flag advertises server_timer (the old-server fallback case).
+        val useServerTimer = timer.settings.serverTimerId != null
         val id = robotId(timer, useServerTimer)
         // The new settings come from the edit dialog's own choices, which know nothing of the
         // mirror link; carry it forward so a second edit can still find the real robot-side id.
-        val newSettings = settings.copy(serverTimerId = timer.settings.serverTimerId)
+        val newSettings = settings.copy(serverTimerId = timer.settings.serverTimerId, segments = timer.settings.segments, mapIndex = timer.settings.mapIndex, cleanMop = timer.settings.cleanMop)
         if (useServerTimer) session.delServerTimer(id).requireOk("del_server_timer")
         else session.delTimer(id).requireOk("del_timer")
         try {
             saveTimerEntry(useServerTimer, id, cron, enabled = timer.enabled, settings = newSettings)
-        } catch (e: Exception) {
-            runCatching {
-                val oldCron = buildCron(timer.minute, timer.hour, timer.weekdays, timer.date)
-                saveTimerEntry(useServerTimer, id, oldCron, enabled = timer.enabled, settings = timer.settings)
-            }
-            throw e
+            if (useServerTimer && !timer.enabled) session.updServerTimer(id, false).requireOk("upd_server_timer")
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) {
+            throw ScheduleException("The old native timer was removed, but its replacement could not be confirmed. Refresh before retrying; no rollback was attempted.")
         }
+
         if (useServerTimer) {
             updateCloudRecord(timer.id, id, minute, hour, newWeekdays, date, timer.enabled, newSettings)
         }
@@ -1030,9 +1092,20 @@ class VacuumRepository(
         return updated
     }
 
-    suspend fun toggleTimer(timer: CleanTimer) {
+    suspend fun toggleTimer(timer: CleanTimer) = scheduleWrite {
+        val job = timer.serverJob
+        if (job != null) {
+            val saved = scheduleEnablement.save(job,
+                JsonObject(mapOf("enabled" to JsonPrimitive(!timer.enabled))), true).toCleanTimer()
+            _timers.value = _timers.value.map { if (it.id == saved.id) saved else it }
+        } else toggleLegacyTimer(timer)
+    }
+
+    private suspend fun toggleLegacyTimer(timer: CleanTimer) {
         val updated = timer.copy(enabled = !timer.enabled)
-        val useServerTimer = prefersServerTimer()
+        // A legacy-view record without a native name must use its legacy ID, even on a
+        // model whose feature flag advertises server_timer (the old-server fallback case).
+        val useServerTimer = timer.settings.serverTimerId != null
         val id = robotId(timer, useServerTimer)
         if (useServerTimer) {
             session.updServerTimer(id, updated.enabled).requireOk("upd_server_timer")
@@ -1045,8 +1118,23 @@ class VacuumRepository(
         _timers.value = _timers.value.map { if (it.id == timer.id) updated else it }
     }
 
-    suspend fun deleteTimer(timer: CleanTimer) {
-        val useServerTimer = prefersServerTimer()
+    suspend fun deleteTimer(timer: CleanTimer) = scheduleWrite {
+        val job = timer.serverJob
+        if (job != null) {
+            ServerJobDeletion(
+                readJobs = { requireNotNull(scheduleMirror).list(duid) },
+                readTimers = { session.getServerTimer().also { it.requireOk("get_server_timer") }.result },
+                deleteTimer = { session.delServerTimer(it).requireOk("del_server_timer") },
+                deleteJob = { requireNotNull(scheduleMirror).delete(duid, it) },
+            ).delete(job)
+            _timers.value = _timers.value.filter { it.id != timer.id }
+        } else deleteLegacyTimer(timer)
+    }
+
+    private suspend fun deleteLegacyTimer(timer: CleanTimer) {
+        // A legacy-view record without a native name must use its legacy ID, even on a
+        // model whose feature flag advertises server_timer (the old-server fallback case).
+        val useServerTimer = timer.settings.serverTimerId != null
         val id = robotId(timer, useServerTimer)
         if (useServerTimer) {
             session.delServerTimer(id).requireOk("del_server_timer")
@@ -1497,3 +1585,4 @@ internal fun VacuumStatus.applyDpsPush(push: Map<Int, JsonElement>): VacuumStatu
         dryStatus = dryStatus,
     )
 }
+

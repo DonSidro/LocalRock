@@ -10,11 +10,9 @@ import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * A newer, separate scheduling protocol some firmware speaks instead of (or alongside)
- * get/set/upd/del_timer. Confirmed live against a Roborock Qrevo: the robot stores this kind
- * of schedule itself and fires it autonomously from its own clock, no app, cloud, or server
- * involvement needed once it is saved. Firmware that only understands this shape rejects the
- * legacy set_timer with `-10005 "timer type error"` (see LocalRock #28), not because the
- * settings are wrong, but because the envelope itself is unrecognised.
+ * get/set/upd/del_timer. Native entries retain identity and settings; their presence alone does
+ * not establish autonomous execution. Server-linked jobs require the server scheduler to dispatch
+ * the due clean. Firmware may reject the legacy envelope with -10005 "timer type error".
  *
  * Which protocol a robot wants is not guesswork: the official app decides it from
  * `app_get_init_status`'s `result[0].local_info.featureset`, bit 0. See [usesServerTimer].
@@ -31,6 +29,7 @@ internal fun parseServerTimerEntry(row: JsonElement): ServerTimerEntry? {
     if (fields.size < 3) return null
     val id = fields[0].jsonPrimitive.contentOrNull ?: return null
     val status = fields[1].jsonPrimitive.contentOrNull
+    if (status != "on" && status != "off") return null
     val mapIndex = fields[2].jsonPrimitive.contentOrNull?.toIntOrNull() ?: -1
     return ServerTimerEntry(id = id, enabled = status == "on", mapIndex = mapIndex)
 }
@@ -103,3 +102,4 @@ internal fun usesServerTimer(initStatusResult: JsonElement?): Boolean? {
     val featureSet = localInfo["featureset"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: return null
     return (featureSet and 1) != 0
 }
+
