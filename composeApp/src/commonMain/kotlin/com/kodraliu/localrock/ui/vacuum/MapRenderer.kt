@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -15,6 +16,8 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.luminance
 import com.kodraliu.localrock.shared.vacuum.map.MapZone
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
@@ -288,14 +291,14 @@ private fun renderLayer(map: ParsedMap, palette: MapPalette, scale: Int, overlay
     val bitmap = ImageBitmap(map.width * scale, map.height * scale)
     val canvas = Canvas(bitmap)
     canvas.scale(scale.toFloat(), scale.toFloat())
-    if (overlay) drawOverlays(canvas, map, palette, drawRestrictions = true) else drawFloor(canvas, map, palette)
+    if (overlay) drawOverlays(canvas, map, palette, drawRestrictions = true, includeRoute = false) else drawFloor(canvas, map, palette)
     return bitmap
 }
 
 private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
-    // Cells are clipped to a rounded outline of the plan, so its edges are not stair steps.
-    canvas.save()
-    canvas.clipPath(mapOutlinePath(map))
+    // The cells are masked by a rounded outline of the plan, so its edges are smooth rather than
+    // stair steps. The mask is a path drawn over them, which anti-aliases where a clip would not.
+    canvas.saveLayer(Rect(0f, 0f, map.width.toFloat(), map.height.toFloat()), Paint())
     val wallPaint = Paint().apply { color = palette.wall }
     val floorPaint = Paint().apply { color = palette.floor }
     val roomPaint = Paint()
@@ -334,11 +337,12 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
             )
         }
     }
+    canvas.drawPath(mapOutlinePath(map), Paint().apply { blendMode = BlendMode.DstIn })
     canvas.restore()
 }
 
-private fun drawOverlays(canvas: Canvas, map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean) {
-    if (map.pathMm.size >= 2) drawPath(canvas, map, palette)
+private fun drawOverlays(canvas: Canvas, map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean, includeRoute: Boolean = true) {
+    if (includeRoute && map.pathMm.size >= 2) drawPath(canvas, map, palette)
     if (drawRestrictions) {
         map.carpetAreas.forEach { drawZone(canvas, map, it, CARPET_FILL, CARPET_STROKE) }
         map.thresholds.forEach { drawZone(canvas, map, it, THRESHOLD_FILL, THRESHOLD_STROKE) }
@@ -346,9 +350,32 @@ private fun drawOverlays(canvas: Canvas, map: ParsedMap, palette: MapPalette, dr
         map.noGoZones.forEach { drawZone(canvas, map, it, NO_GO_FILL, NO_GO_STROKE) }
         map.virtualWalls.forEach { drawWall(canvas, map, it) }
     }
-    // Square dock, round robot: the two markers stay distinguishable without relying on colour.
+    if (includeRoute) drawMarkers(canvas, map, palette)
+}
+
+// Square dock, round robot: the two markers stay distinguishable without relying on colour.
+private fun drawMarkers(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     map.chargerMm?.let { drawMarker(canvas, map, it, palette.charger, palette.markerRing, square = true) }
     map.robotMm?.let { drawMarker(canvas, map, it, palette.robot, palette.markerRing, square = false) }
+}
+
+/**
+ * The route and the two markers, drawn straight to the screen through the map's transform instead of
+ * into a bitmap, so they stay sharp at any zoom. [scale] is how many layer pixels make one cell.
+ */
+internal fun DrawScope.drawRouteAndMarkers(map: ParsedMap, view: MapView, scale: Int, dark: Boolean) {
+    val palette = if (dark) DarkPalette else LightPalette
+    withTransform({
+        translate(left = view.canvasW / 2f + view.pan.x, top = view.canvasH / 2f + view.pan.y)
+        scale(view.k, view.k, Offset.Zero)
+        rotate(view.yawDegrees, Offset.Zero)
+        scale(1f, view.squash, Offset.Zero)
+        translate(left = -view.centerX, top = -view.centerY)
+        scale(scale.toFloat(), scale.toFloat(), Offset.Zero)
+    }) {
+        if (map.pathMm.size >= 2) drawPath(drawContext.canvas, map, palette)
+        drawMarkers(drawContext.canvas, map, palette)
+    }
 }
 
 private fun drawZone(canvas: Canvas, map: ParsedMap, zone: MapZone, fill: Color, stroke: Color) {
