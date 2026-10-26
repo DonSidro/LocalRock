@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.lerp
@@ -301,6 +302,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     val h = map.height
     val grid = map.grid
     val raw = map.originalGrid
+    val carpet = map.carpetMask
     for (y in 0 until h) {
         val rowOff = y * w
         // Flip Y so the map reads with origin at the top (matches the Roborock app).
@@ -316,7 +318,8 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
                         val pattern = patterns.getOrPut(roomId) {
                             floorPattern(map.segmentMaterials[roomId], map.segmentMaterialDirections[roomId])
                         }
-                        roomPaint.color = if (pattern == FloorPattern.NONE) base else shaded(base, textureShade(pattern, x, y))
+                        val floor = if (pattern == FloorPattern.NONE) base else shaded(base, textureShade(pattern, x, y))
+                        roomPaint.color = if (carpet != null && carpet[rowOff + x].toInt() == 1) shaded(floor, carpetShade(x, y)) else floor
                         roomPaint
                     } else floorPaint
                 }
@@ -377,36 +380,51 @@ private fun drawWall(canvas: Canvas, map: ParsedMap, wall: VirtualWall) {
 }
 
 private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
-    val gfxPath = Path()
+    val main = Path()
+    val pure = Path()
+    val wash = Path()
+    var kind = -1
     var started = false
-    for (point in map.pathMm) {
+    for ((i, point) in map.pathMm.withIndex()) {
+        val flag = map.pathFlags.getOrElse(i) { 0 }
+        val now = when {
+            flag and 0b1010 != 0 -> 2
+            flag and 0b100 != 0 -> 1
+            else -> 0
+        }
         val cellX = (point.x / 50f) - map.pixelOffsetLeft
-        val cellYBottom = (point.y / 50f) - map.pixelOffsetTop
-        val cellY = (map.height - 1) - cellYBottom
+        val cellY = (map.height - 1) - ((point.y / 50f) - map.pixelOffsetTop)
         if (cellX !in 0f..map.width.toFloat() || cellY !in 0f..map.height.toFloat()) {
             started = false
             continue
         }
-        if (!started) {
-            gfxPath.moveTo(cellX, cellY)
-            started = true
-        } else {
-            gfxPath.lineTo(cellX, cellY)
-        }
+        val target = when (now) { 2 -> wash; 1 -> pure; else -> main }
+        if (!started || now != kind) target.moveTo(cellX, cellY) else target.lineTo(cellX, cellY)
+        started = true
+        kind = now
     }
     // A wide faint band for the ground the robot has covered, under the thin line of its route.
-    canvas.drawPath(gfxPath, Paint().apply {
+    canvas.drawPath(main, Paint().apply {
         color = Color(0x38FFFFFF)
         style = PaintingStyle.Stroke
         strokeWidth = 6.5f
         strokeCap = StrokeCap.Round
         strokeJoin = StrokeJoin.Round
     })
-    canvas.drawPath(gfxPath, Paint().apply {
+    for (line in listOf(main, pure)) {
+        canvas.drawPath(line, Paint().apply {
+            color = palette.path
+            style = PaintingStyle.Stroke
+            strokeWidth = 0.6f
+            strokeCap = StrokeCap.Round
+        })
+    }
+    // The trips to the dock to wash the mop are dashed.
+    canvas.drawPath(wash, Paint().apply {
         color = palette.path
         style = PaintingStyle.Stroke
         strokeWidth = 0.6f
-        strokeCap = StrokeCap.Round
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(2f, 3f))
     })
 }
 

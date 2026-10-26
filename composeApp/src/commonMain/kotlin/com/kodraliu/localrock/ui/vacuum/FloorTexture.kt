@@ -47,5 +47,8 @@ private fun plankShade(across: Int): Float {
     return ((h and 0xff) / 255f - 0.5f) * 0.14f
 }
 
+/** Diagonal hatching for cells the robot has seen carpet on. */
+internal fun carpetShade(x: Int, y: Int): Float = if ((x + y) % 4 < 2) -0.14f else 0.04f
+
 internal fun shaded(base: Color, shade: Float): Color =
     if (shade < 0f) lerp(base, Color.Black, -shade) else lerp(base, Color.White, shade)

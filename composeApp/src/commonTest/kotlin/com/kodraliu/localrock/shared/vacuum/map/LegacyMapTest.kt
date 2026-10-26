@@ -58,6 +58,16 @@ class LegacyMapTest {
     }
 
     @Test
+    fun reads_the_carpet_mask_and_the_flag_of_every_path_point() {
+        val map = parseLegacyMap(raw)
+        assertEquals(map.pathMm.size, map.pathFlags.size)
+        assertEquals(3281, map.pathFlags.count { it == 1 })
+        val mask = assertNotNull(map.carpetMask)
+        assertEquals(map.grid.size, mask.size)
+        assertEquals(3555, mask.count { it.toInt() == 1 })
+    }
+
+    @Test
     fun extracts_cleaning_path() {
         val map = parseLegacyMap(raw)
         assertEquals(5307, map.pathMm.size)

@@ -26,6 +26,8 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     var segmentMaterials: Map<Int, Int> = emptyMap()
     var segmentMaterialDirections: Map<Int, Int> = emptyMap()
     val unmodeledRestrictionBlocks = mutableSetOf<Int>()
+    var pathFlags: List<Int> = emptyList()
+    var carpetMask: ByteArray? = null
     val obstacles = mutableListOf<MapObstacle>()
 
     var off = headerLen
@@ -54,6 +56,14 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
                 if (pixelCount > 0 && pixelStart + pixelCount <= bytes.size) {
                     imagePixels = bytes.copyOfRange(pixelStart, pixelStart + pixelCount)
                 }
+            }
+            BLOCK_MOP_PATH -> {
+                val body = off + blockHeaderLen
+                pathFlags = List(blockDataLen) { bytes[body + it].toInt() and 0xff }
+            }
+            BLOCK_CARPET_MAP -> {
+                val body = off + blockHeaderLen
+                carpetMask = bytes.copyOfRange(body, body + blockDataLen)
             }
             BLOCK_CHARGER -> {
                 val body = off + blockHeaderLen
@@ -192,6 +202,8 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         thresholds = thresholds,
         obstacles = obstacles,
         originalGrid = pixels,
+        pathFlags = pathFlags.takeIf { it.size == path.size } ?: emptyList(),
+        carpetMask = carpetMask?.takeIf { it.size == grid.size },
     )
 }
 
@@ -254,6 +266,8 @@ private const val MAGIC_1 = 0x72.toByte()
 private const val BLOCK_CHARGER = 1
 private const val BLOCK_IMAGE = 2
 private const val BLOCK_PATH = 3
+private const val BLOCK_CARPET_MAP = 17    // one byte per image cell, 1 on carpet
+private const val BLOCK_MOP_PATH = 18      // one flag byte per path point
 private const val BLOCK_ROBOT_POSITION = 8
 private const val BLOCK_FORBIDDEN_ZONES = 9        // persistent no-go zones
 private const val BLOCK_VIRTUAL_WALLS = 10
