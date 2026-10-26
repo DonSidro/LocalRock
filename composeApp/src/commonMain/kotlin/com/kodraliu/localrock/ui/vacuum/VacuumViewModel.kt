@@ -24,6 +24,7 @@ import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isMatterSupported
 import com.kodraliu.localrock.shared.vacuum.isPetSearchSupported
+import com.kodraliu.localrock.shared.vacuum.isFastRouteSupported
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
 import com.kodraliu.localrock.shared.vacuum.newFeatureBit
