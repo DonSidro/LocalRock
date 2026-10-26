@@ -39,7 +39,7 @@ class ScheduleEnablement(
                     val desired = if (enabled) "On" else "Off"
                     val initial = nativeTimerState(request { readTimers() }, name)
                     if (initial !in listOf("On", "Off")) {
-                        throw ScheduleException("Native timer is ${initial.lowercase()}. Nothing was changed; refresh and check More details. Timers are not recreated automatically.")
+                        throw ScheduleException("Native timer is ${initial.lowercase()}. No client write was sent; refresh and check More details. Timers are not recreated automatically.")
                     }
                     if (initial != desired) {
                         // A concurrent server edit must stop us before changing the robot.
@@ -55,10 +55,10 @@ class ScheduleEnablement(
                         val verified = try { nativeTimerState(request { readTimers() }, name) }
                         catch (e: CancellationException) { throw e }
                         catch (_: Exception) {
-                            throw ScheduleException("$robotProgress Server job was not saved. Refresh before retrying; no rollback was attempted.")
+                            throw ScheduleException("$robotProgress No HTTP job update was sent; server-side reconciliation may still have changed enablement. Refresh before retrying; no rollback was attempted.")
                         }
                         if (verified != desired) {
-                            throw ScheduleException("Robot did not confirm the requested state. Server job was not saved. Refresh before retrying; no rollback was attempted.")
+                            throw ScheduleException("Robot did not confirm the requested state. No HTTP job update was sent; server-side reconciliation may still have changed enablement. Refresh before retrying; no rollback was attempted.")
                         }
                     }
                     verifiedEnabled = enabled
@@ -99,7 +99,7 @@ class ScheduleEnablement(
             }
             throw e
         } catch (_: Exception) {
-            throw ScheduleException("$robotProgress Could not read the current schedule or timer state. Server job was not saved. Refresh before retrying.")
+            throw ScheduleException("$robotProgress Could not read the current schedule or timer state. No HTTP job update was sent; server-side reconciliation may still have changed enablement. Refresh before retrying.")
         } finally {
             mutex.unlock()
         }

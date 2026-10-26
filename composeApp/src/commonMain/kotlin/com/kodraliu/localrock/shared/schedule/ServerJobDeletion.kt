@@ -13,7 +13,7 @@ class ServerJobDeletion(
     private val deleteJob: suspend (String) -> Unit,
 ) {
     suspend fun delete(expected: ServerSchedule) {
-        var progress = "Nothing was deleted."
+        var progress = "No native deletion was sent."
         try {
             val jobs = request { readJobs() }
             val current = jobs.filter { it.id == expected.id }.singleOrNull()
