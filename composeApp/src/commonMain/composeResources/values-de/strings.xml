@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shared -->
+    <string name="common_change">Ändern</string>
+
+    <!-- Login -->
+    <string name="login_sign_in">Anmelden</string>
+    <string name="login_intro">Verwende die E-Mail-Adresse und den Anmeldecode, die du auf deinem LocalRock-Server eingerichtet hast. Das sind die Zugangsdaten deines Servers – kein neues Roborock-Konto.</string>
+    <string name="login_server">Server</string>
+    <string name="login_email">E-Mail</string>
+    <string name="login_code">Anmeldecode</string>
+    <string name="login_error_failed">Anmeldung fehlgeschlagen</string>
+    <string name="login_demo">Demo ausprobieren (kein Server nötig)</string>
+</resources>
