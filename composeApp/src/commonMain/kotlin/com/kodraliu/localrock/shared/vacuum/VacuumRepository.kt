@@ -831,7 +831,7 @@ class VacuumRepository(
     suspend fun createTimer(hour: Int, minute: Int, weekdays: Set<Int>): CleanTimer {
         val id = nowEpochSeconds().toString()
         val cron = buildCron(minute, hour, weekdays)
-        session.setTimer(id, enabled = true, cron = cron)
+        session.setTimer(id, enabled = true, cron = cron).requireOk("set_timer")
         val timer = CleanTimer(id = id, enabled = true, hour = hour, minute = minute, weekdays = weekdays)
         _timers.value = _timers.value + timer
         return timer
@@ -839,12 +839,12 @@ class VacuumRepository(
 
     suspend fun toggleTimer(timer: CleanTimer) {
         val updated = timer.copy(enabled = !timer.enabled)
-        session.updTimer(timer.id, updated.enabled)
+        session.updTimer(timer.id, updated.enabled).requireOk("upd_timer")
         _timers.value = _timers.value.map { if (it.id == timer.id) updated else it }
     }
 
     suspend fun deleteTimer(timer: CleanTimer) {
-        session.delTimer(timer.id)
+        session.delTimer(timer.id).requireOk("del_timer")
         _timers.value = _timers.value.filter { it.id != timer.id }
     }
 

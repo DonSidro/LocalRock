@@ -41,7 +41,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,7 +48,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.vacuum.CleanTimer
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,7 +57,6 @@ fun ScheduleScreen(
 ) {
     val repository = viewModel.repository
     val timers by repository.timers.collectAsState()
-    val scope = rememberCoroutineScope()
     var showAddDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { runCatching { repository.fetchTimers() } }
@@ -97,8 +94,8 @@ fun ScheduleScreen(
                 items(timers, key = { it.id }) { timer ->
                     TimerRow(
                         timer = timer,
-                        onToggle = { scope.launch { runCatching { repository.toggleTimer(timer) } } },
-                        onDelete = { scope.launch { runCatching { repository.deleteTimer(timer) } } },
+                        onToggle = { viewModel.run { it.toggleTimer(timer) } },
+                        onDelete = { viewModel.run { it.deleteTimer(timer) } },
                     )
                     HorizontalDivider(Modifier.padding(start = 72.dp))
                 }
@@ -110,7 +107,7 @@ fun ScheduleScreen(
         AddTimerDialog(
             onAdd = { hour, minute, weekdays ->
                 showAddDialog = false
-                scope.launch { runCatching { repository.createTimer(hour, minute, weekdays) } }
+                viewModel.run { it.createTimer(hour, minute, weekdays) }
             },
             onDismiss = { showAddDialog = false },
         )
