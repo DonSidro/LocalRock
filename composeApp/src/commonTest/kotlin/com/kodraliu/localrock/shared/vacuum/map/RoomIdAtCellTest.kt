@@ -26,9 +26,9 @@ class RoomIdAtCellTest {
 
     @Test
     fun a_legacy_cell_gives_the_room_packed_into_its_byte() {
-        // (byte >> 3) & 0x1f is the room, a low-three-bits value of 1 marks a wall, 0 is outside.
-        val roomFive = (5 shl 3) or 2
-        val roomNine = (9 shl 3) or 2
+        // (byte >> 3) & 0x1f is the room; low three bits are 7 on floor, 1 on a wall, 0 outside.
+        val roomFive = (5 shl 3) or 7
+        val roomNine = (9 shl 3) or 7
         val wall = 1
         val map = ParsedMap(
             width = 4, height = 1,

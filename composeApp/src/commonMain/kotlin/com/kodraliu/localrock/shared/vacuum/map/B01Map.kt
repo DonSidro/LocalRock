@@ -308,7 +308,7 @@ fun ParsedMap.roomIdAtCell(idx: Int): Int? {
     if (idx !in grid.indices) return null
     if (originalGrid != null) {
         val v = originalGrid[idx].toInt() and 0xff
-        if (v == 0 || (v and 0x07) == 1) return null
+        if ((v and 0x07) != 7) return null
         return ((v ushr 3) and 0x1f).takeIf { it > 0 }
     }
     val v = grid[idx].toInt() and 0xff

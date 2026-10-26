@@ -49,16 +49,18 @@ private class MapPalette(
 
 // Light is NOT the dark palette inverted: the rooms have to sit *above* their container, so the
 // hero behind them is near-white and these tints carry enough weight to advance against it.
+// Blue, teal, salmon and yellow, as in the Roborock app; touching rooms get different ones.
+private val OfficialRoomColors = listOf(
+    Color(0xFF6EA8EB), Color(0xFF26CFC8), Color(0xFFDB7F66), Color(0xFFE8BA5C),
+)
+
 private val LightPalette = MapPalette(
     // A softer slate than near-black: at 1px over pastel, near-black reads as harsh scratchy noise.
     wall = Color(0xFF3A4A52),
     floor = Color(0xFFE9EFEE),
-    rooms = listOf(
-        Color(0xFFBFE0DC), Color(0xFFC8DCEF), Color(0xFFCBE3C4), Color(0xFFEBDCC4),
-        Color(0xFFD8D2E8), Color(0xFFC9E2E4), Color(0xFFEBD5CC), Color(0xFFD3E0D0),
-    ),
+    rooms = OfficialRoomColors,
     // Deep enough to read as ink rather than neon against the pastels.
-    path = Color(0xFFC75B00),
+    path = Color(0xF2FFFFFF),
     charger = Color(0xFF1565C0),
     robot = Color(0xFF00595A),
     markerRing = Color(0xFFFFFFFF),
@@ -67,11 +69,8 @@ private val LightPalette = MapPalette(
 private val DarkPalette = MapPalette(
     wall = Color(0xFF070B0C),
     floor = Color(0xFF17201F),
-    rooms = listOf(
-        Color(0xFF1E3A38), Color(0xFF1F3140), Color(0xFF24382A), Color(0xFF3A3328),
-        Color(0xFF2E2A3B), Color(0xFF1C3639), Color(0xFF38292A), Color(0xFF26332A),
-    ),
-    path = Color(0xFFFFD54F),
+    rooms = OfficialRoomColors,
+    path = Color(0xF2FFFFFF),
     charger = Color(0xFF64B5F6),
     robot = Color(0xFF4CDADA),
     markerRing = Color(0xFF0B1112),
@@ -196,6 +195,7 @@ private fun renderSelection(map: ParsedMap, selected: Set<Int>, palette: MapPale
     val canvas = Canvas(bitmap)
     canvas.scale(scale.toFloat(), scale.toFloat())
     val vivid = palette.rooms.map { vividOf(it) }
+    val slots = roomColorSlots(map, palette.rooms.size)
     val paint = Paint()
     for (y in 0 until map.height) {
         val rowOff = y * map.width
@@ -205,7 +205,7 @@ private fun renderSelection(map: ParsedMap, selected: Set<Int>, palette: MapPale
             val room = map.roomIdAtCell(rowOff + x) ?: continue
             if (room !in selected) continue
             // Indexed the way drawFloor tints a room, so a room lights up in its own hue.
-            paint.color = vivid[room % vivid.size]
+            paint.color = vivid[slots[room] ?: 0]
             canvas.drawRect(Rect(x.toFloat(), drawY, x + 1f, drawY + 1f), paint)
         }
     }
@@ -295,6 +295,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     val floorPaint = Paint().apply { color = palette.floor }
     val roomPaint = Paint()
     val patterns = HashMap<Int, FloorPattern>()
+    val slots = roomColorSlots(map, palette.rooms.size)
     val w = map.width
     val h = map.height
     val grid = map.grid
@@ -310,7 +311,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
                 128 -> {
                     if (raw != null) {
                         val roomId = (raw[rowOff + x].toInt() ushr 3) and 0x1f
-                        val base = palette.rooms[roomId % palette.rooms.size]
+                        val base = palette.rooms[slots[roomId] ?: 0]
                         val pattern = patterns.getOrPut(roomId) {
                             floorPattern(map.segmentMaterials[roomId], map.segmentMaterialDirections[roomId])
                         }
@@ -395,7 +396,7 @@ private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     val pathPaint = Paint().apply {
         color = palette.path
         style = PaintingStyle.Stroke
-        strokeWidth = 1f
+        strokeWidth = 0.6f
         strokeCap = StrokeCap.Round
     }
     canvas.drawPath(gfxPath, pathPaint)
