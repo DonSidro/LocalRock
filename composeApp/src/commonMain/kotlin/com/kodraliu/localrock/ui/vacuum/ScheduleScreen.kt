@@ -1,8 +1,13 @@
 package com.kodraliu.localrock.ui.vacuum
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -22,6 +27,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -29,6 +35,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -42,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +58,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.vacuum.CleanTimer
+import com.kodraliu.localrock.shared.vacuum.MopRoute
+import com.kodraliu.localrock.shared.vacuum.TimerKind
+import com.kodraliu.localrock.shared.vacuum.TimerSettings
+import com.kodraliu.localrock.shared.vacuum.VacuumFanPower
+import com.kodraliu.localrock.shared.vacuum.WaterBoxMode
+import com.kodraliu.localrock.shared.vacuum.kind
+import com.kodraliu.localrock.shared.vacuum.summary
+import com.kodraliu.localrock.shared.vacuum.timerSettingsFor
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,12 +75,29 @@ fun ScheduleScreen(
     onBack: () -> Unit,
 ) {
     val repository = viewModel.repository
+    val scope = rememberCoroutineScope()
     val timers by repository.timers.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<CleanTimer?>(null) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) { runCatching { repository.fetchTimers() } }
 
+    // A refused save is shown, and the list is read back so it matches what the robot really holds.
+    fun saveTimer(action: suspend () -> Unit) {
+        scope.launch {
+            try {
+                action()
+            } catch (e: Exception) {
+                runCatching { repository.fetchTimers() }
+                snackbarHostState.showSnackbar(e.message ?: "The schedule could not be saved")
+            }
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Schedule") },
@@ -95,8 +130,9 @@ fun ScheduleScreen(
                 items(timers, key = { it.id }) { timer ->
                     TimerRow(
                         timer = timer,
-                        onToggle = { viewModel.run { it.toggleTimer(timer) } },
-                        onDelete = { viewModel.run { it.deleteTimer(timer) } },
+                        onEdit = { editing = timer },
+                        onToggle = { saveTimer { repository.toggleTimer(timer) } },
+                        onDelete = { saveTimer { repository.deleteTimer(timer) } },
                     )
                     HorizontalDivider(Modifier.padding(start = 72.dp))
                 }
@@ -105,20 +141,38 @@ fun ScheduleScreen(
     }
 
     if (showAddDialog) {
-        AddTimerDialog(
-            onAdd = { hour, minute, weekdays ->
+        TimerDialog(
+            initial = null,
+            supportsSmartPlan = viewModel.supportsSmartPlan,
+            supportsFastRoute = viewModel.supportsFastRoute,
+            supportsWaterSlide = viewModel.supportsWaterSlide,
+            onSave = { hour, minute, weekdays, settings, once ->
                 showAddDialog = false
-                viewModel.run { it.createTimer(hour, minute, weekdays) }
+                saveTimer { repository.createTimer(hour, minute, weekdays, settings, once) }
             },
             onDismiss = { showAddDialog = false },
+        )
+    }
+
+    editing?.let { timer ->
+        TimerDialog(
+            initial = timer,
+            supportsSmartPlan = viewModel.supportsSmartPlan,
+            supportsFastRoute = viewModel.supportsFastRoute,
+            supportsWaterSlide = viewModel.supportsWaterSlide,
+            onSave = { hour, minute, weekdays, settings, once ->
+                editing = null
+                saveTimer { repository.updateTimer(timer, hour, minute, weekdays, settings, once) }
+            },
+            onDismiss = { editing = null },
         )
     }
 }
 
 @Composable
-private fun TimerRow(timer: CleanTimer, onToggle: () -> Unit, onDelete: () -> Unit) {
+private fun TimerRow(timer: CleanTimer, onEdit: () -> Unit, onToggle: () -> Unit, onDelete: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onEdit).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -139,10 +193,17 @@ private fun TimerRow(timer: CleanTimer, onToggle: () -> Unit, onDelete: () -> Un
                 color = if (timer.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                formatWeekdays(timer.weekdays),
+                formatRepeat(timer),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            timer.settings.summary()?.let { summary ->
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         IconButton(onClick = onDelete) {
             Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -151,21 +212,57 @@ private fun TimerRow(timer: CleanTimer, onToggle: () -> Unit, onDelete: () -> Un
     }
 }
 
+/** Adds a schedule, or edits [initial]. */
 @Composable
-private fun AddTimerDialog(onAdd: (hour: Int, minute: Int, weekdays: Set<Int>) -> Unit, onDismiss: () -> Unit) {
-    var hour by remember { mutableIntStateOf(8) }
-    var minute by remember { mutableIntStateOf(0) }
-    var weekdays by remember { mutableStateOf(setOf(1, 2, 3, 4, 5)) } // Mon–Fri default
+private fun TimerDialog(
+    initial: CleanTimer?,
+    supportsSmartPlan: Boolean,
+    supportsFastRoute: Boolean,
+    supportsWaterSlide: Boolean,
+    onSave: (hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings, once: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val start = initial?.settings ?: TimerSettings()
+    var hour by remember { mutableIntStateOf(initial?.hour ?: 8) }
+    var minute by remember { mutableIntStateOf(initial?.minute ?: 0) }
+    // Once is the official app's default for a new schedule.
+    var repeatChoice by remember { mutableStateOf(initial?.let { repeatChoiceOf(it) } ?: RepeatChoice.ONCE) }
+    var weekdays by remember { mutableStateOf(initial?.weekdays?.takeIf { it.isNotEmpty() } ?: setOf(1, 2, 3, 4, 5)) }
+    // Like the official app, every schedule picks a mode, opening on Vac & Mop. An old schedule that
+    // carries no settings (it ran with whatever the robot had) opens on it too and is saved with them.
+    var kind by remember { mutableStateOf(start.kind.takeIf { it != TimerKind.CURRENT } ?: TimerKind.VAC_AND_MOP) }
+    // Off (no suction / no water) is what Vacuum-only and Mop-only mean, not a level of its own, and
+    // the smart codes are what SmartPlan means, so none of them is a choice in the rows below.
+    var fanPower by remember {
+        mutableStateOf(start.fanPower?.takeIf { it != VacuumFanPower.OFF && it != VacuumFanPower.SMART } ?: VacuumFanPower.BALANCED)
+    }
+    var waterBoxMode by remember {
+        // Kept as LOW/MEDIUM/HIGH whichever codes the robot uses; the slide codes are applied on save.
+        mutableStateOf(
+            WaterBoxMode.normalize(start.waterBoxMode)?.takeIf { it != WaterBoxMode.OFF && it != WaterBoxMode.SMART }
+                ?: WaterBoxMode.MEDIUM,
+        )
+    }
+    var mopMode by remember { mutableStateOf(start.mopMode?.takeIf { it != MopRoute.SMART } ?: MopRoute.STANDARD) }
+    var repeat by remember { mutableIntStateOf(start.repeat ?: 1) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New schedule") },
+        title = { Text(if (initial == null) "New schedule" else "Edit schedule") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
                 Text("Time", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 ClockStepper(hour, minute, onHourChange = { hour = it }, onMinuteChange = { minute = it })
-                Text("Days", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                ChipRow(
+                    label = "Repeat",
+                    options = RepeatChoice.entries.map { it to it.label },
+                    selected = repeatChoice,
+                    onSelect = { repeatChoice = it },
+                )
+                if (repeatChoice == RepeatChoice.CUSTOM) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     val dayLabels = listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")
                     dayLabels.forEachIndexed { index, label ->
                         val selected = index in weekdays
@@ -186,15 +283,112 @@ private fun AddTimerDialog(onAdd: (hour: Int, minute: Int, weekdays: Set<Int>) -
                         }
                     }
                 }
+
+                ChipRow(
+                    label = "Cleaning",
+                    options = buildList {
+                        if (supportsSmartPlan || kind == TimerKind.SMART_PLAN) add(TimerKind.SMART_PLAN to "SmartPlan")
+                        add(TimerKind.VAC_AND_MOP to "Vacuum and mop")
+                        add(TimerKind.MOP to "Mop")
+                        add(TimerKind.VACUUM to "Vacuum")
+                    },
+                    selected = kind,
+                    onSelect = { kind = it },
+                )
+                if (kind == TimerKind.VACUUM || kind == TimerKind.VAC_AND_MOP) {
+                    ChipRow(
+                        label = "Suction",
+                        options = listOf(
+                            VacuumFanPower.QUIET to "Quiet",
+                            VacuumFanPower.BALANCED to "Balanced",
+                            VacuumFanPower.TURBO to "Turbo",
+                            VacuumFanPower.MAX to "Max",
+                        ),
+                        selected = fanPower,
+                        onSelect = { fanPower = it },
+                    )
+                }
+                if (kind == TimerKind.VAC_AND_MOP || kind == TimerKind.MOP) {
+                    ChipRow(
+                        label = "Water",
+                        options = listOf(
+                            WaterBoxMode.LOW to "Low",
+                            WaterBoxMode.MEDIUM to "Medium",
+                            WaterBoxMode.HIGH to "High",
+                        ),
+                        selected = waterBoxMode,
+                        onSelect = { waterBoxMode = it },
+                    )
+                    ChipRow(
+                        label = "Mop route",
+                        // A schedule can only use these two routes: a Qrevo Pro that accepts Deep and
+                        // Deep+ as its route setting refuses them inside a start command with -10005
+                        // "Param error", and the official app's schedule screen offers only these. A
+                        // route an existing schedule already carries stays visible so it is not dropped.
+                        options = buildList {
+                            add(MopRoute.STANDARD to "Standard")
+                            if (supportsFastRoute || mopMode == MopRoute.FAST) add(MopRoute.FAST to "Fast")
+                            if (mopMode == MopRoute.DEEP) add(MopRoute.DEEP to "Deep")
+                            if (mopMode == MopRoute.DEEP_PLUS) add(MopRoute.DEEP_PLUS to "Deep+")
+                        },
+                        selected = mopMode,
+                        onSelect = { mopMode = it },
+                    )
+                }
+                ChipRow(
+                    label = "Passes",
+                    options = listOf(1 to "1", 2 to "2", 3 to "3"),
+                    selected = repeat,
+                    onSelect = { repeat = it },
+                )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onAdd(hour, minute, weekdays) }) { Text("Save") }
+            TextButton(
+                // Custom with no day picked would never run.
+                enabled = repeatChoice != RepeatChoice.CUSTOM || weekdays.isNotEmpty(),
+                onClick = {
+                    val settings = timerSettingsFor(
+                        kind = kind,
+                        fanPower = fanPower,
+                        waterBoxMode = if (supportsWaterSlide) WaterBoxMode.forSlide(waterBoxMode) else waterBoxMode,
+                        mopMode = mopMode,
+                        repeat = repeat,
+                    )
+                    val days = when (repeatChoice) {
+                        RepeatChoice.ONCE, RepeatChoice.EVERY_DAY -> emptySet()
+                        RepeatChoice.WEEKDAYS -> WEEKDAYS
+                        RepeatChoice.WEEKENDS -> WEEKENDS
+                        RepeatChoice.CUSTOM -> weekdays
+                    }
+                    onSave(hour, minute, days, settings, repeatChoice == RepeatChoice.ONCE)
+                },
+            ) { Text("Save") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
+}
+
+/** A labelled group of single-choice chips that wraps onto more lines, so the chosen one is always in view. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun <T> ChipRow(label: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            options.forEach { (value, text) ->
+                FilterChip(
+                    selected = value == selected,
+                    onClick = { onSelect(value) },
+                    label = { Text(text) },
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -216,11 +410,36 @@ internal fun steppedWithWrap(value: Int, delta: Int, min: Int, max: Int): Int {
     return ((value - min + delta) % size + size) % size + min
 }
 
-private fun formatWeekdays(days: Set<Int>): String {
-    if (days.isEmpty()) return "Every day"
-    val names = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-    if (days == setOf(1, 2, 3, 4, 5)) return "Weekdays"
-    if (days == setOf(0, 6)) return "Weekends"
-    if (days.size == 7) return "Every day"
-    return days.sorted().joinToString(", ") { names.getOrElse(it) { "$it" } }
+private val WEEKDAYS = setOf(1, 2, 3, 4, 5)
+private val WEEKENDS = setOf(0, 6)
+
+/** The official app's Repeat choices; Custom shows the day buttons. */
+private enum class RepeatChoice(val label: String) {
+    ONCE("Once"),
+    EVERY_DAY("Every day"),
+    WEEKDAYS("Weekdays"),
+    WEEKENDS("Weekends"),
+    CUSTOM("Custom"),
+}
+
+private fun repeatChoiceOf(timer: CleanTimer): RepeatChoice = when {
+    timer.date != null -> RepeatChoice.ONCE
+    timer.weekdays.isEmpty() || timer.weekdays.size == 7 -> RepeatChoice.EVERY_DAY
+    timer.weekdays == WEEKDAYS -> RepeatChoice.WEEKDAYS
+    timer.weekdays == WEEKENDS -> RepeatChoice.WEEKENDS
+    else -> RepeatChoice.CUSTOM
+}
+
+private fun formatRepeat(timer: CleanTimer): String {
+    timer.date?.let { date ->
+        val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+        return "Once, ${months.getOrElse(date.month - 1) { "${date.month}" }} ${date.day}"
+    }
+    return when (val choice = repeatChoiceOf(timer)) {
+        RepeatChoice.CUSTOM -> {
+            val names = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+            timer.weekdays.sorted().joinToString(", ") { names.getOrElse(it) { "$it" } }
+        }
+        else -> choice.label
+    }
 }

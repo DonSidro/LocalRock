@@ -10,6 +10,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.Parameters
 import io.ktor.http.Url
+import io.ktor.http.content.TextContent
 import kotlin.random.Random
 
 internal expect fun currentEpochSeconds(): Long
@@ -44,17 +45,21 @@ val HawkAuth = createClientPlugin("HawkAuth", ::HawkAuthConfig) {
         val path = Url(request.url.buildString()).encodedPath
         if (isHawkPublicPath(path)) return@onRequest
         val creds = credsProvider() ?: return@onRequest
-        // GETs and bodyless POSTs have no body. The only other body signed is a url-encoded form,
-        // hashed as sorted k=v pairs exactly like local_roborock_server's _process_extra_hawk_values;
-        // anything else would be signed wrongly, so fail instead of sending a request the server
-        // will reject.
+        // GETs and DELETEs have no body. A url-encoded form is hashed as sorted k=v pairs exactly
+        // like local_roborock_server's _process_extra_hawk_values, and a JSON body (sent as
+        // already-serialised [TextContent], so these are the bytes that go on the wire) as the MD5
+        // of its raw bytes. Anything else would be signed wrongly, so fail instead of sending a
+        // request the server will reject.
+        val body = request.body
         val payload = when {
-            request.method == HttpMethod.Get -> HawkPayload.None
-            request.method == HttpMethod.Post && request.body is EmptyContent -> HawkPayload.None
-            request.method == HttpMethod.Post && request.body is FormDataContent ->
-                HawkPayload.Form(formPairs((request.body as FormDataContent).formData))
+            request.method == HttpMethod.Get || request.method == HttpMethod.Delete -> HawkPayload.None
+            request.method == HttpMethod.Post && body is EmptyContent -> HawkPayload.None
+            request.method == HttpMethod.Post && body is FormDataContent ->
+                HawkPayload.Form(formPairs(body.formData))
+            body is TextContent -> HawkPayload.Json(body.text.encodeToByteArray())
             else -> error(
-                "HawkAuthPlugin signs GETs and url-encoded form POSTs only; ${request.method.value} on $path is neither"
+                "HawkAuthPlugin signs GETs, DELETEs, url-encoded form POSTs and pre-serialised JSON only; " +
+                    "${request.method.value} on $path is none of those"
             )
         }
         val query = buildMap {
