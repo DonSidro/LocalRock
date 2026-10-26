@@ -134,9 +134,9 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     for (i in pixels.indices) {
         val v = pixels[i].toInt() and 0xff
         grid[i] = when {
-            v == 0 -> 0
             (v and 0x07) == 1 -> 127.toByte()
-            else -> 128.toByte()
+            (v and 0x07) == 7 -> 128.toByte()
+            else -> 0
         }
     }
 
@@ -146,7 +146,7 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     for (y in 0 until imageHeight) {
         for (x in 0 until imageWidth) {
             val v = pixels[y * imageWidth + x].toInt() and 0xff
-            if (v != 0 && (v and 0x07) != 1) {
+            if ((v and 0x07) == 7) {
                 val roomId = (v ushr 3) and 0x1f
                 if (roomId > 0) {
                     roomSumX[roomId] = (roomSumX[roomId] ?: 0L) + x
