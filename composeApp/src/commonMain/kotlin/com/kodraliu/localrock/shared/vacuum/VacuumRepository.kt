@@ -152,6 +152,7 @@ class VacuumRepository(
     private var pollJob: Job? = null
     private var dpsJob: Job? = null
     private var mapPollJob: Job? = null
+    private var floorSwitchRefreshJob: Job? = null
 
     suspend fun attach() {
         check(pollJob == null) { "Already attached" }
@@ -242,6 +243,7 @@ class VacuumRepository(
         pollJob?.cancel(); pollJob = null
         dpsJob?.cancel(); dpsJob = null
         mapPollJob?.cancel(); mapPollJob = null
+        floorSwitchRefreshJob?.cancel(); floorSwitchRefreshJob = null
         scope.launch { session.close() }
     }
 
@@ -1011,6 +1013,15 @@ class VacuumRepository(
         _parsedMap.value = null
         _mapBytes.value = null
         runCatching { fetchMap() }
+        // A Saros 20 took up to a minute to load the other map and kept sending the old one until
+        // then, which showed under the new map's name (#54). Ask again often until it has caught up.
+        floorSwitchRefreshJob?.cancel()
+        floorSwitchRefreshJob = scope.launch {
+            repeat(FLOOR_SWITCH_MAP_REFRESHES) {
+                delay(MAP_FAST_POLL_MS)
+                runCatching { fetchMap() }
+            }
+        }
     }
 
 
@@ -1075,6 +1086,8 @@ class VacuumRepository(
         const val MAP_FAST_POLL_MS = 8_000L
         const val MAP_IDLE_POLL_MS = 60_000L
         const val MAP_RETRY_MS = 5_000L
+        /** Map requests after a floor switch, [MAP_FAST_POLL_MS] apart: about a minute and a half. */
+        const val FLOOR_SWITCH_MAP_REFRESHES = 12
         const val MAX_HISTORY_RECORDS = 20
 
         const val READBACK_ATTEMPTS = 4
