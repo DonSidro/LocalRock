@@ -54,9 +54,9 @@ private class MapPalette(
 
 // Light is NOT the dark palette inverted: the rooms have to sit *above* their container, so the
 // hero behind them is near-white and these tints carry enough weight to advance against it.
-// Blue, teal, salmon and yellow, as in the Roborock app; touching rooms get different ones.
+// Blue, salmon, teal and yellow in the order the Roborock app numbers them, then grey for a room it has no colour for.
 private val OfficialRoomColors = listOf(
-    Color(0xFF6EA8EB), Color(0xFF26CFC8), Color(0xFFDB7F66), Color(0xFFE8BA5C),
+    Color(0xFF6EA8EB), Color(0xFFDB7F66), Color(0xFF26CFC8), Color(0xFFE8BA5C), Color(0xFFB8B8B8),
 )
 
 private val LightPalette = MapPalette(
