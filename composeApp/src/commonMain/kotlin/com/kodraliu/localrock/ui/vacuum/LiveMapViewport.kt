@@ -20,9 +20,20 @@ internal class LiveMapViewport {
 
     fun frameIfNeeded(key: Any?, size: Size, fit: Pair<Float, Offset>?) {
         if (fit == null || size.width <= 0f || size.height <= 0f) return
-        if (identity != key || framedSize != size) {
+        if (identity != key) {
             reset(fit)
             identity = key
+            framedSize = size
+        } else if (framedSize != size) {
+            // Same map, but the view resized (fold/unfold or rotate): keep the user's zoom and
+            // the map point under the view centre instead of re-framing to the default framing.
+            val oldSize = framedSize
+            if (oldSize != null && oldSize.width > 0f && oldSize.height > 0f) {
+                offset = offset + Offset(
+                    (size.width - oldSize.width) / 2f,
+                    (size.height - oldSize.height) / 2f,
+                )
+            }
             framedSize = size
         }
     }

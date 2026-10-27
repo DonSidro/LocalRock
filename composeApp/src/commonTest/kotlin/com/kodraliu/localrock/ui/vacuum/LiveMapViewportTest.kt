@@ -37,18 +37,30 @@ class LiveMapViewportTest {
         assertEquals(2f, state.scale)
     }
 
-    @Test fun resizeAndCoordinateSpaceChangesReframe() {
+    @Test fun resizeKeepsZoomButCoordinateSpaceChangeReframes() {
         val state = LiveMapViewport()
         val key = map.viewportIdentity("a" to 1)
         state.frameIfNeeded(key, size, fit)
         state.scale = 6f
         state.frameIfNeeded(key, Size(600f, 400f), 3f to Offset.Zero)
-        assertEquals(3f, state.scale)
+        assertEquals(6f, state.scale)
+        assertEquals(Offset(110f, -80f), state.offset)
         val shifted = map.copy(pixelOffsetLeft = 10).viewportIdentity("a" to 1)
         assertNotEquals(key, shifted)
         state.frameIfNeeded(shifted, Size(600f, 400f), fit)
         assertEquals(fit.second, state.offset)
         assertEquals(2f, state.scale)
+    }
+
+    @Test fun resizeKeepsTheMapPointAtTheViewCentre() {
+        val state = LiveMapViewport()
+        val key = map.viewportIdentity("a" to 1)
+        state.frameIfNeeded(key, size, fit)
+        state.scale = 5f
+        state.offset = Offset(-300f, -200f)
+        state.frameIfNeeded(key, Size(600f, 800f), 1.5f to Offset.Zero)
+        assertEquals(5f, state.scale)
+        assertEquals(Offset(-200f, -100f), state.offset)
     }
 
     @Test fun waitsForMeasurementAndDoubleTapUsesLatestFit() {
