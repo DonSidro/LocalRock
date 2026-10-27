@@ -5,6 +5,8 @@ import com.kodraliu.localrock.shared.vacuum.map.roomIdAtCell
 
 private const val LOOK_ACROSS_CELLS = 6
 
+private val UNNAMED_ROOM = Regex("Room \\d+")
+
 /** Palette slot per room id, chosen so rooms that share a wall get different colours where possible. */
 internal fun roomColorSlots(map: ParsedMap, slots: Int): Map<Int, Int> {
     val neighbours = HashMap<Int, MutableSet<Int>>()
@@ -27,9 +29,14 @@ internal fun roomColorSlots(map: ParsedMap, slots: Int): Map<Int, Int> {
         }
     }
     val slotOf = HashMap<Int, Int>()
-    for (room in neighbours.keys.sortedWith(compareByDescending<Int> { neighbours[it]!!.size }.thenBy { it })) {
+    // A room with no name of its own is yellow in the Roborock app, and no named room is.
+    val unnamed = map.rooms.filter { UNNAMED_ROOM.matches(it.name) && it.id in neighbours }.map { it.id }.toSet()
+    val reserved = if (unnamed.isNotEmpty()) slots - 1 else -1
+    for (room in unnamed) slotOf[room] = reserved
+    for (room in neighbours.keys.filter { it !in unnamed }.sortedWith(compareByDescending<Int> { neighbours[it]!!.size }.thenBy { it })) {
         val taken = neighbours[room]!!.mapNotNull { slotOf[it] }
-        val free = (0 until slots).firstOrNull { it !in taken }
+        val free = (0 until slots).firstOrNull { it !in taken && it != reserved }
+            ?: (0 until slots).firstOrNull { it !in taken }
         slotOf[room] = free ?: (0 until slots).minBy { s -> taken.count { it == s } }
     }
     return slotOf

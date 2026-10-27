@@ -65,7 +65,7 @@ private val LightPalette = MapPalette(
     floor = Color(0xFFE9EFEE),
     rooms = OfficialRoomColors,
     // Deep enough to read as ink rather than neon against the pastels.
-    path = Color(0xF2FFFFFF),
+    path = Color(0x99FFFFFF),
     charger = Color(0xFF1FB36A),
     robot = Color(0xFF1FB36A),
     markerRing = Color(0xFFFFFFFF),
@@ -75,7 +75,7 @@ private val DarkPalette = MapPalette(
     wall = Color(0xFF070B0C),
     floor = Color(0xFF17201F),
     rooms = OfficialRoomColors,
-    path = Color(0xF2FFFFFF),
+    path = Color(0x99FFFFFF),
     charger = Color(0xFF2ED47E),
     robot = Color(0xFF2ED47E),
     markerRing = Color(0xFF0B1112),
@@ -436,7 +436,7 @@ private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     }
     // A wide faint band for the ground the robot has covered, under the thin line of its route.
     canvas.drawPath(main, Paint().apply {
-        color = Color(0x38FFFFFF)
+        color = Color(0x2EFFFFFF)
         style = PaintingStyle.Stroke
         strokeWidth = 6.5f
         strokeCap = StrokeCap.Round
@@ -446,7 +446,7 @@ private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
         canvas.drawPath(line, Paint().apply {
             color = palette.path
             style = PaintingStyle.Stroke
-            strokeWidth = 0.6f
+            strokeWidth = 0.9f
             strokeCap = StrokeCap.Round
         })
     }
@@ -454,7 +454,7 @@ private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     canvas.drawPath(wash, Paint().apply {
         color = palette.path
         style = PaintingStyle.Stroke
-        strokeWidth = 0.6f
+        strokeWidth = 0.9f
         pathEffect = PathEffect.dashPathEffect(floatArrayOf(2f, 3f))
     })
 }

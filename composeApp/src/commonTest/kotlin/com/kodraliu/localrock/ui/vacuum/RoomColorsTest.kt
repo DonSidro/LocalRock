@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.ui.vacuum
 
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
+import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
 import kotlin.test.Test
 import kotlin.test.assertNotEquals
 import kotlin.test.assertEquals
@@ -33,5 +34,16 @@ class RoomColorsTest {
         val raw = byteArrayOf(((1 shl 3) or 7).toByte(), (2 shl 3).toByte())
         val map = ParsedMap(2, 1, byteArrayOf(128.toByte(), 0), emptyList(), 0.05f, originalGrid = raw)
         assertEquals(setOf(1), roomColorSlots(map, 4).keys)
+    }
+
+    @Test
+    fun a_room_with_no_name_gets_the_last_colour_alone() {
+        val base = mapOf(1, 2, 3, 4)
+        val map = base.copy(rooms = listOf(
+            ParsedMapRoom(1, "Kitchen"), ParsedMapRoom(2, "Room 2"), ParsedMapRoom(3, "Hall"), ParsedMapRoom(4, "Office"),
+        ))
+        val slots = roomColorSlots(map, 4)
+        assertEquals(3, slots[2])
+        assertEquals(listOf(1, 3, 4).none { slots[it] == 3 }, true)
     }
 }
