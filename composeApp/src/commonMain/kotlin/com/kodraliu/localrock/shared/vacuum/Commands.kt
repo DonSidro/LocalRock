@@ -184,6 +184,11 @@ suspend fun VacuumSession.setSmartWashParams(settings: SmartWashSettings): V1Res
     sendCommandRaw("set_smart_wash_params", encodeSmartWashParams(settings))
 
 suspend fun VacuumSession.getInitStatus(): V1Response = sendCommand("app_get_init_status")
+// The read answers a bitmask shared with other switches ({"common_switch_status": n}); bit 0 is Offline
+// Map (toggling it in the official app flipped exactly that bit). The write is a plain 0 or 1.
+suspend fun VacuumSession.getOfflineMapStatus(): V1Response = sendCommand("get_offline_map_status")
+suspend fun VacuumSession.setOfflineMapStatus(on: Boolean): V1Response =
+    sendCommandRaw("set_offline_map_status", JsonObject(mapOf("status" to JsonPrimitive(if (on) 1 else 0))))
 
 suspend fun VacuumSession.getDustCollectionMode(): V1Response = sendCommand("get_dust_collection_mode")
 suspend fun VacuumSession.setDustCollectionMode(mode: Int): V1Response =

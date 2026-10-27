@@ -875,6 +875,16 @@ class VacuumRepository(
             ?.let { _robotSettings.update { s -> s.copy(carpetMode = it) } }
     }
 
+    suspend fun fetchOfflineMap() {
+        val on = runCatching { parseOfflineMap(session.getOfflineMapStatus().result) }.getOrNull() ?: return
+        _robotSettings.update { it.copy(offlineMap = on) }
+    }
+
+    suspend fun setOfflineMap(on: Boolean) {
+        session.setOfflineMapStatus(on).requireOk("set_offline_map_status")
+        _robotSettings.update { it.copy(offlineMap = on) }
+    }
+
     // The screen only changes once the robot has said ok, so a refused change is not shown as if it
     // had been applied (#32).
     suspend fun setVolume(volume: Int) {

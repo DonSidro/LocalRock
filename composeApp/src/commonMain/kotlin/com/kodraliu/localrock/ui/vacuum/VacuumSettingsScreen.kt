@@ -187,7 +187,10 @@ fun VacuumSettingsScreen(
                 route = SettingsRoute.DockSettings
             },
             onRobotSettings = {
-                scope.launch { runCatching { repository.fetchRobotSettings() } }
+                scope.launch {
+                    runCatching { repository.fetchRobotSettings() }
+                    repository.fetchOfflineMap()
+                }
                 route = SettingsRoute.RobotSettings
             },
             onDndMode = {
@@ -252,6 +255,7 @@ fun VacuumSettingsScreen(
             onLedChange = { on -> viewModel.report { it.setLed(on) } },
             features = betaFeatures.inSection(FeatureSection.ROBOT),
             onFeatureToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            onOfflineMapChange = { on -> viewModel.report { it.setOfflineMap(on) } },
             onBack = { route = SettingsRoute.Root },
         )
         SettingsRoute.DndMode -> DndScreen(
@@ -1197,6 +1201,7 @@ private fun RobotSettingsScreen(
     onLedChange: (Boolean) -> Unit,
     features: List<BetaFeatureState>,
     onFeatureToggle: (String, Boolean) -> Unit,
+    onOfflineMapChange: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     var findTriggered by remember { mutableStateOf(false) }
@@ -1259,6 +1264,19 @@ private fun RobotSettingsScreen(
             items(features, key = { it.def.id }) { f ->
                 HorizontalDivider(Modifier.padding(start = 72.dp))
                 FeatureToggleRow(f, onFeatureToggle)
+            }
+            robotSettings.offlineMap?.let { offlineMap ->
+                item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+                item {
+                    SettingRowSwitch(
+                        icon = Icons.Default.Map,
+                        iconTint = AppColors.AccentCyan,
+                        title = "Offline map",
+                        subtitle = "Keep the map on the robot while the cloud is unreachable",
+                        checked = offlineMap,
+                        onCheckedChange = onOfflineMapChange,
+                    )
+                }
             }
         }
     }

@@ -11,6 +11,7 @@ data class RobotSettings(
     val childLock: Boolean = false,
     val ledEnabled: Boolean = true,
     val carpetMode: Int = 1, // 0=avoid, 1=standard, 2=boost
+    val offlineMap: Boolean? = null, // null until the robot has answered
 )
 
 /** The levels the volume picker offers, as change_sound_volume values (0-100). */
@@ -27,6 +28,13 @@ fun volumeLevelIndex(volume: Int): Int =
 fun volumeLabel(volume: Int): String {
     val (level, name) = VolumeLevels[volumeLevelIndex(volume)]
     return if (volume == level) name else "$name ($volume%)"
+}
+
+/** Offline Map is bit 0 of the robot's shared switch register, from either answer shape. */
+internal fun parseOfflineMap(result: JsonElement?): Boolean? {
+    val answer = (if (result is kotlinx.serialization.json.JsonArray) result.firstOrNull() else result) as? JsonObject
+    val bits = (answer?.get("common_switch_status") as? JsonPrimitive)?.intOrNull ?: return null
+    return (bits and 1) == 1
 }
 
 data class DockSettings(
