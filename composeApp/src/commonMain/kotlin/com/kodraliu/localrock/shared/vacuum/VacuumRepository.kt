@@ -882,9 +882,12 @@ class VacuumRepository(
         _robotSettings.update { it.copy(volume = volume) }
     }
 
+    // Read back after the ok, so the switch shows what the robot holds; the tapped value stands in if
+    // the read fails.
     suspend fun setChildLock(locked: Boolean) {
         session.setChildLock(locked).requireOk(SET_CHILD_LOCK_STATUS)
-        _robotSettings.update { it.copy(childLock = locked) }
+        val held = runCatching { session.getChildLock().result.asAnswerInt("lock_status") }.getOrNull()
+        _robotSettings.update { it.copy(childLock = held?.let { v -> v == 1 } ?: locked) }
     }
 
     suspend fun setLed(enabled: Boolean) {
