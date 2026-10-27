@@ -257,6 +257,7 @@ data class ParsedMapRoom(
     val labelNormY: Float? = null,
     /** How many cells of the room run across the map at its label, so a name can be fitted inside it. */
     val labelSpanCells: Int? = null,
+    val labelSpanCellsY: Int? = null,
     /** The room type the robot keeps for this room (see RoomType); null for a room with no entry in its table. */
     val tag: Int? = null,
 )

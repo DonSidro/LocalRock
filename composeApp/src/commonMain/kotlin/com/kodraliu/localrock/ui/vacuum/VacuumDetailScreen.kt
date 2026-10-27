@@ -1055,7 +1055,9 @@ private fun VacuumMapImage(
                 val badgeGap = if (selected) 0f else 4.dp.toPx()
                 val unnamed = room.tag == null && !selected
                 // A name is shortened to fit inside its room, so it never runs out over the black between rooms.
-                val roomWidthPx = (room.labelSpanCells ?: 0) * view.k * scale
+                val yawRad = view.yawDegrees * (PI / 180.0)
+                val spanCells = abs(cos(yawRad)) * (room.labelSpanCells ?: 0) + abs(sin(yawRad)) * (room.labelSpanCellsY ?: room.labelSpanCells ?: 0)
+                val roomWidthPx = spanCells.toFloat() * view.k * scale
                 val textRoom = (roomWidthPx - badge - badgeGap).toInt().coerceAtLeast(MIN_LABEL_WIDTH_PX)
                 val measured = if (roomWidthPx > 0f) {
                     textMeasurer.measure(

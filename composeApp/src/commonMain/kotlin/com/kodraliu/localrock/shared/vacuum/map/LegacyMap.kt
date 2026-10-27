@@ -254,7 +254,23 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
                 }
             }
         }
-        ParsedMapRoom(id = roomId, name = "Room $roomId", labelNormX = cx, labelNormY = cy, labelSpanCells = right - left + 1)
+        // The same reach up and down around the label, for a map turned a quarter turn.
+        var top = labelY[roomId]!!
+        var bottom = top
+        for (col in (labelX[roomId]!! - LABEL_SPAN_ROWS)..(labelX[roomId]!! + LABEL_SPAN_ROWS)) {
+            if (col !in 0 until imageWidth) continue
+            for (y in 0 until imageHeight) {
+                val v = pixels[y * imageWidth + col].toInt() and 0xff
+                if ((v and 0x07) == 7 && ((v ushr 3) and 0x1f) == roomId) {
+                    if (y < top) top = y
+                    if (y > bottom) bottom = y
+                }
+            }
+        }
+        ParsedMapRoom(
+            id = roomId, name = "Room $roomId", labelNormX = cx, labelNormY = cy,
+            labelSpanCells = right - left + 1, labelSpanCellsY = bottom - top + 1,
+        )
     }
 
     return ParsedMap(
