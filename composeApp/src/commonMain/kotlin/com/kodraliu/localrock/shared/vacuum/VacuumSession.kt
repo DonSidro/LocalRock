@@ -25,6 +25,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.random.Random
@@ -69,6 +70,8 @@ class VacuumSession(
     private var collectorJob: Job? = null
     private var security: SecurityData? = null
     private var pendingMap: CompletableDeferred<MapResponse>? = null
+    /** Photos asked for with get_photo, by request id. */
+    private val pendingBlobs = mutableMapOf<Int, CompletableDeferred<ByteArray>>()
 
     /** The topic we are actually subscribed to, which can lag [topicsProvider] after a re-login. */
     private var subscribedTopic: String? = null
@@ -110,12 +113,51 @@ class VacuumSession(
         firstReplyTimeoutMs: Long? = null,
     ): V1Response {
         if (demo) return emptyResponse
+        return sendRequest(nextRequestId(), method, params, timeoutMs, firstReplyTimeoutMs)
+    }
+
+    /**
+     * Fetches an obstacle photo and returns the image (#36). The robot answers get_photo with
+     * `["ok"]` and sends the photo afterwards as a frame of its own carrying the request id, so the
+     * photo is waited for under that id from before the request goes out.
+     */
+    suspend fun fetchPhoto(security: SecurityData, photoId: String, timeoutMs: Long = 15_000L): ByteArray {
+        check(!demo && collectorJob != null) { "Session must be started before fetchPhoto" }
+        val keyAnswer = sendCommand("get_random_pkey").requireOk("get_random_pkey").result
+        val publicKey = ((keyAnswer as? JsonArray)?.firstOrNull() ?: keyAnswer)
+            .let { (it as? JsonObject)?.get("pub_key") as? JsonObject }
+            ?: throw RoborockProtocolException("get_random_pkey did not return a public key")
         val requestId = nextRequestId()
+        val photo = CompletableDeferred<ByteArray>()
+        mutex.withLock { pendingBlobs[requestId] = photo }
+        try {
+            val securityJson = buildJsonObject {
+                put("endpoint", security.endpoint)
+                put("nonce", security.nonceHex)
+            }
+            sendRequest(
+                requestId, "get_photo", getPhotoParams(publicKey, security, photoId), timeoutMs,
+                extraInner = mapOf("security" to securityJson),
+            ).requireOk("get_photo")
+            return imageFromPhotoData(withTimeout(timeoutMs) { photo.await() })
+        } finally {
+            mutex.withLock { pendingBlobs.remove(requestId) }
+        }
+    }
+
+    private suspend fun sendRequest(
+        requestId: Int,
+        method: String,
+        params: JsonElement,
+        timeoutMs: Long,
+        firstReplyTimeoutMs: Long? = null,
+        extraInner: Map<String, JsonElement> = emptyMap(),
+    ): V1Response {
         val ts = nowEpochSeconds()
         val request = PendingRequest()
         mutex.withLock { pending[requestId] = request }
         try {
-            val v1Payload = V1Envelope.encodeRequestRaw(requestId, method, params, ts)
+            val v1Payload = V1Envelope.encodeRequestRaw(requestId, method, params, ts, extraInner)
             val frame = RoborockCodec(localKey, prefixed = false).encode(
                 RoborockMessage(
                     protocol = RoborockProtocol.RPC_REQUEST,
@@ -165,6 +207,8 @@ class VacuumSession(
             pending.clear()
             pendingMap?.cancel()
             pendingMap = null
+            pendingBlobs.values.forEach { it.cancel() }
+            pendingBlobs.clear()
             security = null
         }
     }
@@ -239,6 +283,11 @@ class VacuumSession(
                 }
             }
 
+            decodePhotoFrame(m)?.let { blob ->
+                println("[VacLocal] photo frame id=${blob.requestId} bytes=${blob.data.size}")
+                mutex.withLock { pendingBlobs[blob.requestId] }?.complete(blob.data)
+            }
+
             val (sd, pendingMapDef) = mutex.withLock { security to pendingMap }
             if (sd != null && pendingMapDef != null) {
                 runCatching { decodeMapResponse(m, sd) }.getOrNull()?.let { mapResp ->
@@ -247,6 +296,12 @@ class VacuumSession(
             }
         }
     }
+
+    /** A photo frame, or null for anything else; a broken one is logged and dropped, so its request times out. */
+    private fun decodePhotoFrame(m: RoborockMessage): BlobResponse? =
+        runCatching { decodeBlobResponse(m) }
+            .onFailure { println("[VacLocal] photo frame FAILED: ${it.message}") }
+            .getOrNull()
 
     private suspend fun nextRequestId(): Int = mutex.withLock {
         val id = nextId

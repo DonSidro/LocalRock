@@ -1112,6 +1112,15 @@ class VacuumRepository(
      */
     suspend fun fetchMap(): MapResponse = mapFetchMutex.withLock { fetchMapLocked() }
 
+    private val photoMutex = Mutex()
+    private val obstaclePhotos = mutableMapOf<String, ByteArray>()
+
+    /** The photo the robot keeps for an obstacle on the map (#36), fetched once per photo id. */
+    suspend fun fetchObstaclePhoto(photoId: String): ByteArray = photoMutex.withLock {
+        obstaclePhotos[photoId]
+            ?: session.fetchPhoto(createSecurityData(rriotKeyProvider()), photoId).also { obstaclePhotos[photoId] = it }
+    }
+
     private suspend fun fetchMapLocked(): MapResponse {
         if (demo) {
             _mapStatus.value = "Demo mode — live map unavailable"
