@@ -173,21 +173,60 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
             }
         }
     }
-    // The middle of an irregular room can fall outside it, in a gap or another room, so the label goes
-    // on the room's own floor cell nearest that middle.
+    // The label goes at the room's most open spot: the floor cell farthest from any wall, gap or other
+    // room, so a name sits on clear floor and not on furniture gaps or in a doorway.
+    val roomAt = IntArray(imageWidth * imageHeight)
+    for (i in roomAt.indices) {
+        val v = pixels[i].toInt() and 0xff
+        roomAt[i] = if ((v and 0x07) == 7) (v ushr 3) and 0x1f else 0
+    }
+    val open = IntArray(roomAt.size) { Int.MAX_VALUE / 2 }
+    for (y in 0 until imageHeight) {
+        for (x in 0 until imageWidth) {
+            val i = y * imageWidth + x
+            if (roomAt[i] == 0) {
+                open[i] = 0
+            } else if (x == 0 || y == 0 || x == imageWidth - 1 || y == imageHeight - 1 ||
+                roomAt[i - 1] != roomAt[i] || roomAt[i + 1] != roomAt[i] ||
+                roomAt[i - imageWidth] != roomAt[i] || roomAt[i + imageWidth] != roomAt[i]
+            ) {
+                open[i] = 1
+            }
+        }
+    }
+    for (y in 0 until imageHeight) {
+        for (x in 0 until imageWidth) {
+            val i = y * imageWidth + x
+            if (roomAt[i] == 0) continue
+            if (x > 0 && roomAt[i - 1] == roomAt[i]) open[i] = minOf(open[i], open[i - 1] + 1)
+            if (y > 0 && roomAt[i - imageWidth] == roomAt[i]) open[i] = minOf(open[i], open[i - imageWidth] + 1)
+        }
+    }
+    for (y in imageHeight - 1 downTo 0) {
+        for (x in imageWidth - 1 downTo 0) {
+            val i = y * imageWidth + x
+            if (roomAt[i] == 0) continue
+            if (x < imageWidth - 1 && roomAt[i + 1] == roomAt[i]) open[i] = minOf(open[i], open[i + 1] + 1)
+            if (y < imageHeight - 1 && roomAt[i + imageWidth] == roomAt[i]) open[i] = minOf(open[i], open[i + imageWidth] + 1)
+        }
+    }
     val labelX = mutableMapOf<Int, Int>()
     val labelY = mutableMapOf<Int, Int>()
+    val labelOpen = mutableMapOf<Int, Int>()
     val labelDistance = mutableMapOf<Int, Float>()
     for (y in 0 until imageHeight) {
         for (x in 0 until imageWidth) {
-            val v = pixels[y * imageWidth + x].toInt() and 0xff
-            if ((v and 0x07) != 7) continue
-            val roomId = (v ushr 3) and 0x1f
+            val i = y * imageWidth + x
+            val roomId = roomAt[i]
+            if (roomId == 0) continue
             val count = roomCount[roomId] ?: continue
             val dx = x - roomSumX[roomId]!! / count.toFloat()
             val dy = y - roomSumY[roomId]!! / count.toFloat()
             val distance = dx * dx + dy * dy
-            if (distance < (labelDistance[roomId] ?: Float.MAX_VALUE)) {
+            val best = labelOpen[roomId] ?: -1
+            // The most open cell wins; among equally open cells, the one nearest the room's middle.
+            if (open[i] > best || (open[i] == best && distance < (labelDistance[roomId] ?: Float.MAX_VALUE))) {
+                labelOpen[roomId] = open[i]
                 labelDistance[roomId] = distance
                 labelX[roomId] = x
                 labelY[roomId] = y
@@ -299,7 +338,7 @@ private const val MAGIC_0 = 0x72.toByte()
 private const val MAGIC_1 = 0x72.toByte()
 
 /** Rows either side of a room's label that its width is read over. */
-private const val LABEL_SPAN_ROWS = 3
+private const val LABEL_SPAN_ROWS = 8
 
 private const val BLOCK_CHARGER = 1
 private const val BLOCK_IMAGE = 2

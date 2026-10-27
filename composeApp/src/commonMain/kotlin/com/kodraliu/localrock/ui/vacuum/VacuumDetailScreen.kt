@@ -872,7 +872,7 @@ private fun DrawScope.drawMapLayer(image: ImageBitmap, view: MapView, height: Fl
     }
 }
 
-private const val MIN_LABEL_WIDTH_PX = 60
+private const val MIN_LABEL_WIDTH_PX = 100
 
 @Composable
 private fun VacuumMapImage(
