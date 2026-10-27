@@ -110,14 +110,23 @@ suspend fun VacuumSession.appZonedClean(zones: List<ZoneRect>): V1Response =
 
 suspend fun VacuumSession.getTimer(): V1Response = sendCommand("get_timer")
 
-suspend fun VacuumSession.setTimer(id: String, enabled: Boolean, cron: String): V1Response =
+/**
+ * Creates or replaces a schedule. [settings] ride in the action object; with none chosen it is the
+ * `{}` this always sent.
+ */
+suspend fun VacuumSession.setTimer(
+    id: String,
+    enabled: Boolean,
+    cron: String,
+    settings: TimerSettings = TimerSettings(),
+): V1Response =
     sendCommand("set_timer", listOf(JsonArray(listOf(
         JsonPrimitive(id),
         JsonArray(listOf(
             JsonPrimitive(if (enabled) "on" else "off"),
             JsonArray(listOf(
                 JsonPrimitive(cron),
-                JsonArray(listOf(JsonPrimitive("start_clean"), JsonObject(emptyMap()))),
+                JsonArray(listOf(JsonPrimitive("start_clean"), settings.toActionObject())),
             )),
         )),
     ))))
@@ -130,6 +139,29 @@ suspend fun VacuumSession.updTimer(id: String, enabled: Boolean): V1Response =
         JsonPrimitive(id),
         JsonPrimitive(if (enabled) "on" else "off"),
     ))))
+
+/** Decides get/set/upd/del_timer vs get/set/upd/del_server_timer; see [usesServerTimer]. */
+suspend fun VacuumSession.getInitStatus(): V1Response = sendCommand("app_get_init_status")
+
+suspend fun VacuumSession.getServerTimer(): V1Response = sendCommand("get_server_timer")
+
+/** Creates or replaces a schedule on a server_timer robot; see [serverTimerSetParams]. */
+suspend fun VacuumSession.setServerTimer(
+    id: String,
+    cron: String,
+    settings: TimerSettings = TimerSettings(),
+): V1Response = sendCommandRaw("set_server_timer", serverTimerSetParams(id, cron, settings))
+
+suspend fun VacuumSession.delServerTimer(id: String): V1Response =
+    sendCommand("del_server_timer", listOf(JsonPrimitive(id)))
+
+/** Turns a server_timer schedule on or off. Params as the official app sends them (captured live): `[["<robot id>","on"|"off"]]`; the robot answers `["ok"]`. */
+internal fun serverTimerUpdParams(id: String, enabled: Boolean): List<JsonElement> = listOf(
+    JsonArray(listOf(JsonPrimitive(id), JsonPrimitive(if (enabled) "on" else "off"))),
+)
+
+suspend fun VacuumSession.updServerTimer(id: String, enabled: Boolean): V1Response =
+    sendCommand("upd_server_timer", serverTimerUpdParams(id, enabled))
 
 
 // The robot answers "The method called is not recognized by the device" to set_sound_volume,

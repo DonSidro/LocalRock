@@ -19,6 +19,15 @@ class SmartPlanTest {
     }
 
     @Test
+    fun fast_route_support_is_bit_8() {
+        // A Qrevo Pro's real newFeatureSet: python-roborock reads is_clean_route_fast_mode_supported
+        // (mask 256 of the last 8 hex characters) as true for it, and the robot accepts route 304.
+        assertTrue(isFastRouteSupported("42BA8F5C7EDAFFFE"))
+        assertFalse(isFastRouteSupported("42BA8F5C7EDAFEFE"))
+        assertFalse(isFastRouteSupported(null))
+    }
+
+    @Test
     fun feature_bit_is_false_for_short_missing_or_invalid_strings() {
         assertFalse(newFeatureBit("8000000000000", 55))
         assertFalse(newFeatureBit(null, 55))

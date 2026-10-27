@@ -1,5 +1,13 @@
 package com.kodraliu.localrock.shared.vacuum
 
+import com.kodraliu.localrock.shared.device.DeviceApiException
+import com.kodraliu.localrock.shared.schedule.ScheduleEnablement
+import com.kodraliu.localrock.shared.schedule.ScheduleException
+import com.kodraliu.localrock.shared.schedule.ServerJobCreation
+import com.kodraliu.localrock.shared.schedule.ServerJobDeletion
+import com.kodraliu.localrock.shared.schedule.nativeTimerState
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import com.kodraliu.localrock.shared.model.Room
 import com.kodraliu.localrock.shared.mqtt.MqttClient
 import com.kodraliu.localrock.shared.mqtt.MqttTopics
@@ -32,6 +40,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -57,6 +66,7 @@ class VacuumRepository(
     private val nowEpochSeconds: () -> Int,
     private val pollIntervalMs: Long = 5_000L,
     private val demo: Boolean = false,
+    private val scheduleMirror: ScheduleMirror? = null,
 ) {
     val session: VacuumSession = VacuumSession(
         localKey = localKey,
@@ -815,38 +825,330 @@ class VacuumRepository(
         runCatching { rooms() }
     }
 
-    suspend fun fetchTimers() {
-        val resp = session.getTimer()
-        val result = resp.result ?: return
-        if (result !is JsonArray) return
-        val parsed = result.mapNotNull { entry ->
-            if (entry !is JsonArray || entry.size < 3) return@mapNotNull null
-            val id = entry[0].jsonPrimitive.contentOrNull ?: return@mapNotNull null
-            val enabled = entry[1].jsonPrimitive.contentOrNull == "on"
-            val details = runCatching { entry[2].jsonArray }.getOrNull() ?: return@mapNotNull null
-            val cron = details.firstOrNull()?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-            parseCronTimer(id, enabled, cron)
-        }
-        _timers.value = parsed
+    // Cached per repository instance (one per robot session) once read, since it does not change
+    // for a given robot's account binding. null means not yet read.
+    private var serverTimerPreferred: Boolean? = null
+
+    /**
+     * Whether this robot expects get/set/upd/del_server_timer instead of legacy get/set/upd/del_timer,
+     * decided the same way the official app decides it; see [usesServerTimer]. Defaults to legacy,
+     * the long-established fallback, when the robot's answer can't be read. A write that comes back
+     * `-10005` is still handled as a one-off protocol switch by the caller, since a robot can be more
+     * lenient than this flag promises.
+     */
+    private suspend fun prefersServerTimer(): Boolean {
+        serverTimerPreferred?.let { return it }
+        val detected = runCatching { session.getInitStatus() }.getOrNull()
+            ?.result?.let { usesServerTimer(it) } ?: false
+        serverTimerPreferred = detected
+        return detected
     }
 
-    suspend fun createTimer(hour: Int, minute: Int, weekdays: Set<Int>): CleanTimer {
-        val id = nowEpochSeconds().toString()
-        val cron = buildCron(minute, hour, weekdays)
-        session.setTimer(id, enabled = true, cron = cron).requireOk("set_timer")
-        val timer = CleanTimer(id = id, enabled = true, hour = hour, minute = minute, weekdays = weekdays)
+    private fun RobotCommandException.isTimerTypeMismatch(): Boolean = isTimerTypeError(error)
+
+    /** The day a one-time schedule at [hour]:[minute] runs on, in the phone's own timezone. */
+    private fun nextOccurrence(hour: Int, minute: Int): TimerDate =
+        nextTimerDate(nowEpochSeconds().toLong(), TimeZone.currentSystemDefault(), hour, minute)
+
+    /** A server_timer id is a millisecond timestamp, confirmed live; legacy ones are second-based. */
+    private fun newTimerId(useServerTimer: Boolean): String =
+        if (useServerTimer) (nowEpochSeconds().toLong() * 1000 + kotlin.random.Random.nextInt(1000)).toString() else nowEpochSeconds().toString()
+
+    private suspend fun saveTimerEntry(
+        useServerTimer: Boolean,
+        id: String,
+        cron: String,
+        enabled: Boolean,
+        settings: TimerSettings,
+    ) {
+        if (useServerTimer) {
+            val existing = session.getServerTimer().also { it.requireOk("get_server_timer") }.result
+            if (nativeTimerState(existing, id) != "Missing") throw ScheduleException("Native timer ID already exists or could not be checked. No timer was overwritten.")
+            // The robot refuses a server_timer entry that leaves any field out ("Param error"); the
+            // official app always sends every one, so what the schedule leaves open is filled in.
+            session.setServerTimer(id, cron, settings.completedForServerTimer()).requireOk("set_server_timer")
+        } else {
+            session.setTimer(id, enabled = enabled, cron = cron, settings = settings).requireOk("set_timer")
+        }
+    }
+
+    private val scheduleWrites = Mutex()
+    private suspend fun <T> scheduleWrite(action: suspend () -> T): T {
+        if (!scheduleWrites.tryLock()) throw ScheduleException("A schedule save is already in progress. No additional write was sent.")
+        try { return action() }
+        catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            throw ScheduleException("Schedule request timed out. Its final state is unconfirmed; refresh before retrying. No automatic retry was sent.")
+        } finally { scheduleWrites.unlock() }
+    }
+
+    private val scheduleEnablement by lazy {
+        ScheduleEnablement(
+            readJobs = { requireNotNull(scheduleMirror).list(duid) },
+            writeJob = { job, patch -> requireNotNull(scheduleMirror).update(duid, job.id, patch) },
+            readTimers = { session.getServerTimer().also { it.requireOk("get_server_timer") }.result },
+            writeTimer = { name, enabled -> session.updServerTimer(name, enabled).requireOk("upd_server_timer") },
+        )
+    }
+
+    /** Only an unavailable collection permits legacy fallback; an empty jobs list does not. */
+    suspend fun fetchTimers() {
+        _timers.value = loadScheduleList(
+            readJobs = if (scheduleMirror != null && !demo) ({
+                scheduleMirror.list(duid).map { it.toCleanTimer() }
+                    .sortedWith(compareBy<CleanTimer> { it.hour }.thenBy { it.minute }.thenBy { it.id })
+            }) else null,
+            readLegacy = {
+                val resp = session.getTimer()
+                resp.requireOk("get_timer")
+                parseTimerList(resp.result)
+            },
+        )
+    }
+
+    suspend fun nativeScheduleState(timer: CleanTimer): String {
+        val job = timer.serverJob ?: return "Not checked"
+        val name = job.nativeName ?: return "No native timer reference"
+        val reply = session.getServerTimer()
+        reply.requireOk("get_server_timer")
+        return nativeTimerState(reply.result, name)
+    }
+
+    suspend fun createTimer(hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings = TimerSettings(), once: Boolean = false): CleanTimer =
+        scheduleWrite { createTimerInternal(hour, minute, weekdays, settings, once) }
+
+    private suspend fun createTimerInternal(
+        hour: Int,
+        minute: Int,
+        weekdays: Set<Int>,
+        settings: TimerSettings = TimerSettings(),
+        once: Boolean = false,
+    ): CleanTimer {
+        val date = if (once) nextOccurrence(hour, minute) else null
+        val cron = buildCron(minute, hour, if (once) emptySet() else weekdays, date)
+        val jobsSupported = if (scheduleMirror == null || demo) false else try {
+            scheduleMirror.list(duid)
+            true
+        } catch (e: DeviceApiException) {
+            if (e.responseCode != 404 && e.responseCode != 405) throw e
+            false
+        }
+        var useServerTimer = prefersServerTimer() && jobsSupported
+        var id = newTimerId(useServerTimer)
+        try {
+            saveTimerEntry(useServerTimer, id, cron, enabled = true, settings = settings)
+        } catch (e: RobotCommandException) {
+            if (!e.isTimerTypeMismatch() || !jobsSupported) throw e
+            useServerTimer = !useServerTimer
+            serverTimerPreferred = useServerTimer
+            id = newTimerId(useServerTimer)
+            saveTimerEntry(useServerTimer, id, cron, enabled = true, settings = settings)
+        }
+        val newWeekdays = if (once) emptySet() else weekdays
+        var timerSettings = settings
+        var timerId = id
+        if (useServerTimer) {
+            timerSettings = settings.completedForServerTimer().copy(serverTimerId = id)
+            timerId = createCloudRecord(id, minute, hour, newWeekdays, date, timerSettings)
+            val confirmed = requireNotNull(scheduleMirror).list(duid).singleOrNull { it.id == timerId }
+                ?: throw ScheduleException("Native timer was created but the server job could not be confirmed. Refresh; do not repeat creation.")
+            fetchTimers()
+            return confirmed.toCleanTimer()
+        }
+
+        val timer = CleanTimer(
+            id = timerId, enabled = true, hour = hour, minute = minute,
+            weekdays = newWeekdays, settings = timerSettings, date = date,
+        )
+        if (jobsSupported) {
+            fetchTimers()
+            return _timers.value.singleOrNull { it.id == timer.id } ?: timer
+        }
         _timers.value = _timers.value + timer
         return timer
     }
 
-    suspend fun toggleTimer(timer: CleanTimer) {
+    /**
+     * Adds the cloud's record of the server_timer schedule [robotId] just saved on the robot, and
+     * returns the record's own id. Without it the official app deletes the robot's schedule as a
+     * stray, and this app's list, which reads the records, would not show it. If the record cannot
+     * be confirmed, preserve the native entry and report the partial save for explicit recovery.
+     */
+    private suspend fun createCloudRecord(
+        robotId: String,
+        minute: Int,
+        hour: Int,
+        weekdays: Set<Int>,
+        date: TimerDate?,
+        settings: TimerSettings,
+    ): String {
+        val mirror = scheduleMirror ?: return robotId
+        val body = mirrorJobBody(
+            cron = mirrorCron(minute, hour, weekdays, date),
+            enabled = true,
+            repeated = date == null,
+            settings = settings,
+            robotId = robotId,
+            forCreate = true,
+        )
+        return ServerJobCreation(
+            readTimers = { session.getServerTimer().also { it.requireOk("get_server_timer") }.result },
+            createJob = { mirror.create(duid, it) },
+            readJobs = { mirror.list(duid) },
+        ).confirm(robotId, body).id
+    }
+
+    /** Rewrites the cloud record [jobId] of a server_timer schedule to match what the robot now holds. */
+    private suspend fun updateCloudRecord(
+        jobId: String,
+        robotId: String,
+        minute: Int,
+        hour: Int,
+        weekdays: Set<Int>,
+        date: TimerDate?,
+        enabled: Boolean,
+        settings: TimerSettings,
+    ) {
+        val mirror = scheduleMirror ?: return
+        mirror.update(
+            duid,
+            jobId,
+            mirrorJobBody(
+                cron = mirrorCron(minute, hour, weekdays, date),
+                enabled = enabled,
+                repeated = date == null,
+                settings = settings.completedForServerTimer(),
+                robotId = robotId,
+                forCreate = false,
+            ),
+        )
+    }
+
+    /**
+     * The id to send the robot for [timer]: its own id normally, but [TimerSettings.serverTimerId]
+     * instead when set, since that means [timer] was read back as the official app's HTTP-side
+     * mirror of a server_timer schedule, whose own id belongs to that mirror, not the robot.
+     */
+    private fun robotId(timer: CleanTimer, useServerTimer: Boolean): String =
+        if (useServerTimer) timer.settings.serverTimerId ?: timer.id else timer.id
+
+    /**
+     * Server jobs are patched without recreating native entries or changing enablement unless
+     * explicitly requested. Legacy-only records retain their protocol-specific edit path.
+     */
+    suspend fun updateTimer(
+        timer: CleanTimer, hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings,
+        once: Boolean = false, settingsChanged: Boolean = true, timingChanged: Boolean = true,
+        enabled: Boolean = timer.enabled,
+    ): CleanTimer = scheduleWrite {
+        val job = timer.serverJob
+        if (job != null) {
+            val date = if (once) {
+                if (timer.date != null && hour == timer.hour && minute == timer.minute) timer.date
+                else nextTimerDate(nowEpochSeconds().toLong(),
+                    if (job.timezone.isBlank()) TimeZone.currentSystemDefault() else TimeZone.of(job.timezone), hour, minute)
+            } else null
+            val patch = serverJobEditPatch(timer, hour, minute, weekdays, settings, once, date, settingsChanged, timingChanged)
+            val sync = enabled != timer.enabled
+            val combined = if (sync) JsonObject(patch + ("enabled" to JsonPrimitive(enabled))) else patch
+            val saved = scheduleEnablement.save(job, combined, sync).toCleanTimer()
+            _timers.value = _timers.value.map { if (it.id == saved.id) saved else it }
+            saved
+        } else updateTimerInternal(timer, hour, minute, weekdays, settings, once)
+    }
+
+    private suspend fun updateTimerInternal(
+        timer: CleanTimer,
+        hour: Int,
+        minute: Int,
+        weekdays: Set<Int>,
+        settings: TimerSettings,
+        once: Boolean = false,
+    ): CleanTimer {
+        val date = if (once) nextOccurrence(hour, minute) else null
+        val newWeekdays = if (once) emptySet() else weekdays
+        val cron = buildCron(minute, hour, newWeekdays, date)
+        // A legacy-view record without a native name must use its legacy ID, even on a
+        // model whose feature flag advertises server_timer (the old-server fallback case).
+        val useServerTimer = timer.settings.serverTimerId != null
+        val id = robotId(timer, useServerTimer)
+        // The new settings come from the edit dialog's own choices, which know nothing of the
+        // mirror link; carry it forward so a second edit can still find the real robot-side id.
+        val newSettings = settings.copy(serverTimerId = timer.settings.serverTimerId, segments = settings.segments ?: timer.settings.segments, mapIndex = timer.settings.mapIndex, cleanMop = timer.settings.cleanMop)
+        if (useServerTimer) session.delServerTimer(id).requireOk("del_server_timer")
+        else session.delTimer(id).requireOk("del_timer")
+        replaceLegacySchedule(
+            replace = {
+                saveTimerEntry(useServerTimer, id, cron, enabled = timer.enabled, settings = newSettings)
+                if (useServerTimer && !timer.enabled) session.updServerTimer(id, false).requireOk("upd_server_timer")
+            },
+            restore = {
+                val oldCron = buildCron(timer.minute, timer.hour, timer.weekdays, timer.date)
+                saveTimerEntry(useServerTimer, id, oldCron, enabled = timer.enabled, settings = timer.settings)
+                if (useServerTimer && !timer.enabled) session.updServerTimer(id, false).requireOk("upd_server_timer")
+            },
+        )
+
+        if (useServerTimer) {
+            updateCloudRecord(timer.id, id, minute, hour, newWeekdays, date, timer.enabled, newSettings)
+        }
+        val updated = timer.copy(
+            hour = hour, minute = minute, weekdays = newWeekdays, settings = newSettings, date = date,
+        )
+        _timers.value = _timers.value.map { if (it.id == timer.id) updated else it }
+        return updated
+    }
+
+    suspend fun toggleTimer(timer: CleanTimer) = scheduleWrite {
+        val job = timer.serverJob
+        if (job != null) {
+            val saved = scheduleEnablement.save(job,
+                JsonObject(mapOf("enabled" to JsonPrimitive(!timer.enabled))), true).toCleanTimer()
+            _timers.value = _timers.value.map { if (it.id == saved.id) saved else it }
+        } else toggleLegacyTimer(timer)
+    }
+
+    private suspend fun toggleLegacyTimer(timer: CleanTimer) {
         val updated = timer.copy(enabled = !timer.enabled)
-        session.updTimer(timer.id, updated.enabled).requireOk("upd_timer")
+        // A legacy-view record without a native name must use its legacy ID, even on a
+        // model whose feature flag advertises server_timer (the old-server fallback case).
+        val useServerTimer = timer.settings.serverTimerId != null
+        val id = robotId(timer, useServerTimer)
+        if (useServerTimer) {
+            session.updServerTimer(id, updated.enabled).requireOk("upd_server_timer")
+            updateCloudRecord(
+                timer.id, id, timer.minute, timer.hour, timer.weekdays, timer.date, updated.enabled, timer.settings,
+            )
+        } else {
+            session.updTimer(id, updated.enabled).requireOk("upd_timer")
+        }
         _timers.value = _timers.value.map { if (it.id == timer.id) updated else it }
     }
 
-    suspend fun deleteTimer(timer: CleanTimer) {
-        session.delTimer(timer.id).requireOk("del_timer")
+    suspend fun deleteTimer(timer: CleanTimer) = scheduleWrite {
+        val job = timer.serverJob
+        if (job != null) {
+            ServerJobDeletion(
+                readJobs = { requireNotNull(scheduleMirror).list(duid) },
+                readTimers = { session.getServerTimer().also { it.requireOk("get_server_timer") }.result },
+                deleteTimer = { session.delServerTimer(it).requireOk("del_server_timer") },
+                deleteJob = { requireNotNull(scheduleMirror).delete(duid, it) },
+            ).delete(job)
+            _timers.value = _timers.value.filter { it.id != timer.id }
+        } else deleteLegacyTimer(timer)
+    }
+
+    private suspend fun deleteLegacyTimer(timer: CleanTimer) {
+        // A legacy-view record without a native name must use its legacy ID, even on a
+        // model whose feature flag advertises server_timer (the old-server fallback case).
+        val useServerTimer = timer.settings.serverTimerId != null
+        val id = robotId(timer, useServerTimer)
+        if (useServerTimer) {
+            session.delServerTimer(id).requireOk("del_server_timer")
+            scheduleMirror?.delete(duid, timer.id)
+        } else {
+            session.delTimer(id).requireOk("del_timer")
+        }
         _timers.value = _timers.value.filter { it.id != timer.id }
     }
 
@@ -1183,19 +1485,51 @@ class VacuumRepository(
     }
 }
 
-private fun buildCron(minute: Int, hour: Int, weekdays: Set<Int>): String {
-    val days = if (weekdays.isEmpty()) "*" else weekdays.sorted().joinToString(",")
+internal fun buildCron(minute: Int, hour: Int, weekdays: Set<Int>, date: TimerDate? = null): String {
+    if (date != null) return "$minute $hour ${date.day} ${date.month} *"
+    // Every day lists all seven, as the official app's own cron does (captured live).
+    val days = weekdays.ifEmpty { setOf(0, 1, 2, 3, 4, 5, 6) }.sorted().joinToString(",")
     return "$minute $hour * * $days"
 }
 
-private fun parseCronTimer(id: String, enabled: Boolean, cron: String): CleanTimer? {
+internal fun parseCronTimer(
+    id: String,
+    enabled: Boolean,
+    cron: String,
+    settings: TimerSettings = TimerSettings(),
+): CleanTimer? {
     val parts = cron.trim().split(Regex("\\s+"))
     if (parts.size < 5) return null
     val minute = parts[0].toIntOrNull() ?: return null
     val hour = parts[1].toIntOrNull() ?: return null
-    val weekdays = if (parts[4] == "*") emptySet()
+    // "*" or "?" (the server's own wording) means no weekday is pinned.
+    val weekdays = if (parts[4] == "*" || parts[4] == "?") emptySet()
     else parts[4].split(",").mapNotNull { it.toIntOrNull() }.toSet()
-    return CleanTimer(id = id, enabled = enabled, hour = hour, minute = minute, weekdays = weekdays)
+    // A day of the month and a month both pinned is a one-time schedule, not an every-day one.
+    val day = parts[2].toIntOrNull()
+    val month = parts[3].toIntOrNull()
+    val date = if (day != null && month != null) TimerDate(month, day) else null
+    return CleanTimer(
+        id = id, enabled = enabled, hour = hour, minute = minute, weekdays = weekdays, settings = settings,
+        date = date,
+    )
+}
+
+/**
+ * The schedules in a get_timer answer, `[[id, "on"|"off", [cron, ["start_clean", {options}]]], ...]`.
+ * Entries that don't have that shape are skipped; the options object is optional.
+ */
+internal fun parseTimerList(result: JsonElement?): List<CleanTimer> {
+    val list = result as? JsonArray ?: return emptyList()
+    return list.mapNotNull { entry ->
+        if (entry !is JsonArray || entry.size < 3) return@mapNotNull null
+        val id = entry[0].jsonPrimitive.contentOrNull ?: return@mapNotNull null
+        val enabled = entry[1].jsonPrimitive.contentOrNull == "on"
+        val details = runCatching { entry[2].jsonArray }.getOrNull() ?: return@mapNotNull null
+        val cron = details.firstOrNull()?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+        val action = runCatching { details[1].jsonArray }.getOrNull()
+        parseCronTimer(id, enabled, cron, parseTimerSettings(action?.getOrNull(1)))
+    }
 }
 
 const val CONSUMABLE_UNSUPPORTED = "unsupported"

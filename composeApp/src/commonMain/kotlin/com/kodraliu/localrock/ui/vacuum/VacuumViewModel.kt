@@ -11,6 +11,7 @@ import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.RoomType
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
+import com.kodraliu.localrock.shared.vacuum.isFastRouteSupported
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
 import com.kodraliu.localrock.shared.vacuum.supportedBetaFeatures
@@ -37,6 +38,7 @@ class VacuumViewModel(
     val modelName: String? = container.deviceRepository.productsByDuid.value[duid]?.model
     val firmwareVersion: String? = device.fv
     val supportsSmartPlan: Boolean = isSmartPlanSupported(device.newFeatureSet)
+    val supportsFastRoute: Boolean = isFastRouteSupported(device.newFeatureSet)
     val supportsWaterSlide: Boolean = isWaterSlideSupported(device.newFeatureSet)
     val dockCapabilities = DockCapabilities(modelName, device.featureSet, device.newFeatureSet)
     val betaFeatureDefs = supportedBetaFeatures(device.newFeatureSet)
