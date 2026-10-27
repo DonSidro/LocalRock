@@ -61,4 +61,3 @@ internal fun mirrorJobBody(
     fields["param"] = param
     return JsonObject(fields)
 }
-
