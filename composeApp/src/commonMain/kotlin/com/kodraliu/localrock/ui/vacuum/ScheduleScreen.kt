@@ -72,11 +72,6 @@ fun ScheduleScreen(
                 },
             )
         },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
-                Icon(Icons.Default.Add, "Add schedule")
-            }
-        },
     ) { padding ->
         CenteredContent {
             if (timers.isEmpty()) {
@@ -103,6 +98,17 @@ fun ScheduleScreen(
                         HorizontalDivider(Modifier.padding(start = 72.dp))
                     }
                 }
+            }
+
+            // On wide windows the content column is centred, so keep the FAB with it instead of
+            // floating it at the far edge of the window.
+            FloatingActionButton(
+                onClick = { showAddDialog = true },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 16.dp + padding.calculateBottomPadding()),
+            ) {
+                Icon(Icons.Default.Add, "Add schedule")
             }
         }
     }

@@ -2,6 +2,7 @@ package com.kodraliu.localrock.ui.adaptive
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.widthIn
@@ -23,8 +24,11 @@ fun CenteredContent(
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        Box(modifier = Modifier.widthIn(max = maxWidth).fillMaxHeight()) {
-            content()
+        BoxWithConstraints {
+            val clamped = contentWidthDp(this.maxWidth.value, maxWidth.value)
+            Box(modifier = Modifier.widthIn(max = clamped.dp).fillMaxHeight()) {
+                content()
+            }
         }
     }
 }

@@ -41,7 +41,6 @@ import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.messages.AppMessage
 import com.kodraliu.localrock.shared.messages.MessageCenter
 import com.kodraliu.localrock.shared.messages.MessageSeverity
-import com.kodraliu.localrock.ui.adaptive.LocalWindowLayout
 import kotlinx.coroutines.delay
 
 private data class SeverityVisuals(val container: Color, val content: Color, val icon: ImageVector)
@@ -84,14 +83,9 @@ fun MessageBannerArea(center: MessageCenter, modifier: Modifier = Modifier) {
 }
 
 
-// Height of the pinned ControlBar (chip row + gap + button row) in the two-pane side pane;
-// the toast is raised by this much on two-pane windows so it doesn't cover those buttons.
-private val ToastControlBarClearance = 98.dp
-
 @Composable
 fun BoxScope.TransientMessageHost(center: MessageCenter) {
     var current by remember { mutableStateOf<AppMessage?>(null) }
-    val twoPane = LocalWindowLayout.current.twoPane
     LaunchedEffect(center) {
         center.transient.collect { msg ->
             current = msg
@@ -119,7 +113,6 @@ fun BoxScope.TransientMessageHost(center: MessageCenter) {
                     .fillMaxWidth()
                     .widthIn(max = 560.dp)
                     .navigationBarsPadding()
-                    .then(if (twoPane) Modifier.padding(bottom = ToastControlBarClearance) else Modifier)
                     .padding(16.dp),
             ) {
                 Row(

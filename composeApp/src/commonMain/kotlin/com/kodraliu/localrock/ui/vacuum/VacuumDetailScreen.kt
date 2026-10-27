@@ -292,21 +292,17 @@ fun VacuumDetailScreen(
     }
 
     val onMoreAction: (MoreAction) -> Unit = { action ->
-        val target = panelForMoreAction(action)
-        if (target != null) {
-            panel = target
-        } else {
-            panel = null
-            when (action) {
-                MoreAction.ZONES -> onZoneClean()
-                MoreAction.PIN_GO -> onPinGo()
-                MoreAction.REMOTE -> onRemote()
-                MoreAction.SCHEDULE -> onSchedule()
-                MoreAction.CAMERA -> onCamera()
-                MoreAction.HISTORY -> onHistory()
-                MoreAction.EDIT_MAP -> onMapEdit()
-                else -> Unit
-            }
+        when (action) {
+            // panelForMoreAction maps exactly these four to a panel; the rest navigate away.
+            MoreAction.ROOMS, MoreAction.DOCK, MoreAction.MAPS, MoreAction.ROUTINES ->
+                panel = checkNotNull(panelForMoreAction(action))
+            MoreAction.ZONES -> { panel = null; onZoneClean() }
+            MoreAction.PIN_GO -> { panel = null; onPinGo() }
+            MoreAction.REMOTE -> { panel = null; onRemote() }
+            MoreAction.SCHEDULE -> { panel = null; onSchedule() }
+            MoreAction.CAMERA -> { panel = null; onCamera() }
+            MoreAction.HISTORY -> { panel = null; onHistory() }
+            MoreAction.EDIT_MAP -> { panel = null; onMapEdit() }
         }
     }
 
@@ -454,6 +450,47 @@ fun VacuumDetailScreen(
         }
     }
 
+    // Status + controls live in one band so the phone and two-pane layouts cannot silently diverge.
+    val ControlBand: @Composable () -> Unit = {
+        StatusBar(
+            status = status,
+            lastCleanArea = lastCleanArea,
+            onHistory = onHistory,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 10.dp),
+        )
+
+        ControlBar(
+            status = status,
+            busy = busy,
+            selectedRoomCount = selectedRoomIds.size,
+            onClean = {
+                sessionRoomIds = emptyList()
+                val order = viewModel.defaultCleanOrder()
+                viewModel.run("Cleaning started") { it.clean(order) }
+            },
+            onCleanRooms = {
+                val toClean = selectedRoomIds
+                sessionRoomIds = toClean
+                selectedRoomIds = emptyList()
+                viewModel.run { it.cleanRooms(toClean, cleaningCount) }
+            },
+            onClearSelection = { selectedRoomIds = emptyList() },
+            onPause = { viewModel.run { it.pause() } },
+            onResume = { viewModel.run("Cleaning resumed") { it.resumeCleaning() } },
+            onStop = {
+                sessionRoomIds = emptyList()
+                viewModel.run { it.stopCleaning() }
+            },
+            onDock = {
+                sessionRoomIds = emptyList()
+                viewModel.run("Returning to dock") { it.dock() }
+            },
+            onCleaningMode = { panel = DetailPanel.CleaningMode },
+            onMore = { panel = DetailPanel.More },
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -491,12 +528,11 @@ fun VacuumDetailScreen(
                     onFloorSwitch = onFloorSwitch,
                     onEditMap = onMapEdit,
                     mapViewport = mapViewport,
-                    modifier = Modifier.weight(0.58f).fillMaxHeight(),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
                 )
 
                 Column(
                     modifier = Modifier
-                        .weight(0.42f)
                         .widthIn(min = 320.dp, max = 480.dp)
                         .fillMaxHeight()
                         .background(MaterialTheme.colorScheme.surface)
@@ -516,61 +552,27 @@ fun VacuumDetailScreen(
                             .consumeWindowInsets(WindowInsets.navigationBars),
                     ) {
                         if (sidePaneShowsPanel(panel)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                IconButton(onClick = { panel = null }) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            panel?.let { currentPanel ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    IconButton(onClick = { panel = null }) {
+                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                                    }
+                                    Text(
+                                        currentPanel.title(),
+                                        style = MaterialTheme.typography.titleMedium,
+                                    )
                                 }
-                                Text(
-                                    panel!!.title(),
-                                    style = MaterialTheme.typography.titleMedium,
-                                )
+                                PanelBody(currentPanel)
                             }
-                            PanelBody(panel!!)
                         } else {
                             MoreActionsSheetContent(onAction = onMoreAction)
                         }
                     }
 
-                    StatusBar(
-                        status = status,
-                        lastCleanArea = lastCleanArea,
-                        onHistory = onHistory,
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 10.dp),
-                    )
-
-                    ControlBar(
-                        status = status,
-                        busy = busy,
-                        selectedRoomCount = selectedRoomIds.size,
-                        onClean = {
-                            sessionRoomIds = emptyList()
-                            val order = viewModel.defaultCleanOrder()
-                            viewModel.run("Cleaning started") { it.clean(order) }
-                        },
-                        onCleanRooms = {
-                            val toClean = selectedRoomIds
-                            sessionRoomIds = toClean
-                            selectedRoomIds = emptyList()
-                            viewModel.run { it.cleanRooms(toClean, cleaningCount) }
-                        },
-                        onClearSelection = { selectedRoomIds = emptyList() },
-                        onPause = { viewModel.run { it.pause() } },
-                        onResume = { viewModel.run("Cleaning resumed") { it.resumeCleaning() } },
-                        onStop = {
-                            sessionRoomIds = emptyList()
-                            viewModel.run { it.stopCleaning() }
-                        },
-                        onDock = {
-                            sessionRoomIds = emptyList()
-                            viewModel.run("Returning to dock") { it.dock() }
-                        },
-                        onCleaningMode = { panel = DetailPanel.CleaningMode },
-                        onMore = { panel = DetailPanel.More },
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                    )
+                    ControlBand()
                 }
             }
         } else {
@@ -595,43 +597,7 @@ fun VacuumDetailScreen(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
 
-                StatusBar(
-                    status = status,
-                    lastCleanArea = lastCleanArea,
-                    onHistory = onHistory,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 10.dp),
-                )
-
-                ControlBar(
-                    status = status,
-                    busy = busy,
-                    selectedRoomCount = selectedRoomIds.size,
-                    onClean = {
-                        sessionRoomIds = emptyList()
-                        val order = viewModel.defaultCleanOrder()
-                        viewModel.run("Cleaning started") { it.clean(order) }
-                    },
-                    onCleanRooms = {
-                        val toClean = selectedRoomIds
-                        sessionRoomIds = toClean
-                        selectedRoomIds = emptyList()
-                        viewModel.run { it.cleanRooms(toClean, cleaningCount) }
-                    },
-                    onClearSelection = { selectedRoomIds = emptyList() },
-                    onPause = { viewModel.run { it.pause() } },
-                    onResume = { viewModel.run("Cleaning resumed") { it.resumeCleaning() } },
-                    onStop = {
-                        sessionRoomIds = emptyList()
-                        viewModel.run { it.stopCleaning() }
-                    },
-                    onDock = {
-                        sessionRoomIds = emptyList()
-                        viewModel.run("Returning to dock") { it.dock() }
-                    },
-                    onCleaningMode = { panel = DetailPanel.CleaningMode },
-                    onMore = { panel = DetailPanel.More },
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                )
+                ControlBand()
             }
         }
     }
@@ -1924,7 +1890,7 @@ private fun RoomsSheetContent(
     onDefaultOrder: () -> Unit,
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 16.dp),
+        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text("Select rooms", style = MaterialTheme.typography.headlineSmall)
@@ -2075,7 +2041,7 @@ private fun MapsSheetContent(
     onRecheck: () -> Unit,
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 16.dp),
+        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text("Maps", style = MaterialTheme.typography.headlineSmall)
