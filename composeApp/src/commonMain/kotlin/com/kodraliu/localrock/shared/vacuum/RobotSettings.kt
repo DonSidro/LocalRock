@@ -35,6 +35,7 @@ data class DockSettings(
     val autoEmptyMode: Int? = null,
     val mopDrying: Boolean? = null,
     val dryTimeSeconds: Int? = null,
+    val dryerAnswer: JsonObject? = null, // the whole answer, so a write can send back every field it held
     val washWaterTemperature: Int? = null,
 )
 
@@ -82,6 +83,23 @@ data class DndSettings(
     val endHour: Int = 8,
     val endMinute: Int = 0,
 )
+
+/**
+ * The body for `app_set_dryer_setting`: the answer the robot gave with only `status`, and `on.dry_time`
+ * when given, changed. The answer carries more than those two (cliff timings, a count, the heating
+ * film time, the whole `off` block), and it is not known whether the robot merges a shorter body or
+ * replaces what it holds, so everything it reported is sent back.
+ */
+internal fun dryerSettingBody(reported: JsonObject?, enabled: Boolean, dryTimeSeconds: Int?): JsonObject {
+    val body = (reported ?: JsonObject(emptyMap())).toMutableMap()
+    body["status"] = JsonPrimitive(if (enabled) 1 else 0)
+    if (dryTimeSeconds != null) {
+        val on = ((reported?.get("on") as? JsonObject) ?: JsonObject(emptyMap())).toMutableMap()
+        on["dry_time"] = JsonPrimitive(dryTimeSeconds)
+        body["on"] = JsonObject(on)
+    }
+    return JsonObject(body)
+}
 
 /** The off-peak electricity window the robot is limited to, in the robot's local time. */
 data class ValleySettings(

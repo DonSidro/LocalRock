@@ -186,14 +186,7 @@ suspend fun VacuumSession.setSmartWashParams(settings: SmartWashSettings): V1Res
 suspend fun VacuumSession.getInitStatus(): V1Response = sendCommand("app_get_init_status")
 suspend fun VacuumSession.getDryerSetting(): V1Response = sendCommand("app_get_dryer_setting")
 
-/** [dryTimeSeconds] is left out of the request when not given, rather than sent as null. */
-suspend fun VacuumSession.setDryerSetting(on: Boolean, dryTimeSeconds: Int? = null): V1Response {
-    val body = buildMap<String, JsonElement> {
-        put("status", JsonPrimitive(if (on) 1 else 0))
-        if (dryTimeSeconds != null) put("on", JsonObject(mapOf("dry_time" to JsonPrimitive(dryTimeSeconds))))
-    }
-    return sendCommandRaw("app_set_dryer_setting", JsonObject(body))
-}
+suspend fun VacuumSession.setDryerSetting(body: JsonObject): V1Response = sendCommandRaw("app_set_dryer_setting", body)
 
 suspend fun VacuumSession.getWashWaterTemperature(): V1Response = sendCommand("get_wash_water_temperature")
 suspend fun VacuumSession.setWashWaterTemperature(value: Int): V1Response =

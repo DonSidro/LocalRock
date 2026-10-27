@@ -150,7 +150,9 @@ fun VacuumSettingsScreen(
     val repository = viewModel.repository
     var route by remember { mutableStateOf<SettingsRoute>(SettingsRoute.Root) }
     // Sub-pages are local state, not nav destinations, so system back would leave Settings (#52).
-    BackHandler(enabled = route != SettingsRoute.Root) { route = SettingsRoute.Root }
+    BackHandler(enabled = route != SettingsRoute.Root) {
+        route = if (route == SettingsRoute.Valley) SettingsRoute.DockSettings else SettingsRoute.Root
+    }
     val scope = rememberCoroutineScope()
     val consumables by repository.consumableStatus.collectAsState()
     val robotSettings by repository.robotSettings.collectAsState()
@@ -1212,6 +1214,14 @@ private fun ValleyScreen(
 
     fun commit() = if (enabled) onEnable(startHour, startMinute, endHour, endMinute) else onDisable()
 
+    // Each tap on a stepper changes a time, so the robot is written once they stop, not on every tap.
+    var timesTouched by remember { mutableStateOf(false) }
+    LaunchedEffect(startHour, startMinute, endHour, endMinute) {
+        if (!timesTouched) return@LaunchedEffect
+        kotlinx.coroutines.delay(800)
+        commit()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -1242,9 +1252,9 @@ private fun ValleyScreen(
             if (enabled) {
                 HorizontalDivider()
                 Text("Start time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                ClockStepper(startHour, startMinute, onHourChange = { startHour = it; commit() }, onMinuteChange = { startMinute = it; commit() })
+                ClockStepper(startHour, startMinute, onHourChange = { startHour = it; timesTouched = true }, onMinuteChange = { startMinute = it; timesTouched = true })
                 Text("End time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                ClockStepper(endHour, endMinute, onHourChange = { endHour = it; commit() }, onMinuteChange = { endMinute = it; commit() })
+                ClockStepper(endHour, endMinute, onHourChange = { endHour = it; timesTouched = true }, onMinuteChange = { endMinute = it; timesTouched = true })
             }
         }
     }

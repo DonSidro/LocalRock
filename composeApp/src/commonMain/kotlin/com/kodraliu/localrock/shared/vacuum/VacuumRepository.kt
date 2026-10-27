@@ -967,7 +967,7 @@ class VacuumRepository(
         val dryer = runCatching { session.getDryerSetting().requireOk("app_get_dryer_setting").result as? JsonObject }.getOrNull()
         (dryer?.get("status") as? JsonPrimitive)?.intOrNull?.let { status ->
             val seconds = ((dryer["on"] as? JsonObject)?.get("dry_time") as? JsonPrimitive)?.intOrNull
-            _dockSettings.update { it.copy(mopDrying = status == 1, dryTimeSeconds = seconds) }
+            _dockSettings.update { it.copy(mopDrying = status == 1, dryTimeSeconds = seconds, dryerAnswer = dryer) }
         }
         // The read answers {"wash_water_temperature": n}, where the setter takes {"values": n}.
         val temperature = runCatching { session.getWashWaterTemperature().requireOk("get_wash_water_temperature").result as? JsonObject }.getOrNull()
@@ -975,14 +975,17 @@ class VacuumRepository(
     }
 
     suspend fun setMopDrying(enabled: Boolean) {
-        // Resends the robot's own dry time, so the switch alone cannot change how long a run lasts.
-        session.setDryerSetting(enabled, _dockSettings.value.dryTimeSeconds).requireOk("app_set_dryer_setting")
-        _dockSettings.update { it.copy(mopDrying = enabled) }
+        // Sends back everything the robot reported, so the switch alone cannot change how long a run lasts.
+        val reported = _dockSettings.value.dryerAnswer
+        val body = dryerSettingBody(reported, enabled, if (reported == null) _dockSettings.value.dryTimeSeconds else null)
+        session.setDryerSetting(body).requireOk("app_set_dryer_setting")
+        _dockSettings.update { it.copy(mopDrying = enabled, dryerAnswer = body) }
     }
 
     suspend fun setDryTime(seconds: Int) {
-        session.setDryerSetting(_dockSettings.value.mopDrying ?: true, seconds).requireOk("app_set_dryer_setting")
-        _dockSettings.update { it.copy(dryTimeSeconds = seconds) }
+        val body = dryerSettingBody(_dockSettings.value.dryerAnswer, _dockSettings.value.mopDrying ?: true, seconds)
+        session.setDryerSetting(body).requireOk("app_set_dryer_setting")
+        _dockSettings.update { it.copy(dryTimeSeconds = seconds, dryerAnswer = body) }
     }
 
     suspend fun setWashWaterTemperature(value: Int) {
