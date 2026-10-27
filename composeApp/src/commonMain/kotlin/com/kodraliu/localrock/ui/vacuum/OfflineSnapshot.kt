@@ -9,6 +9,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.model.LastKnown
+import com.kodraliu.localrock.shared.model.LastKnownRoom
+import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumStateCodes
 import kotlinx.datetime.Instant
@@ -31,6 +33,15 @@ internal fun formatLastKnownTime(
     val hour12 = if (local.hour % 12 == 0) 12 else local.hour % 12
     val clock = "$hour12:${local.minute.toString().padStart(2, '0')} ${if (local.hour < 12) "AM" else "PM"}"
     return if (sameDay(local, today)) clock else "${MONTHS[local.monthNumber - 1]} ${local.dayOfMonth}, $clock"
+}
+
+/** The last map with each room's name from the server's copy of the robot's room table. */
+internal fun ParsedMap.withRoomTable(table: List<LastKnownRoom>): ParsedMap {
+    if (table.isEmpty()) return this
+    return copy(rooms = rooms.map { room ->
+        val row = table.firstOrNull { it.segment == room.id } ?: return@map room
+        room.copy(name = row.name?.takeIf { it.isNotBlank() } ?: room.name)
+    })
 }
 
 private fun sameDay(a: LocalDateTime, b: LocalDateTime) = a.year == b.year && a.dayOfYear == b.dayOfYear

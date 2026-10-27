@@ -189,6 +189,7 @@ class VacuumViewModel(
             _lastKnown.value = snapshot
             _lastKnownMap.value = snapshot.map
                 ?.let { runCatching { parseLegacyMap(Base64.decode(it)) }.getOrNull() }
+                ?.withRoomTable(snapshot.rooms)
         }
     }
 
