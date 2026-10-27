@@ -457,7 +457,7 @@ private fun SettingsRootScreen(
                         icon = Icons.Default.Science,
                         iconTint = AppColors.AccentCyan,
                         title = "Beta features",
-                        subtitle = "FlexiArm and other new robot options",
+                        subtitle = "Other options your robot reports",
                         onClick = onBetaFeatures,
                     )
                 }
@@ -1277,8 +1277,16 @@ private fun RobotSettingsScreen(
 /** One feature the robot reports, as a switch under the page it belongs to. */
 @Composable
 private fun FeatureToggleRow(f: BetaFeatureState, onToggle: (String, Boolean) -> Unit) {
+    val icon = when (f.def.section) {
+        FeatureSection.CARPET -> Icons.Default.GridView
+        FeatureSection.FLOOR -> Icons.Default.CleaningServices
+        FeatureSection.OBSTACLE -> Icons.Default.Sensors
+        FeatureSection.DOCK -> Icons.Default.Home
+        FeatureSection.ROBOT -> Icons.Default.Settings
+        FeatureSection.BETA -> Icons.Default.Science
+    }
     SettingRowSwitch(
-        icon = Icons.Default.Science,
+        icon = icon,
         iconTint = AppColors.AccentCyan,
         title = f.def.title,
         subtitle = f.def.description,
