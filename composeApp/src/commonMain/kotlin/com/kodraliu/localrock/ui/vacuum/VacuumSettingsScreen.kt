@@ -109,6 +109,9 @@ import com.kodraliu.localrock.shared.vacuum.FeatureSection
 import com.kodraliu.localrock.shared.vacuum.inSection
 import com.kodraliu.localrock.shared.vacuum.DockSettings
 import com.kodraliu.localrock.shared.vacuum.RobotSettings
+import com.kodraliu.localrock.shared.vacuum.VolumeLevels
+import com.kodraliu.localrock.shared.vacuum.volumeLabel
+import com.kodraliu.localrock.shared.vacuum.volumeLevelIndex
 import com.kodraliu.localrock.shared.vacuum.washFrequencyLabel
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.ui.AppColors
@@ -1199,9 +1202,7 @@ private fun RobotSettingsScreen(
     var findTriggered by remember { mutableStateOf(false) }
     var showVolumeDialog by remember { mutableStateOf(false) }
 
-    val volumeOptions = listOf(0 to "Off", 30 to "Low", 60 to "Medium", 100 to "High")
-
-    val volumeLabel = volumeOptions.minByOrNull { kotlin.math.abs(it.first - robotSettings.volume) }?.second ?: "Medium"
+    val volumeLabel = volumeLabel(robotSettings.volume)
 
     Scaffold(
         topBar = {
@@ -1263,12 +1264,11 @@ private fun RobotSettingsScreen(
     }
 
     if (showVolumeDialog) {
-        val selectedIndex = volumeOptions.indexOfFirst { it.second == volumeLabel }.coerceAtLeast(2)
         SimplePickerDialog(
             title = "Volume",
-            options = volumeOptions.map { it.second },
-            selected = selectedIndex,
-            onSelect = { onVolumeChange(volumeOptions[it].first); showVolumeDialog = false },
+            options = VolumeLevels.map { it.second },
+            selected = volumeLevelIndex(robotSettings.volume),
+            onSelect = { onVolumeChange(VolumeLevels[it].first); showVolumeDialog = false },
             onDismiss = { showVolumeDialog = false },
         )
     }
