@@ -2260,4 +2260,3 @@ private fun stateTint(state: Int?): Color = when (state) {
     VacuumStateCodes.GOING_TO_TARGET, VacuumStateCodes.MAPPING -> MaterialTheme.colorScheme.primary
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
-

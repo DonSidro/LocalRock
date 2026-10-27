@@ -1,10 +1,17 @@
 package com.kodraliu.localrock.shared.device
 
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.*
-import io.ktor.http.*
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
-import kotlin.test.*
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class ScheduleJobsApiTest {
     @Test fun lists_result_and_data_envelopes_and_keeps_raw_settings() = runTest {

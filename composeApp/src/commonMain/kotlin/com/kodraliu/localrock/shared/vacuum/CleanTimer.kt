@@ -166,4 +166,3 @@ fun TimerSettings.summary(): String? {
     repeat?.takeIf { it > 1 }?.let { parts += "$it passes" }
     return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
-

@@ -102,4 +102,3 @@ internal fun usesServerTimer(initStatusResult: JsonElement?): Boolean? {
     val featureSet = localInfo["featureset"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: return null
     return (featureSet and 1) != 0
 }
-
