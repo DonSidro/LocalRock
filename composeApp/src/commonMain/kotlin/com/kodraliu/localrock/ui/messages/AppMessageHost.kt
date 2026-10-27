@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -40,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.messages.AppMessage
 import com.kodraliu.localrock.shared.messages.MessageCenter
 import com.kodraliu.localrock.shared.messages.MessageSeverity
+import com.kodraliu.localrock.ui.adaptive.LocalWindowLayout
 import kotlinx.coroutines.delay
 
 private data class SeverityVisuals(val container: Color, val content: Color, val icon: ImageVector)
@@ -82,9 +84,14 @@ fun MessageBannerArea(center: MessageCenter, modifier: Modifier = Modifier) {
 }
 
 
+// Height of the pinned ControlBar (chip row + gap + button row) in the two-pane side pane;
+// the toast is raised by this much on two-pane windows so it doesn't cover those buttons.
+private val ToastControlBarClearance = 98.dp
+
 @Composable
 fun BoxScope.TransientMessageHost(center: MessageCenter) {
     var current by remember { mutableStateOf<AppMessage?>(null) }
+    val twoPane = LocalWindowLayout.current.twoPane
     LaunchedEffect(center) {
         center.transient.collect { msg ->
             current = msg
@@ -106,8 +113,14 @@ fun BoxScope.TransientMessageHost(center: MessageCenter) {
                 shape = MaterialTheme.shapes.medium,
                 tonalElevation = 6.dp,
                 shadowElevation = 6.dp,
-                // The app draws behind the navigation bar, so keep the toast above it (#51).
-                modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp),
+                // The app draws behind the navigation bar, so keep the toast above it (#51);
+                // cap the width so it stays readable (not stretched) on two-pane windows.
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 560.dp)
+                    .navigationBarsPadding()
+                    .then(if (twoPane) Modifier.padding(bottom = ToastControlBarClearance) else Modifier)
+                    .padding(16.dp),
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
