@@ -533,6 +533,7 @@ fun VacuumDetailScreen(
 
                 Column(
                     modifier = Modifier
+                        .fillMaxWidth(0.42f)
                         .widthIn(min = 320.dp, max = 480.dp)
                         .fillMaxHeight()
                         .background(MaterialTheme.colorScheme.surface)
