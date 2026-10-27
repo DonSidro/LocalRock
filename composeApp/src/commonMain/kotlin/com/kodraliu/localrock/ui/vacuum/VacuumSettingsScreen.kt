@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -49,6 +48,7 @@ import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WaterDrop
@@ -83,6 +83,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.backhandler.BackHandler
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
@@ -1035,95 +1036,107 @@ private fun DockSettingsScreen(
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(padding).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DockSettingCard(
-                    modifier = Modifier.weight(1f),
+        LazyColumn(contentPadding = padding) {
+            item {
+                SettingRowClickable(
                     icon = Icons.Default.WaterDrop,
                     iconTint = AppColors.Water,
                     title = "Mop wash frequency",
-                    value = washFrequencyLabel(smartWash),
+                    subtitle = washFrequencyLabel(smartWash),
                     enabled = washFrequencyEnabled,
                     onClick = { dialogTarget = "wash_freq" },
                 )
-                DockSettingCard(
-                    modifier = Modifier.weight(1f),
+            }
+            item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+            item {
+                SettingRowClickable(
                     icon = Icons.Default.WaterDrop,
                     iconTint = AppColors.AccentCyan,
                     title = "Washing mode",
-                    value = dockCapabilities.washModeLabel(dockSettings.washMode, dockType),
+                    subtitle = dockCapabilities.washModeLabel(dockSettings.washMode, dockType),
                     enabled = washModeEnabled,
                     onClick = { dialogTarget = "wash_mode" },
                 )
             }
-            DockSettingCard(
-                modifier = Modifier.fillMaxWidth(),
-                icon = Icons.Default.Delete,
-                iconTint = AppColors.Good,
-                title = "Auto-empty mode",
-                value = dockCapabilities.autoEmptyModeLabel(dockSettings.autoEmptyMode),
-                enabled = autoEmptyEnabled,
-                onClick = { dialogTarget = "auto_empty" },
-            )
             dockSettings.washWaterTemperature?.let { temperature ->
-                DockSettingCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    icon = Icons.Default.WaterDrop,
-                    iconTint = AppColors.Water,
-                    title = "Washing water temperature",
-                    value = DockOptions.washWaterTemperature.labelFor(temperature),
-                    enabled = !busy,
-                    onClick = { dialogTarget = "wash_temp" },
-                )
+                item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+                item {
+                    SettingRowClickable(
+                        icon = Icons.Default.Thermostat,
+                        iconTint = AppColors.Warn,
+                        title = "Washing water temperature",
+                        subtitle = DockOptions.washWaterTemperature.labelFor(temperature),
+                        enabled = !busy,
+                        onClick = { dialogTarget = "wash_temp" },
+                    )
+                }
             }
             dockSettings.mopDrying?.let { drying ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    DockSettingCard(
-                        modifier = Modifier.weight(1f),
+                item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+                item {
+                    SettingRowSwitch(
                         icon = Icons.Default.Air,
                         iconTint = AppColors.AccentCyan,
                         title = "Mop drying",
-                        value = if (drying) "On" else "Off",
+                        subtitle = if (drying) "Dries the mops on the dock after cleaning" else "Mops are left wet on the dock",
+                        checked = drying,
                         enabled = !busy,
-                        onClick = { dialogTarget = "mop_drying" },
+                        onCheckedChange = onMopDryingChange,
                     )
-                    dockSettings.dryTimeSeconds?.let { seconds ->
-                        DockSettingCard(
-                            modifier = Modifier.weight(1f),
+                }
+                dockSettings.dryTimeSeconds?.let { seconds ->
+                    item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+                    item {
+                        SettingRowClickable(
                             icon = Icons.Default.Schedule,
                             iconTint = AppColors.AccentCyan,
                             title = "Drying time",
-                            value = dryTimeLabel(seconds),
+                            subtitle = dryTimeLabel(seconds),
                             enabled = !busy,
                             onClick = { dialogTarget = "dry_time" },
                         )
                     }
                 }
             }
-            valleySettings?.let { valley ->
-                DockSettingCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    icon = Icons.Default.Schedule,
+            item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+            item {
+                SettingRowClickable(
+                    icon = Icons.Default.Delete,
                     iconTint = AppColors.Good,
-                    title = "Off-peak electricity",
-                    value = if (valley.enabled) "${clockText(valley.startHour, valley.startMinute)} to ${clockText(valley.endHour, valley.endMinute)}" else "Off",
-                    enabled = !busy,
-                    onClick = onOpenValley,
+                    title = "Auto-empty mode",
+                    subtitle = dockCapabilities.autoEmptyModeLabel(dockSettings.autoEmptyMode),
+                    enabled = autoEmptyEnabled,
+                    onClick = { dialogTarget = "auto_empty" },
                 )
             }
-            DockSettingCard(
-                modifier = Modifier.fillMaxWidth(),
-                icon = Icons.Default.WaterDrop,
-                iconTint = AppColors.Water,
-                title = "Internal water tank",
-                value = "Empty through the dock",
-                enabled = !busy,
-                onClick = { confirmEmptyTank = true },
-            )
-            features.forEach { FeatureToggleRow(it, onFeatureToggle) }
+            valleySettings?.let { valley ->
+                item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+                item {
+                    SettingRowClickable(
+                        icon = Icons.Default.Schedule,
+                        iconTint = AppColors.Good,
+                        title = "Off-peak electricity",
+                        subtitle = if (valley.enabled) "${clockText(valley.startHour, valley.startMinute)} to ${clockText(valley.endHour, valley.endMinute)}" else "Off",
+                        enabled = !busy,
+                        onClick = onOpenValley,
+                    )
+                }
+            }
+            item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+            item {
+                SettingRowClickable(
+                    icon = Icons.Default.WaterDrop,
+                    iconTint = AppColors.Water,
+                    title = "Internal water tank",
+                    subtitle = "Empty through the dock",
+                    enabled = !busy,
+                    onClick = { confirmEmptyTank = true },
+                )
+            }
+            items(features, key = { it.def.id }) { f ->
+                HorizontalDivider(Modifier.padding(start = 72.dp))
+                FeatureToggleRow(f, onFeatureToggle)
+            }
         }
     }
 
@@ -1165,14 +1178,6 @@ private fun DockSettingsScreen(
             options = DockOptions.washWaterTemperature.map { it.label },
             selected = DockOptions.washWaterTemperature.indexOfFirst { it.code == dockSettings.washWaterTemperature },
             onSelect = { onWashWaterTemperatureChange(DockOptions.washWaterTemperature[it].code); dialogTarget = null },
-            enabled = !busy,
-            onDismiss = { dialogTarget = null },
-        )
-        "mop_drying" -> SimplePickerDialog(
-            title = "Mop drying",
-            options = listOf("On", "Off"),
-            selected = if (dockSettings.mopDrying == true) 0 else 1,
-            onSelect = { onMopDryingChange(it == 0); dialogTarget = null },
             enabled = !busy,
             onDismiss = { dialogTarget = null },
         )
@@ -1255,61 +1260,6 @@ private fun ValleyScreen(
                 ClockStepper(startHour, startMinute, onHourChange = { startHour = it; timesTouched = true }, onMinuteChange = { startMinute = it; timesTouched = true })
                 Text("End time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 ClockStepper(endHour, endMinute, onHourChange = { endHour = it; timesTouched = true }, onMinuteChange = { endMinute = it; timesTouched = true })
-            }
-        }
-    }
-}
-
-@Composable
-private fun DockSettingCard(
-    modifier: Modifier,
-    icon: ImageVector,
-    iconTint: Color,
-    title: String,
-    value: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        enabled = enabled,
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Surface(
-                shape = CircleShape,
-                color = iconTint.copy(alpha = 0.15f),
-                modifier = Modifier.size(36.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, null, Modifier.size(18.dp), iconTint)
-                }
-            }
-            Text(
-                title,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    value,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                )
-                Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    null,
-                    Modifier.size(14.dp),
-                    MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
     }
@@ -1661,11 +1611,12 @@ private fun SettingRowClickable(
     iconTint: Color,
     title: String,
     subtitle: String,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    Surface(onClick = onClick, color = Color.Transparent) {
+    Surface(onClick = onClick, enabled = enabled, color = Color.Transparent) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.38f).padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -1775,6 +1726,7 @@ private fun SettingRowSwitch(
     title: String,
     subtitle: String,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
@@ -1789,7 +1741,7 @@ private fun SettingRowSwitch(
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, enabled = enabled, onCheckedChange = onCheckedChange)
     }
 }
 
