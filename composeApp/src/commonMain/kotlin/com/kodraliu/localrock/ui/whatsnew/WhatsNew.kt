@@ -15,10 +15,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PinDrop
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Reorder
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -46,6 +51,50 @@ data class WhatsNewRelease(val version: String, val items: List<WhatsNewItem>)
 
 /** Newest first. */
 val WHATS_NEW: List<WhatsNewRelease> = listOf(
+    WhatsNewRelease(
+        version = "1.4.0",
+        items = listOf(
+            WhatsNewItem(
+                Icons.Default.PlayArrow,
+                "Routines",
+                "More > Routines lists the routines your server keeps, the ones made in the " +
+                    "Roborock app, and runs one with a tap.",
+            ),
+            WhatsNewItem(
+                Icons.Default.PinDrop,
+                "Zone clean and Pin & Go",
+                "Both now send the spot you drew or tapped in the robot's own coordinates, so " +
+                    "the robot goes where you meant.",
+            ),
+            WhatsNewItem(
+                Icons.Default.Home,
+                "Room types",
+                "Pick a type such as Kitchen or Bedroom for a room, or give it a name of your own.",
+            ),
+            WhatsNewItem(
+                Icons.Default.Schedule,
+                "Schedules",
+                "Set a schedule to any minute, shown in your phone's clock style. If the robot " +
+                    "refuses a schedule, the app now says so.",
+            ),
+            WhatsNewItem(
+                Icons.Default.Science,
+                "Beta features",
+                "On newer robots, Settings > Beta features switches options such as FlexiArm and " +
+                    "gap deep clean. Only options your robot reports are shown.",
+            ),
+            WhatsNewItem(
+                Icons.Default.Build,
+                "Fixes",
+                "A zoomed map now reaches the edge of the screen and keeps its zoom while the " +
+                    "robot cleans. After a floor switch the right map appears once the robot " +
+                    "has loaded it. Rooms can be renamed on robots with an empty room table, " +
+                    "dock settings follow what each dock supports, the built-in water tank can " +
+                    "be emptied through the dock, and the back button returns to the settings " +
+                    "list. The sign-in screen is available in German.",
+            ),
+        ),
+    ),
     WhatsNewRelease(
         version = "1.3.0",
         items = listOf(

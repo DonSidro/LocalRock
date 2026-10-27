@@ -87,8 +87,8 @@ android {
         applicationId = "com.kodraliu.localrock"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 4
-        versionName = "1.3.0"
+        versionCode = 10
+        versionName = "1.4.0"
     }
     packaging {
         resources {
