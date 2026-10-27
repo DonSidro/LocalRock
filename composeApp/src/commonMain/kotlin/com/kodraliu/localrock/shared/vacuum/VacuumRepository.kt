@@ -1078,6 +1078,11 @@ class VacuumRepository(
 
     /** Pumps the robot's built-in water tank out through the dock. A refusal is raised, not ignored. */
     suspend fun emptyInbuiltWaterTank() {
+        val fresh = session.getStatus() ?: throw IllegalStateException("The robot's current status is unavailable")
+        _status.update { it.merge(fresh) }
+        if (fresh.state !in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE) || fresh.inCleaning != 0) {
+            throw IllegalStateException("Dock the robot and finish its current task before emptying its water tank")
+        }
         session.emptyInbuiltWaterTank().requireOk(APP_EMPTY_INBUILT_WATER_TANK)
     }
 
