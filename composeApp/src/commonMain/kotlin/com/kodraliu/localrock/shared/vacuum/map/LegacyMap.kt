@@ -197,7 +197,21 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     val rooms = roomCount.keys.sorted().map { roomId ->
         val cx = ((labelX[roomId]!! + 0.5f) / imageWidth).coerceIn(0f, 1f)
         val cy = ((imageHeight - 1 - labelY[roomId]!! + 0.5f) / imageHeight).coerceIn(0f, 1f)
-        ParsedMapRoom(id = roomId, name = "Room $roomId", labelNormX = cx, labelNormY = cy)
+        // How far the room reaches sideways around its label, over a few rows so the gaps inside a room
+        // (furniture, unscanned patches) do not make it look narrower than it is.
+        var left = labelX[roomId]!!
+        var right = left
+        for (row in (labelY[roomId]!! - LABEL_SPAN_ROWS)..(labelY[roomId]!! + LABEL_SPAN_ROWS)) {
+            if (row !in 0 until imageHeight) continue
+            for (x in 0 until imageWidth) {
+                val v = pixels[row * imageWidth + x].toInt() and 0xff
+                if ((v and 0x07) == 7 && ((v ushr 3) and 0x1f) == roomId) {
+                    if (x < left) left = x
+                    if (x > right) right = x
+                }
+            }
+        }
+        ParsedMapRoom(id = roomId, name = "Room $roomId", labelNormX = cx, labelNormY = cy, labelSpanCells = right - left + 1)
     }
 
     return ParsedMap(
@@ -283,6 +297,9 @@ private fun parseWalls(bytes: ByteArray, off: Int, headerLen: Int, dataLen: Int)
 
 private const val MAGIC_0 = 0x72.toByte()
 private const val MAGIC_1 = 0x72.toByte()
+
+/** Rows either side of a room's label that its width is read over. */
+private const val LABEL_SPAN_ROWS = 3
 
 private const val BLOCK_CHARGER = 1
 private const val BLOCK_IMAGE = 2
