@@ -30,6 +30,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.vacuum.map.MapObstacle
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
+import com.kodraliu.localrock.ui.AppColors
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.decodeToImageBitmap
 
@@ -46,25 +47,24 @@ internal fun ParsedMap.obstacleAt(tap: Offset, content: Size, offset: Offset, sc
         ?.second
 
 /**
- * Obstacles as dots of a fixed size, drawn over the zoomed map like the room labels. One with a
- * photo is larger, so it reads as something to tap.
+ * Obstacles as dots of a fixed size, drawn over the zoomed map like the room labels. Orange is a
+ * colour no room, robot or dock uses; the white ring and dark halo keep a dot visible on light and
+ * dark maps alike. One with a photo is larger and has a white centre, so it reads as something to open.
  */
-internal fun DrawScope.drawObstacles(
-    map: ParsedMap,
-    content: Size,
-    offset: Offset,
-    scale: Float,
-    fill: Color,
-    ring: Color,
-) {
+internal fun DrawScope.drawObstacles(map: ParsedMap, content: Size, offset: Offset, scale: Float) {
     for (o in map.obstacles) {
         val c = map.obstacleOnScreen(o, content, offset, scale)
         if (c.x < 0f || c.x > size.width || c.y < 0f || c.y > size.height) continue
-        val r = (if (o.photoId != null) 7 else 5).dp.toPx()
-        drawCircle(color = fill, radius = r, center = c)
-        drawCircle(color = ring, radius = r, center = c, style = Stroke(width = 1.5.dp.toPx()))
+        val hasPhoto = o.photoId != null
+        val r = (if (hasPhoto) 9 else 7).dp.toPx()
+        drawCircle(color = OBSTACLE_HALO, radius = r + 2.5.dp.toPx(), center = c)
+        drawCircle(color = AppColors.Warn, radius = r, center = c)
+        drawCircle(color = Color.White, radius = r, center = c, style = Stroke(width = 2.dp.toPx()))
+        if (hasPhoto) drawCircle(color = Color.White, radius = 3.dp.toPx(), center = c)
     }
 }
+
+private val OBSTACLE_HALO = Color.Black.copy(alpha = 0.35f)
 
 /** What a tapped obstacle is, and its photo when the robot kept one. */
 @Composable

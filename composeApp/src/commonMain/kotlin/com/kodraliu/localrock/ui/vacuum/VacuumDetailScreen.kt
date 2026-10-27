@@ -775,8 +775,6 @@ private fun VacuumMapImage(
     val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary)
     val currentOnRoomTap by rememberUpdatedState(onRoomTap)
     val currentOnObstacleTap by rememberUpdatedState(onObstacleTap)
-    val obstacleFill = MaterialTheme.colorScheme.tertiary
-    val obstacleRing = MaterialTheme.colorScheme.surface
 
     // A parsed map is mostly blank grid, so open framed on the floor plan rather than on padding.
     val bounds = remember(map) { map.contentBoundsNorm() }
@@ -850,8 +848,6 @@ private fun VacuumMapImage(
                 )
             }
 
-            drawObstacles(map, content, mapViewport.offset, mapViewport.scale, obstacleFill, obstacleRing)
-
             // Labels are drawn outside the zoom transform so they stay a constant, legible size
             // instead of growing to 8x with the map. Selected rooms carry their cleaning order,
             // so selection reads without relying on the highlight colour alone.
@@ -883,6 +879,9 @@ private fun VacuumMapImage(
                     topLeft = Offset(cx - tw / 2, cy - th / 2),
                 )
             }
+
+            // Over the labels, since a tap on a dot opens the obstacle even where a label covers it.
+            drawObstacles(map, content, mapViewport.offset, mapViewport.scale)
         }
 
         // Zoom is reported relative to the framed view, which is now the resting state.
