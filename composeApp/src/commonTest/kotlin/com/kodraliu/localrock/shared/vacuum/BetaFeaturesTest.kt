@@ -66,6 +66,21 @@ class BetaFeaturesTest {
     }
 
     @Test
+    fun set_tries_the_accepted_shape_first() {
+        assertEquals(listOf(0, 1, 2), betaSetTryOrder(3, null))
+        assertEquals(listOf(1, 0, 2), betaSetTryOrder(3, 1))
+        assertEquals(listOf(2, 0, 1), betaSetTryOrder(3, 2))
+        assertEquals(listOf(0), betaSetTryOrder(1, 2))
+    }
+
+    @Test
+    fun both_param_error_codes_move_on_to_the_next_shape() {
+        assertTrue(-10007 in BetaShapeRefusalCodes)
+        assertTrue(-10005 in BetaShapeRefusalCodes)
+        assertFalse(-10004 in BetaShapeRefusalCodes)
+    }
+
+    @Test
     fun advertised_features_without_a_switch_are_listed_by_name() {
         val set = "0000000000119418CCD57EFDA869B6DDDBFF8F7F7EFEFFFF"
         val listed = unlistedAdvertisedFeatures(set).map { it.name }

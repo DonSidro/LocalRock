@@ -46,8 +46,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
 
-private const val INVALID_PARAMS_CODE = -10007
-
 class VacuumRepository(
     duid: String,
     localKey: String,
@@ -923,16 +921,22 @@ class VacuumRepository(
         }
     }
 
+    /** Which [betaSetParamCandidates] shape each option last accepted, so later toggles send one write. */
+    private val betaSetAcceptedShape = mutableMapOf<String, Int>()
+
     /**
-     * Tries each parameter shape until the robot stops answering "invalid params", then reads the option
-     * back so the screen shows what the robot holds. Throws the robot's refusal, if any, after that.
+     * Tries each parameter shape until the robot stops refusing the shape, starting with the one it took
+     * last time, then reads the option back so the screen shows what the robot holds. Throws the robot's
+     * refusal, if any, after that.
      */
     suspend fun setBetaFeature(id: String, on: Boolean) {
         val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
+        val candidates = betaSetParamCandidates(current.key, on)
         var last: V1Response? = null
-        for (params in betaSetParamCandidates(current.key, on)) {
-            last = session.sendCommandRaw(current.def.setMethod, params)
-            if (last.error?.get("code")?.jsonPrimitive?.intOrNull != INVALID_PARAMS_CODE) break
+        for (i in betaSetTryOrder(candidates.size, betaSetAcceptedShape[id])) {
+            last = session.sendCommandRaw(current.def.setMethod, candidates[i])
+            if (last.error == null) betaSetAcceptedShape[id] = i
+            if (last.error?.get("code")?.jsonPrimitive?.intOrNull !in BetaShapeRefusalCodes) break
         }
         val updated = readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }
         if (updated != null) _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
