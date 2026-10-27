@@ -126,6 +126,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.luminance
@@ -909,6 +910,7 @@ private fun VacuumMapImage(
     val selectedBgColor = MaterialTheme.colorScheme.primary
     // In dark mode `primary` is a bright cyan, so white-on-primary would be unreadable.
     val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary)
+    val roomIcons = rememberRoomIconPainters()
     val currentOnRoomTap by rememberUpdatedState(onRoomTap)
     val currentOnObstacleTap by rememberUpdatedState(onObstacleTap)
     val currentYaw by rememberUpdatedState(yawDegrees)
@@ -1047,20 +1049,26 @@ private fun VacuumMapImage(
                     is3D -> labelStyle.copy(color = Color.White, shadow = Shadow(Color(0xE6000000), Offset(0f, 1f), 3f))
                     else -> labelStyle
                 }
-                // A name is shortened to fit inside its room, as the Roborock app does, so it never runs out
-                // over the black between rooms.
+                // Each name has a round badge with its room type in front, as in the Roborock app. A room the
+                // robot has no entry for shows the badge alone. A selected room keeps its numbered pill.
+                val badge = if (selected) 0f else 18.dp.toPx()
+                val badgeGap = if (selected) 0f else 4.dp.toPx()
+                val unnamed = room.tag == null && !selected
+                // A name is shortened to fit inside its room, so it never runs out over the black between rooms.
                 val roomWidthPx = (room.labelSpanCells ?: 0) * view.k * scale
+                val textRoom = (roomWidthPx - badge - badgeGap).toInt().coerceAtLeast(MIN_LABEL_WIDTH_PX)
                 val measured = if (roomWidthPx > 0f) {
                     textMeasurer.measure(
                         text, style,
                         overflow = TextOverflow.Ellipsis, softWrap = false, maxLines = 1,
-                        constraints = Constraints(maxWidth = roomWidthPx.toInt().coerceAtLeast(MIN_LABEL_WIDTH_PX)),
+                        constraints = Constraints(maxWidth = textRoom),
                     )
                 } else {
                     textMeasurer.measure(text, style)
                 }
-                val tw = measured.size.width.toFloat()
+                val tw = if (unnamed) 0f else measured.size.width.toFloat()
                 val th = measured.size.height.toFloat()
+                val total = if (selected) tw else badge + (if (unnamed) 0f else badgeGap + tw)
                 val padX = 6.dp.toPx()
                 val padY = 3.dp.toPx()
                 if (selected) {
@@ -1071,20 +1079,35 @@ private fun VacuumMapImage(
                         cornerRadius = CornerRadius(6.dp.toPx()),
                     )
                 }
-                val topLeft = Offset(cx - tw / 2, cy - th / 2)
+                val left = cx - total / 2
                 if (!selected) {
-                    val outline = textMeasurer.measure(
-                        text,
-                        style.copy(
-                            color = if (is3D) Color(0xE6000000) else Color(0xCCFFFFFF),
-                            shadow = null,
-                            drawStyle = Stroke(width = 0.8.dp.toPx(), join = StrokeJoin.Round),
-                        ),
-                    )
-                    drawText(outline, topLeft = topLeft)
+                    val centre = Offset(left + badge / 2, cy)
+                    drawCircle(color = Color(0xFF14202B), radius = badge / 2, center = centre)
+                    val glyph = badge * 0.6f
+                    withTransform({ translate(left = centre.x - glyph / 2, top = centre.y - glyph / 2) }) {
+                        with(roomIcons.forTag(room.tag)) {
+                            draw(size = Size(glyph, glyph), colorFilter = ColorFilter.tint(Color.White))
+                        }
+                    }
                 }
-                // Drawn from the measured layout, so a name near the screen edge is not re-wrapped to fit.
-                drawText(measured, topLeft = topLeft)
+                if (!unnamed) {
+                    val topLeft = Offset(left + badge + badgeGap, cy - th / 2)
+                    if (is3D && !selected) {
+                        val outline = textMeasurer.measure(
+                            text,
+                            style.copy(
+                                color = Color(0xE6000000),
+                                shadow = null,
+                                drawStyle = Stroke(width = 0.8.dp.toPx(), join = StrokeJoin.Round),
+                            ),
+                            overflow = TextOverflow.Ellipsis, softWrap = false, maxLines = 1,
+                            constraints = Constraints(maxWidth = measured.size.width.coerceAtLeast(1)),
+                        )
+                        drawText(outline, topLeft = topLeft)
+                    }
+                    // Drawn from the measured layout, so a name near the screen edge is not re-wrapped to fit.
+                    drawText(measured, topLeft = topLeft)
+                }
             }
         }
 
