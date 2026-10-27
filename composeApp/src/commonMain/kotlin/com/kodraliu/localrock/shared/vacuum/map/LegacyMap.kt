@@ -197,17 +197,7 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     val rooms = roomCount.keys.sorted().map { roomId ->
         val cx = ((labelX[roomId]!! + 0.5f) / imageWidth).coerceIn(0f, 1f)
         val cy = ((imageHeight - 1 - labelY[roomId]!! + 0.5f) / imageHeight).coerceIn(0f, 1f)
-        // The run of this room's own floor along the label's row, which is how wide a name may be.
-        fun inRoom(x: Int): Boolean {
-            if (x !in 0 until imageWidth) return false
-            val v = pixels[labelY[roomId]!! * imageWidth + x].toInt() and 0xff
-            return (v and 0x07) == 7 && ((v ushr 3) and 0x1f) == roomId
-        }
-        var left = labelX[roomId]!!
-        while (inRoom(left - 1)) left--
-        var right = labelX[roomId]!!
-        while (inRoom(right + 1)) right++
-        ParsedMapRoom(id = roomId, name = "Room $roomId", labelNormX = cx, labelNormY = cy, labelSpanCells = right - left + 1)
+        ParsedMapRoom(id = roomId, name = "Room $roomId", labelNormX = cx, labelNormY = cy)
     }
 
     return ParsedMap(
