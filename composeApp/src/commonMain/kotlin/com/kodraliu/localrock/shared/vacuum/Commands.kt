@@ -154,8 +154,12 @@ suspend fun VacuumSession.setChildLock(locked: Boolean): V1Response =
     sendCommandRaw(SET_CHILD_LOCK_STATUS, childLockParams(locked))
 
 suspend fun VacuumSession.getLedStatus(): V1Response = sendCommand("get_led_status")
+// The LED is the bare value `[1]`, the same shape get_led_status answers: an S8 Pro Ultra (a70) and a
+// Qrevo Curv 2 Flow (a245) answer `[{"led_status": 1}]` with -10005 "Invalid type".
+internal fun ledStatusParams(enabled: Boolean): List<JsonPrimitive> = listOf(JsonPrimitive(if (enabled) 1 else 0))
+
 suspend fun VacuumSession.setLedStatus(enabled: Boolean): V1Response =
-    sendCommand("set_led_status", listOf(JsonObject(mapOf("led_status" to JsonPrimitive(if (enabled) 1 else 0)))))
+    sendCommand("set_led_status", ledStatusParams(enabled))
 
 suspend fun VacuumSession.getMopMode(): V1Response = sendCommand("get_mop_mode")
 suspend fun VacuumSession.setMopMode(mode: Int): V1Response =

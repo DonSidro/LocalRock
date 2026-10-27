@@ -28,6 +28,13 @@ class RobotSettingCommandsTest {
     }
 
     @Test
+    fun the_led_is_sent_as_a_bare_value() {
+        // `[{"led_status": 1}]` was refused with -10005 "Invalid type" (checked on an S8 Pro Ultra and a Qrevo Curv 2 Flow).
+        assertEquals("[1]", ledStatusParams(true).toString())
+        assertEquals("[0]", ledStatusParams(false).toString())
+    }
+
+    @Test
     fun a_refused_change_is_an_error_not_a_success() {
         val refused = V1Response(
             id = 1,
