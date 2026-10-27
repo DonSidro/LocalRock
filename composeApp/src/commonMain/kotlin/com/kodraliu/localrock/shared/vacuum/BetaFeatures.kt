@@ -257,9 +257,8 @@ fun parseBetaReply(result: JsonElement?): Pair<String?, Int>? {
 }
 
 /**
- * Param shapes to try for a set command, in order. The robot answers "invalid params" (-10007) to a
- * shape it does not take, and python-roborock does not document these, so the first is the wrapped
- * form of the get reply (like set_child_lock) and the rest are the other usual forms.
+ * Param shapes to try for a set command, in order. python-roborock does not document these, so the
+ * first is the wrapped form of the get reply and the rest are the other usual forms.
  */
 fun betaSetParamCandidates(key: String?, on: Boolean): List<JsonElement> {
     val v = JsonPrimitive(if (on) 1 else 0)
@@ -269,4 +268,17 @@ fun betaSetParamCandidates(key: String?, on: Boolean): List<JsonElement> {
         obj,
         JsonArray(listOf(v)).takeIf { obj != null },
     )
+}
+
+/**
+ * Codes a robot answers to a param shape it does not take. Most options say -10007 "invalid params";
+ * a Qrevo Curv 2 Flow (a245) says -10005 "Invalid parameters" to the wrapped set_identify_ground_material_status,
+ * as a Qrevo Pro does to the wrapped set_child_lock_status.
+ */
+val BetaShapeRefusalCodes = setOf(-10007, -10005)
+
+/** Indices into the [betaSetParamCandidates] list in the order to try them, the shape the robot last took first. */
+fun betaSetTryOrder(count: Int, accepted: Int?): List<Int> {
+    val all = (0 until count).toList()
+    return if (accepted == null || accepted !in all) all else listOf(accepted) + all.filter { it != accepted }
 }
