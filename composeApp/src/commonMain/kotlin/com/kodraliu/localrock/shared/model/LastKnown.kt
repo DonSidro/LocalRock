@@ -18,6 +18,17 @@ data class LastKnown(
     @SerialName("has_map") val hasMap: Boolean = false,
     /** Base64 of the last map the robot sent, in the same form a live map reply decodes to. */
     val map: String? = null,
+    /** The robot's room table as the server last saw it; empty until the server has seen one. */
+    val rooms: List<LastKnownRoom> = emptyList(),
+)
+
+/** One row of the robot's room table: a map segment, the room it is, and that room's type. */
+@Serializable
+data class LastKnownRoom(
+    val segment: Int = 0,
+    @SerialName("iot_id") val iotId: String = "",
+    val tag: Int? = null,
+    val name: String? = null,
 )
 
 @Serializable

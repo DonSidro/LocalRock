@@ -3,7 +3,10 @@ package com.kodraliu.localrock.ui.vacuum
 import com.kodraliu.localrock.shared.model.LastKnown
 import com.kodraliu.localrock.shared.model.LastKnownPoint
 import com.kodraliu.localrock.shared.model.LastKnownPosition
+import com.kodraliu.localrock.shared.model.LastKnownRoom
 import com.kodraliu.localrock.shared.model.LastKnownStatus
+import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
+import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
@@ -62,5 +65,24 @@ class OfflineSnapshotTest {
     @Test
     fun a_robot_with_no_details_still_says_it_is_not_answering() {
         assertEquals(listOf("Not answering"), lastKnownLines(LastKnown(known = true), now, utc))
+    }
+
+    private val map = ParsedMap(
+        width = 2, height = 1, grid = byteArrayOf(16, 17),
+        rooms = listOf(ParsedMapRoom(16, "Room 16"), ParsedMapRoom(17, "Room 17")),
+        resolution = 0.05f,
+    )
+
+    @Test
+    fun the_room_table_names_the_rooms_of_the_last_map() {
+        val named = map.withRoomTable(listOf(LastKnownRoom(segment = 16, iotId = "1", tag = 6, name = "Living Room")))
+
+        assertEquals("Living Room", named.rooms[0].name)
+        assertEquals("Room 17", named.rooms[1].name)
+    }
+
+    @Test
+    fun an_empty_room_table_leaves_the_map_as_it_was() {
+        assertEquals(map, map.withRoomTable(emptyList()))
     }
 }
