@@ -207,6 +207,8 @@ fun VacuumDetailScreen(
 ) {
     val status by viewModel.status.collectAsState()
     val busy by viewModel.busy.collectAsState()
+    val supportsSmartPlan by viewModel.supportsSmartPlan.collectAsState()
+    val supportsWaterSlide by viewModel.supportsWaterSlide.collectAsState()
     val parsedMap by viewModel.repository.parsedMap.collectAsState()
     val floorMaps by viewModel.repository.floorMaps.collectAsState()
     val currentFloorFlag by viewModel.repository.currentFloorFlag.collectAsState()
@@ -548,7 +550,7 @@ fun VacuumDetailScreen(
                 currentRoute = mopMode,
                 cleaningCount = cleaningCount,
                 busy = busy,
-                supportsSmartPlan = viewModel.supportsSmartPlan,
+                supportsSmartPlan = supportsSmartPlan,
                 rooms = parsedMap?.rooms ?: emptyList(),
                 roomCleanModes = roomCleanModes,
                 roomModesLoaded = roomModesLoaded,
@@ -558,7 +560,7 @@ fun VacuumDetailScreen(
                             CleanPlan.SMART -> it.setCleanMotorMode(VacuumFanPower.SMART, WaterBoxMode.SMART, MopRoute.SMART)
                             CleanPlan.MANUAL -> {
                                 // Water slide robots get a slide code, as python-roborock does.
-                                val water = if (viewModel.supportsWaterSlide) WaterBoxMode.SLIDE_MEDIUM else WaterBoxMode.LOW
+                                val water = if (supportsWaterSlide) WaterBoxMode.SLIDE_MEDIUM else WaterBoxMode.LOW
                                 it.setCleanMotorMode(VacuumFanPower.BALANCED, water, MopRoute.STANDARD)
                             }
                             // The three codes the official app sent for its Customize tab.

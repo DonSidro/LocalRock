@@ -109,6 +109,16 @@ class VacuumRepository(
     private val _robotSettings = MutableStateFlow(RobotSettings())
     val robotSettings: StateFlow<RobotSettings> = _robotSettings
 
+    private val _robotFeatureSet = MutableStateFlow<String?>(null)
+
+    /** The feature flags the robot reports itself; null until it has answered. */
+    val robotFeatureSet: StateFlow<String?> = _robotFeatureSet
+
+    suspend fun fetchRobotFeatureSet() {
+        if (_robotFeatureSet.value != null) return
+        _robotFeatureSet.value = featureSetFromInitStatus(session.getInitStatus().requireOk("app_get_init_status").result)
+    }
+
     private val _dockSettings = MutableStateFlow(DockSettings())
     val dockSettings: StateFlow<DockSettings> = _dockSettings
 

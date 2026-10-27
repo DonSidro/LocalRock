@@ -1,8 +1,10 @@
 package com.kodraliu.localrock.shared.vacuum
 
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 /** Bit index of SmartPlan in `newFeatureSet` (python-roborock NewFeatureStrBit.SMART_CLEAN_MODE_SET). */
 private const val SMART_CLEAN_MODE_SET_BIT = 55
@@ -20,6 +22,16 @@ fun newFeatureBit(newFeatureSet: String?, bit: Int): Boolean {
     if (fromEnd > s.length) return false
     val nibble = s[s.length - fromEnd].digitToIntOrNull(16) ?: return false
     return (nibble shr (bit % 4)) and 1 == 1
+}
+
+/**
+ * The robot's own feature flags from its `app_get_init_status` answer, the hex string the server keeps
+ * as `newFeatureSet`. A robot onboarded locally never gets that field filled in on the server.
+ */
+fun featureSetFromInitStatus(result: JsonElement?): String? {
+    val status = (if (result is JsonArray) result.firstOrNull() else result) as? JsonObject ?: return null
+    val text = (status["new_feature_info_str"] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
+    return text.takeIf { it.isNotEmpty() && it.all { c -> c.digitToIntOrNull(16) != null } }
 }
 
 fun isSmartPlanSupported(newFeatureSet: String?): Boolean = newFeatureBit(newFeatureSet, SMART_CLEAN_MODE_SET_BIT)
