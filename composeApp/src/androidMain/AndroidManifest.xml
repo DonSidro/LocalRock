@@ -31,7 +31,9 @@
         <activity
             android:exported="true"
             android:theme="@style/Theme.LocalRock"
-            android:name=".MainActivity">
+            android:name=".MainActivity"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
