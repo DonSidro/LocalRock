@@ -107,7 +107,11 @@ import com.kodraliu.localrock.shared.vacuum.DndSettings
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.FeatureSection
 import com.kodraliu.localrock.shared.vacuum.inSection
+import com.kodraliu.localrock.shared.vacuum.DockOptions
 import com.kodraliu.localrock.shared.vacuum.DockSettings
+import com.kodraliu.localrock.shared.vacuum.ValleySettings
+import com.kodraliu.localrock.shared.vacuum.dryTimeLabel
+import com.kodraliu.localrock.shared.vacuum.labelFor
 import com.kodraliu.localrock.shared.vacuum.RobotSettings
 import com.kodraliu.localrock.shared.vacuum.VolumeLevels
 import com.kodraliu.localrock.shared.vacuum.volumeLabel
@@ -130,6 +134,7 @@ private sealed interface SettingsRoute {
     data object Carpet : SettingsRoute
     data object Floor : SettingsRoute
     data object Obstacle : SettingsRoute
+    data object Valley : SettingsRoute
     data object BetaFeatures : SettingsRoute
     data object History : SettingsRoute
 }
@@ -145,7 +150,9 @@ fun VacuumSettingsScreen(
     val repository = viewModel.repository
     var route by remember { mutableStateOf<SettingsRoute>(SettingsRoute.Root) }
     // Sub-pages are local state, not nav destinations, so system back would leave Settings (#52).
-    BackHandler(enabled = route != SettingsRoute.Root) { route = SettingsRoute.Root }
+    BackHandler(enabled = route != SettingsRoute.Root) {
+        route = if (route == SettingsRoute.Valley) SettingsRoute.DockSettings else SettingsRoute.Root
+    }
     val scope = rememberCoroutineScope()
     val consumables by repository.consumableStatus.collectAsState()
     val robotSettings by repository.robotSettings.collectAsState()
@@ -153,6 +160,7 @@ fun VacuumSettingsScreen(
     val status by viewModel.status.collectAsState()
     val busy by viewModel.busy.collectAsState()
     val dndSettings by repository.dndSettings.collectAsState()
+    val valleySettings by repository.valleySettings.collectAsState()
     val cleanHistory by repository.cleanHistory.collectAsState()
     val cleanSummary by repository.cleanSummary.collectAsState()
     val firmwareUpdate by viewModel.firmwareUpdate.collectAsState()
@@ -183,7 +191,10 @@ fun VacuumSettingsScreen(
             onFloor = if (betaFeatures.inSection(FeatureSection.FLOOR).isEmpty()) null else ({ route = SettingsRoute.Floor }),
             onObstacle = if (betaFeatures.inSection(FeatureSection.OBSTACLE).isEmpty()) null else ({ route = SettingsRoute.Obstacle }),
             onDockSettings = {
-                scope.launch { runCatching { repository.fetchDockSettings() } }
+                scope.launch {
+                    runCatching { repository.fetchDockSettings() }
+                    runCatching { repository.fetchValleySettings() }
+                }
                 route = SettingsRoute.DockSettings
             },
             onRobotSettings = {
@@ -242,7 +253,18 @@ fun VacuumSettingsScreen(
             onEmptyWaterTank = { viewModel.run("Emptying the water tank") { it.emptyInbuiltWaterTank() } },
             features = betaFeatures.inSection(FeatureSection.DOCK),
             onFeatureToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            valleySettings = valleySettings,
+            onMopDryingChange = { on -> viewModel.run { it.setMopDrying(on) } },
+            onDryTimeChange = { seconds -> viewModel.run { it.setDryTime(seconds) } },
+            onWashWaterTemperatureChange = { value -> viewModel.run { it.setWashWaterTemperature(value) } },
+            onOpenValley = { route = SettingsRoute.Valley },
             onBack = { route = SettingsRoute.Root },
+        )
+        SettingsRoute.Valley -> ValleyScreen(
+            valleySettings = valleySettings,
+            onEnable = { sh, sm, eh, em -> viewModel.run { it.setValley(sh, sm, eh, em) } },
+            onDisable = { viewModel.run { it.disableValley() } },
+            onBack = { route = SettingsRoute.DockSettings },
         )
         SettingsRoute.RobotSettings -> RobotSettingsScreen(
             robotSettings = robotSettings,
@@ -980,6 +1002,11 @@ private fun DockSettingsScreen(
     onEmptyWaterTank: () -> Unit,
     features: List<BetaFeatureState>,
     onFeatureToggle: (String, Boolean) -> Unit,
+    valleySettings: ValleySettings?,
+    onMopDryingChange: (Boolean) -> Unit,
+    onDryTimeChange: (Int) -> Unit,
+    onWashWaterTemperatureChange: (Int) -> Unit,
+    onOpenValley: () -> Unit,
     onBack: () -> Unit,
 ) {
     var dialogTarget by remember { mutableStateOf<String?>(null) }
@@ -1009,7 +1036,7 @@ private fun DockSettingsScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxWidth().padding(padding).padding(16.dp),
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(padding).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1041,6 +1068,52 @@ private fun DockSettingsScreen(
                 enabled = autoEmptyEnabled,
                 onClick = { dialogTarget = "auto_empty" },
             )
+            dockSettings.washWaterTemperature?.let { temperature ->
+                DockSettingCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    icon = Icons.Default.WaterDrop,
+                    iconTint = AppColors.Water,
+                    title = "Washing water temperature",
+                    value = DockOptions.washWaterTemperature.labelFor(temperature),
+                    enabled = !busy,
+                    onClick = { dialogTarget = "wash_temp" },
+                )
+            }
+            dockSettings.mopDrying?.let { drying ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DockSettingCard(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Default.Air,
+                        iconTint = AppColors.AccentCyan,
+                        title = "Mop drying",
+                        value = if (drying) "On" else "Off",
+                        enabled = !busy,
+                        onClick = { dialogTarget = "mop_drying" },
+                    )
+                    dockSettings.dryTimeSeconds?.let { seconds ->
+                        DockSettingCard(
+                            modifier = Modifier.weight(1f),
+                            icon = Icons.Default.Schedule,
+                            iconTint = AppColors.AccentCyan,
+                            title = "Drying time",
+                            value = dryTimeLabel(seconds),
+                            enabled = !busy,
+                            onClick = { dialogTarget = "dry_time" },
+                        )
+                    }
+                }
+            }
+            valleySettings?.let { valley ->
+                DockSettingCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    icon = Icons.Default.Schedule,
+                    iconTint = AppColors.Good,
+                    title = "Off-peak electricity",
+                    value = if (valley.enabled) "${clockText(valley.startHour, valley.startMinute)} to ${clockText(valley.endHour, valley.endMinute)}" else "Off",
+                    enabled = !busy,
+                    onClick = onOpenValley,
+                )
+            }
             DockSettingCard(
                 modifier = Modifier.fillMaxWidth(),
                 icon = Icons.Default.WaterDrop,
@@ -1087,6 +1160,30 @@ private fun DockSettingsScreen(
             enabled = washModeEnabled,
             onDismiss = { dialogTarget = null },
         )
+        "wash_temp" -> SimplePickerDialog(
+            title = "Washing water temperature",
+            options = DockOptions.washWaterTemperature.map { it.label },
+            selected = DockOptions.washWaterTemperature.indexOfFirst { it.code == dockSettings.washWaterTemperature },
+            onSelect = { onWashWaterTemperatureChange(DockOptions.washWaterTemperature[it].code); dialogTarget = null },
+            enabled = !busy,
+            onDismiss = { dialogTarget = null },
+        )
+        "mop_drying" -> SimplePickerDialog(
+            title = "Mop drying",
+            options = listOf("On", "Off"),
+            selected = if (dockSettings.mopDrying == true) 0 else 1,
+            onSelect = { onMopDryingChange(it == 0); dialogTarget = null },
+            enabled = !busy,
+            onDismiss = { dialogTarget = null },
+        )
+        "dry_time" -> SimplePickerDialog(
+            title = "Drying time",
+            options = DockOptions.dryTime.map { it.label },
+            selected = DockOptions.dryTime.indexOfFirst { it.code == dockSettings.dryTimeSeconds },
+            onSelect = { onDryTimeChange(DockOptions.dryTime[it].code); dialogTarget = null },
+            enabled = !busy,
+            onDismiss = { dialogTarget = null },
+        )
         "auto_empty" -> SimplePickerDialog(
             title = "Auto-empty mode",
             options = autoEmptyModes.map { it.second },
@@ -1095,6 +1192,71 @@ private fun DockSettingsScreen(
             enabled = autoEmptyEnabled,
             onDismiss = { dialogTarget = null },
         )
+    }
+}
+
+private fun clockText(hour: Int, minute: Int) = "${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}"
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ValleyScreen(
+    valleySettings: ValleySettings?,
+    onEnable: (startHour: Int, startMinute: Int, endHour: Int, endMinute: Int) -> Unit,
+    onDisable: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val settings = valleySettings ?: ValleySettings()
+    var enabled by remember(valleySettings?.enabled) { mutableStateOf(settings.enabled) }
+    var startHour by remember(valleySettings) { mutableStateOf(settings.startHour) }
+    var startMinute by remember(valleySettings) { mutableStateOf(settings.startMinute) }
+    var endHour by remember(valleySettings) { mutableStateOf(settings.endHour) }
+    var endMinute by remember(valleySettings) { mutableStateOf(settings.endMinute) }
+
+    fun commit() = if (enabled) onEnable(startHour, startMinute, endHour, endMinute) else onDisable()
+
+    // Each tap on a stepper changes a time, so the robot is written once they stop, not on every tap.
+    var timesTouched by remember { mutableStateOf(false) }
+    LaunchedEffect(startHour, startMinute, endHour, endMinute) {
+        if (!timesTouched) return@LaunchedEffect
+        kotlinx.coroutines.delay(800)
+        commit()
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Off-peak electricity") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(padding).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Limit charging and drying to off-peak hours", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        if (enabled) "${clockText(startHour, startMinute)} to ${clockText(endHour, endMinute)}" else "Off",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = enabled, onCheckedChange = { enabled = it; commit() })
+            }
+            if (enabled) {
+                HorizontalDivider()
+                Text("Start time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ClockStepper(startHour, startMinute, onHourChange = { startHour = it; timesTouched = true }, onMinuteChange = { startMinute = it; timesTouched = true })
+                Text("End time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ClockStepper(endHour, endMinute, onHourChange = { endHour = it; timesTouched = true }, onMinuteChange = { endMinute = it; timesTouched = true })
+            }
+        }
     }
 }
 

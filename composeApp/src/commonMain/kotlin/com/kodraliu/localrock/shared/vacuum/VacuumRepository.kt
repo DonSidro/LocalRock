@@ -964,6 +964,59 @@ class VacuumRepository(
         _dockSettings.update { it.copy(smartWash = frequency) }
         val empty = runCatching { session.getDustCollectionMode().requireOk("get_dust_collection_mode").result as? JsonObject }.getOrNull()
         _dockSettings.update { it.copy(autoEmptyMode = (empty?.get("mode") as? JsonPrimitive)?.intOrNull) }
+        val dryer = runCatching { session.getDryerSetting().requireOk("app_get_dryer_setting").result as? JsonObject }.getOrNull()
+        (dryer?.get("status") as? JsonPrimitive)?.intOrNull?.let { status ->
+            val seconds = ((dryer["on"] as? JsonObject)?.get("dry_time") as? JsonPrimitive)?.intOrNull
+            _dockSettings.update { it.copy(mopDrying = status == 1, dryTimeSeconds = seconds, dryerAnswer = dryer) }
+        }
+        // The read answers {"wash_water_temperature": n}, where the setter takes {"values": n}.
+        val temperature = runCatching { session.getWashWaterTemperature().requireOk("get_wash_water_temperature").result as? JsonObject }.getOrNull()
+        _dockSettings.update { it.copy(washWaterTemperature = (temperature?.get("wash_water_temperature") as? JsonPrimitive)?.intOrNull) }
+    }
+
+    suspend fun setMopDrying(enabled: Boolean) {
+        // Sends back everything the robot reported, so the switch alone cannot change how long a run lasts.
+        val reported = _dockSettings.value.dryerAnswer
+        val body = dryerSettingBody(reported, enabled, if (reported == null) _dockSettings.value.dryTimeSeconds else null)
+        session.setDryerSetting(body).requireOk("app_set_dryer_setting")
+        _dockSettings.update { it.copy(mopDrying = enabled, dryerAnswer = body) }
+    }
+
+    suspend fun setDryTime(seconds: Int) {
+        val body = dryerSettingBody(_dockSettings.value.dryerAnswer, _dockSettings.value.mopDrying ?: true, seconds)
+        session.setDryerSetting(body).requireOk("app_set_dryer_setting")
+        _dockSettings.update { it.copy(dryTimeSeconds = seconds, dryerAnswer = body) }
+    }
+
+    suspend fun setWashWaterTemperature(value: Int) {
+        session.setWashWaterTemperature(value).requireOk("set_wash_water_temperature")
+        _dockSettings.update { it.copy(washWaterTemperature = value) }
+    }
+
+    private val _valleySettings = MutableStateFlow<ValleySettings?>(null)
+    val valleySettings: StateFlow<ValleySettings?> = _valleySettings
+
+    suspend fun fetchValleySettings() {
+        val answer = session.getValleyElectricityTimer().requireOk("get_valley_electricity_timer").result
+        val obj = (answer as? JsonArray)?.firstOrNull() as? JsonObject ?: answer as? JsonObject ?: return
+        fun int(key: String) = (obj[key] as? JsonPrimitive)?.intOrNull
+        _valleySettings.value = ValleySettings(
+            enabled = int("enabled") == 1,
+            startHour = int("start_hour") ?: 22,
+            startMinute = int("start_minute") ?: 0,
+            endHour = int("end_hour") ?: 6,
+            endMinute = int("end_minute") ?: 0,
+        )
+    }
+
+    suspend fun setValley(startHour: Int, startMinute: Int, endHour: Int, endMinute: Int) {
+        session.setValleyElectricityTimer(startHour, startMinute, endHour, endMinute).requireOk("set_valley_electricity_timer")
+        _valleySettings.value = ValleySettings(true, startHour, startMinute, endHour, endMinute)
+    }
+
+    suspend fun disableValley() {
+        session.closeValleyElectricityTimer().requireOk("close_valley_electricity_timer")
+        _valleySettings.update { it?.copy(enabled = false) }
     }
 
     suspend fun setWashMode(mode: Int) {
