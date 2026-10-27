@@ -183,6 +183,8 @@ suspend fun VacuumSession.getSmartWashParams(): V1Response = sendCommand("get_sm
 suspend fun VacuumSession.setSmartWashParams(settings: SmartWashSettings): V1Response =
     sendCommandRaw("set_smart_wash_params", encodeSmartWashParams(settings))
 
+suspend fun VacuumSession.getInitStatus(): V1Response = sendCommand("app_get_init_status")
+
 suspend fun VacuumSession.getDustCollectionMode(): V1Response = sendCommand("get_dust_collection_mode")
 suspend fun VacuumSession.setDustCollectionMode(mode: Int): V1Response =
     sendCommandRaw("set_dust_collection_mode", JsonObject(mapOf("mode" to JsonPrimitive(mode))))
