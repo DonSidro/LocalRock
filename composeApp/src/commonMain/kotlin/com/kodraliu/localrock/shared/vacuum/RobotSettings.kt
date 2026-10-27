@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
+import kotlin.math.abs
 
 data class RobotSettings(
     val volume: Int = 50,
@@ -11,6 +12,22 @@ data class RobotSettings(
     val ledEnabled: Boolean = true,
     val carpetMode: Int = 1, // 0=avoid, 1=standard, 2=boost
 )
+
+/** The levels the volume picker offers, as change_sound_volume values (0-100). */
+val VolumeLevels = listOf(0 to "Off", 30 to "Low", 60 to "Medium", 100 to "High")
+
+/**
+ * The picker level for a volume the robot reports. Only 0 is Off: a robot set to 10 elsewhere still
+ * speaks, so it is Low, not the nearer Off.
+ */
+fun volumeLevelIndex(volume: Int): Int =
+    if (volume <= 0) 0 else (1 until VolumeLevels.size).minBy { abs(VolumeLevels[it].first - volume) }
+
+/** The level's name, with the robot's own value when it is between levels, e.g. "Low (10%)". */
+fun volumeLabel(volume: Int): String {
+    val (level, name) = VolumeLevels[volumeLevelIndex(volume)]
+    return if (volume == level) name else "$name ($volume%)"
+}
 
 data class DockSettings(
     val washMode: Int? = null,
