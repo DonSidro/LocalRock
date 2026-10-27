@@ -1873,75 +1873,73 @@ private fun PinGoScreen(
             )
         },
     ) { padding ->
-        CenteredContent {
-            Column(Modifier.fillMaxSize().padding(padding)) {
-                if (parsedMap == null) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            Icon(Icons.Default.Map, null, Modifier.size(48.dp), MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("Map not loaded", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                "Go back to the main screen and wait for the map to load",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 32.dp),
-                            )
-                        }
-                    }
-                } else {
-                    val bitmap = rememberMapBitmap(parsedMap)
-                    val aspectRatio = parsedMap.width.toFloat() / parsedMap.height.toFloat()
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center,
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            if (parsedMap == null) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Canvas(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(aspectRatio)
-                                .onSizeChanged { imageSize = it }
-                                .pointerInput(parsedMap) {
-                                    detectTapGestures { offset ->
-                                        tapPoint = offset
-                                        sent = false
-                                    }
-                                },
-                        ) {
-                            drawImage(
-                                image = bitmap,
-                                srcOffset = IntOffset.Zero,
-                                srcSize = IntSize(bitmap.width, bitmap.height),
-                                dstOffset = IntOffset.Zero,
-                                dstSize = IntSize(size.width.toInt(), size.height.toInt()),
-                                filterQuality = FilterQuality.None,
-                            )
-                            tapPoint?.let { tp ->
-                                drawCircle(color = AppColors.AccentRed.copy(alpha = 0.85f), radius = 22f, center = tp)
-                                drawCircle(color = Color.White, radius = 9f, center = tp)
-                            }
-                        }
+                        Icon(Icons.Default.Map, null, Modifier.size(48.dp), MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Map not loaded", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Go back to the main screen and wait for the map to load",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 32.dp),
+                        )
                     }
-                    Text(
-                        text = when {
-                            sent -> "Command sent! Robot is heading there."
-                            tapPoint != null -> "Target set — tap Go to send the robot there."
-                            else -> "Tap on the map to set a destination."
-                        },
+                }
+            } else {
+                val bitmap = rememberMapBitmap(parsedMap)
+                val aspectRatio = parsedMap.width.toFloat() / parsedMap.height.toFloat()
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (sent) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
+                            .aspectRatio(aspectRatio)
+                            .onSizeChanged { imageSize = it }
+                            .pointerInput(parsedMap) {
+                                detectTapGestures { offset ->
+                                    tapPoint = offset
+                                    sent = false
+                                }
+                            },
+                    ) {
+                        drawImage(
+                            image = bitmap,
+                            srcOffset = IntOffset.Zero,
+                            srcSize = IntSize(bitmap.width, bitmap.height),
+                            dstOffset = IntOffset.Zero,
+                            dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                            filterQuality = FilterQuality.None,
+                        )
+                        tapPoint?.let { tp ->
+                            drawCircle(color = AppColors.AccentRed.copy(alpha = 0.85f), radius = 22f, center = tp)
+                            drawCircle(color = Color.White, radius = 9f, center = tp)
+                        }
+                    }
                 }
+                Text(
+                    text = when {
+                        sent -> "Command sent! Robot is heading there."
+                        tapPoint != null -> "Target set — tap Go to send the robot there."
+                        else -> "Tap on the map to set a destination."
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (sent) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
     }
