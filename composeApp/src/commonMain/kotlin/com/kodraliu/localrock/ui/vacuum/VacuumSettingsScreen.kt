@@ -105,6 +105,8 @@ import com.kodraliu.localrock.shared.vacuum.CleanSummary
 import com.kodraliu.localrock.shared.vacuum.ConsumableStatus
 import com.kodraliu.localrock.shared.vacuum.DndSettings
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
+import com.kodraliu.localrock.shared.vacuum.FeatureSection
+import com.kodraliu.localrock.shared.vacuum.inSection
 import com.kodraliu.localrock.shared.vacuum.DockSettings
 import com.kodraliu.localrock.shared.vacuum.RobotSettings
 import com.kodraliu.localrock.shared.vacuum.washFrequencyLabel
@@ -122,6 +124,9 @@ private sealed interface SettingsRoute {
     data object DockSettings : SettingsRoute
     data object RobotSettings : SettingsRoute
     data object DndMode : SettingsRoute
+    data object Carpet : SettingsRoute
+    data object Floor : SettingsRoute
+    data object Obstacle : SettingsRoute
     data object BetaFeatures : SettingsRoute
     data object History : SettingsRoute
 }
@@ -151,6 +156,11 @@ fun VacuumSettingsScreen(
     val betaFeatures by repository.betaFeatures.collectAsState()
     val betaFeaturesLoading by repository.betaFeaturesLoading.collectAsState()
 
+    // Every feature the robot reports is read once, so a page with none is not offered.
+    LaunchedEffect(Unit) {
+        if (betaFeatures.isEmpty()) runCatching { repository.fetchBetaFeatures(viewModel.betaFeatureDefs) }
+    }
+
     when (route) {
         SettingsRoute.Root -> SettingsRootScreen(
             modelName = viewModel.modelName,
@@ -163,6 +173,12 @@ fun VacuumSettingsScreen(
                 scope.launch { runCatching { repository.fetchConsumableStatus() } }
                 route = SettingsRoute.Maintenance
             },
+            onCarpet = {
+                scope.launch { runCatching { repository.fetchRobotSettings() } }
+                route = SettingsRoute.Carpet
+            },
+            onFloor = if (betaFeatures.inSection(FeatureSection.FLOOR).isEmpty()) null else ({ route = SettingsRoute.Floor }),
+            onObstacle = if (betaFeatures.inSection(FeatureSection.OBSTACLE).isEmpty()) null else ({ route = SettingsRoute.Obstacle }),
             onDockSettings = {
                 scope.launch { runCatching { repository.fetchDockSettings() } }
                 route = SettingsRoute.DockSettings
@@ -176,12 +192,30 @@ fun VacuumSettingsScreen(
                 route = SettingsRoute.DndMode
             },
             onBetaFeatures = if (!viewModel.showsBetaFeatures) null else ({
-                scope.launch { runCatching { repository.fetchBetaFeatures(viewModel.betaFeatureDefs) } }
                 route = SettingsRoute.BetaFeatures
             }),
         )
+        SettingsRoute.Carpet -> CarpetScreen(
+            carpetMode = robotSettings.carpetMode,
+            features = betaFeatures.inSection(FeatureSection.CARPET),
+            onCarpetModeChange = { mode -> viewModel.report { it.setCarpetMode(mode) } },
+            onToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            onBack = { route = SettingsRoute.Root },
+        )
+        SettingsRoute.Floor -> FeatureSectionScreen(
+            title = "Floor cleaning",
+            features = betaFeatures.inSection(FeatureSection.FLOOR),
+            onToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            onBack = { route = SettingsRoute.Root },
+        )
+        SettingsRoute.Obstacle -> FeatureSectionScreen(
+            title = "Obstacle avoidance",
+            features = betaFeatures.inSection(FeatureSection.OBSTACLE),
+            onToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            onBack = { route = SettingsRoute.Root },
+        )
         SettingsRoute.BetaFeatures -> BetaFeaturesScreen(
-            features = betaFeatures,
+            features = betaFeatures.inSection(FeatureSection.BETA),
             loading = betaFeaturesLoading,
             unlisted = viewModel.unlistedFeatures,
             onToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
@@ -203,6 +237,8 @@ fun VacuumSettingsScreen(
             onWashFrequencyChange = { mode, minutes -> viewModel.run { it.setWashFrequency(mode, minutes) } },
             onAutoEmptyModeChange = { mode -> viewModel.run { it.setAutoEmptyMode(mode) } },
             onEmptyWaterTank = { viewModel.run("Emptying the water tank") { it.emptyInbuiltWaterTank() } },
+            features = betaFeatures.inSection(FeatureSection.DOCK),
+            onFeatureToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
             onBack = { route = SettingsRoute.Root },
         )
         SettingsRoute.RobotSettings -> RobotSettingsScreen(
@@ -211,7 +247,8 @@ fun VacuumSettingsScreen(
             onVolumeChange = { volume -> viewModel.report { it.setVolume(volume) } },
             onChildLockChange = { locked -> viewModel.report { it.setChildLock(locked) } },
             onLedChange = { on -> viewModel.report { it.setLed(on) } },
-            onCarpetModeChange = { mode -> viewModel.report { it.setCarpetMode(mode) } },
+            features = betaFeatures.inSection(FeatureSection.ROBOT),
+            onFeatureToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
             onBack = { route = SettingsRoute.Root },
         )
         SettingsRoute.DndMode -> DndScreen(
@@ -309,6 +346,9 @@ private fun SettingsRootScreen(
     onBack: () -> Unit,
     onHistory: () -> Unit,
     onMaintenance: () -> Unit,
+    onCarpet: () -> Unit,
+    onFloor: (() -> Unit)?,
+    onObstacle: (() -> Unit)?,
     onDockSettings: () -> Unit,
     onRobotSettings: () -> Unit,
     onDndMode: () -> Unit,
@@ -349,12 +389,46 @@ private fun SettingsRootScreen(
             item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
             item {
                 SettingsCategoryRow(
+                    icon = Icons.Default.GridView,
+                    iconTint = AppColors.Good,
+                    title = "Carpet cleaning",
+                    subtitle = "Carpet mode and deep cleaning",
+                    onClick = onCarpet,
+                )
+            }
+            if (onFloor != null) {
+                item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+                item {
+                    SettingsCategoryRow(
+                        icon = Icons.Default.CleaningServices,
+                        iconTint = AppColors.AccentCyan,
+                        title = "Floor cleaning",
+                        subtitle = "Floor types, FlexiArm and pet areas",
+                        onClick = onFloor,
+                    )
+                }
+            }
+            item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+            item {
+                SettingsCategoryRow(
                     icon = Icons.Default.Home,
                     iconTint = AppColors.Water,
                     title = "Dock settings",
                     subtitle = "Auto-empty, wash and dry options",
                     onClick = onDockSettings,
                 )
+            }
+            if (onObstacle != null) {
+                item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+                item {
+                    SettingsCategoryRow(
+                        icon = Icons.Default.Sensors,
+                        iconTint = AppColors.AccentYellow,
+                        title = "Obstacle avoidance",
+                        subtitle = "Collision and object detection",
+                        onClick = onObstacle,
+                    )
+                }
             }
             item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
             item {
@@ -383,7 +457,7 @@ private fun SettingsRootScreen(
                         icon = Icons.Default.Science,
                         iconTint = AppColors.AccentCyan,
                         title = "Beta features",
-                        subtitle = "FlexiArm and other new robot options",
+                        subtitle = "Other options your robot reports",
                         onClick = onBetaFeatures,
                     )
                 }
@@ -901,6 +975,8 @@ private fun DockSettingsScreen(
     onWashFrequencyChange: (Int, Int?) -> Unit,
     onAutoEmptyModeChange: (Int) -> Unit,
     onEmptyWaterTank: () -> Unit,
+    features: List<BetaFeatureState>,
+    onFeatureToggle: (String, Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     var dialogTarget by remember { mutableStateOf<String?>(null) }
@@ -971,6 +1047,7 @@ private fun DockSettingsScreen(
                 enabled = !busy,
                 onClick = { confirmEmptyTank = true },
             )
+            features.forEach { FeatureToggleRow(it, onFeatureToggle) }
         }
     }
 
@@ -1115,18 +1192,16 @@ private fun RobotSettingsScreen(
     onVolumeChange: (Int) -> Unit,
     onChildLockChange: (Boolean) -> Unit,
     onLedChange: (Boolean) -> Unit,
-    onCarpetModeChange: (Int) -> Unit,
+    features: List<BetaFeatureState>,
+    onFeatureToggle: (String, Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     var findTriggered by remember { mutableStateOf(false) }
     var showVolumeDialog by remember { mutableStateOf(false) }
-    var showCarpetDialog by remember { mutableStateOf(false) }
 
     val volumeOptions = listOf(0 to "Off", 30 to "Low", 60 to "Medium", 100 to "High")
-    val carpetOptions = listOf("Avoid carpet", "Standard", "Carpet boost")
 
     val volumeLabel = volumeOptions.minByOrNull { kotlin.math.abs(it.first - robotSettings.volume) }?.second ?: "Medium"
-    val carpetLabel = carpetOptions.getOrElse(robotSettings.carpetMode) { "Standard" }
 
     Scaffold(
         topBar = {
@@ -1180,15 +1255,9 @@ private fun RobotSettingsScreen(
                     onCheckedChange = onLedChange,
                 )
             }
-            item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
-            item {
-                SettingRowClickable(
-                    icon = Icons.Default.GridView,
-                    iconTint = AppColors.Good,
-                    title = "Carpet Mode",
-                    subtitle = carpetLabel,
-                    onClick = { showCarpetDialog = true },
-                )
+            items(features, key = { it.def.id }) { f ->
+                HorizontalDivider(Modifier.padding(start = 72.dp))
+                FeatureToggleRow(f, onFeatureToggle)
             }
         }
     }
@@ -1203,13 +1272,96 @@ private fun RobotSettingsScreen(
             onDismiss = { showVolumeDialog = false },
         )
     }
-    if (showCarpetDialog) {
+}
+
+/** One feature the robot reports, as a switch under the page it belongs to. */
+@Composable
+private fun FeatureToggleRow(f: BetaFeatureState, onToggle: (String, Boolean) -> Unit) {
+    val icon = when (f.def.section) {
+        FeatureSection.CARPET -> Icons.Default.GridView
+        FeatureSection.FLOOR -> Icons.Default.CleaningServices
+        FeatureSection.OBSTACLE -> Icons.Default.Sensors
+        FeatureSection.DOCK -> Icons.Default.Home
+        FeatureSection.ROBOT -> Icons.Default.Settings
+        FeatureSection.BETA -> Icons.Default.Science
+    }
+    SettingRowSwitch(
+        icon = icon,
+        iconTint = AppColors.AccentCyan,
+        title = f.def.title,
+        subtitle = f.def.description,
+        checked = f.enabled,
+        onCheckedChange = { onToggle(f.def.id, it) },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FeatureSectionScreen(
+    title: String,
+    features: List<BetaFeatureState>,
+    onToggle: (String, Boolean) -> Unit,
+    onBack: () -> Unit,
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+            )
+        },
+    ) { padding ->
+        LazyColumn(contentPadding = padding) {
+            items(features, key = { it.def.id }) { f ->
+                FeatureToggleRow(f, onToggle)
+                HorizontalDivider(Modifier.padding(start = 72.dp))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CarpetScreen(
+    carpetMode: Int,
+    features: List<BetaFeatureState>,
+    onCarpetModeChange: (Int) -> Unit,
+    onToggle: (String, Boolean) -> Unit,
+    onBack: () -> Unit,
+) {
+    var showDialog by remember { mutableStateOf(false) }
+    val options = listOf("Avoid carpet", "Standard", "Carpet boost")
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Carpet cleaning") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+            )
+        },
+    ) { padding ->
+        LazyColumn(contentPadding = padding) {
+            item {
+                SettingRowClickable(
+                    icon = Icons.Default.GridView,
+                    iconTint = AppColors.Good,
+                    title = "Carpet mode",
+                    subtitle = options.getOrElse(carpetMode) { "Standard" },
+                    onClick = { showDialog = true },
+                )
+            }
+            items(features, key = { it.def.id }) { f ->
+                HorizontalDivider(Modifier.padding(start = 72.dp))
+                FeatureToggleRow(f, onToggle)
+            }
+        }
+    }
+    if (showDialog) {
         SimplePickerDialog(
-            title = "Carpet Mode",
-            options = carpetOptions,
-            selected = robotSettings.carpetMode,
-            onSelect = { onCarpetModeChange(it); showCarpetDialog = false },
-            onDismiss = { showCarpetDialog = false },
+            title = "Carpet mode",
+            options = options,
+            selected = carpetMode,
+            onSelect = { onCarpetModeChange(it); showDialog = false },
+            onDismiss = { showDialog = false },
         )
     }
 }

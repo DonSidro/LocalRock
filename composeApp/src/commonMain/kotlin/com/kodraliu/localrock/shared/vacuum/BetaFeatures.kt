@@ -13,6 +13,9 @@ import kotlinx.serialization.json.intOrNull
  * it shows only if the robot answers its get command with 0 or 1; the set payload is not documented there, so it mirrors the
  * shape of the get reply (see [parseBetaReply] and [encodeBetaSetParams]).
  */
+/** The settings page a feature is shown on, following the official app's grouping. */
+enum class FeatureSection { CARPET, FLOOR, OBSTACLE, DOCK, ROBOT, BETA }
+
 data class BetaFeatureDef(
     val id: String,
     val title: String,
@@ -20,6 +23,7 @@ data class BetaFeatureDef(
     val bit: Int?,
     val getMethod: String,
     val setMethod: String,
+    val section: FeatureSection = FeatureSection.BETA,
 )
 
 val BetaFeatureDefs = listOf(
@@ -30,6 +34,7 @@ val BetaFeatureDefs = listOf(
         bit = 54,
         getMethod = "get_right_brush_stretch_status",
         setMethod = "set_right_brush_stretch_status",
+        section = FeatureSection.FLOOR,
     ),
     BetaFeatureDef(
         id = "corner_mop_stretch",
@@ -38,6 +43,7 @@ val BetaFeatureDefs = listOf(
         bit = 40,
         getMethod = "get_stretch_tag_status",
         setMethod = "set_stretch_tag_status",
+        section = FeatureSection.FLOOR,
     ),
     BetaFeatureDef(
         id = "gap_deep_clean",
@@ -46,6 +52,7 @@ val BetaFeatureDefs = listOf(
         bit = 63,
         getMethod = "get_gap_deep_clean_status",
         setMethod = "set_gap_deep_clean_status",
+        section = FeatureSection.FLOOR,
     ),
     BetaFeatureDef(
         id = "pet_supplies_deep_clean",
@@ -54,6 +61,7 @@ val BetaFeatureDefs = listOf(
         bit = 43,
         getMethod = "get_pet_supplies_deep_clean_status",
         setMethod = "set_pet_supplies_deep_clean_status",
+        section = FeatureSection.FLOOR,
     ),
     BetaFeatureDef(
         id = "dirty_object_detect",
@@ -62,6 +70,7 @@ val BetaFeatureDefs = listOf(
         bit = 56,
         getMethod = "get_dirty_object_detect_status",
         setMethod = "set_dirty_object_detect_status",
+        section = FeatureSection.OBSTACLE,
     ),
     BetaFeatureDef(
         id = "avoid_collision",
@@ -70,6 +79,7 @@ val BetaFeatureDefs = listOf(
         bit = 36,
         getMethod = "get_collision_avoid_status",
         setMethod = "set_collision_avoid_status",
+        section = FeatureSection.OBSTACLE,
     ),
     BetaFeatureDef(
         id = "water_leak_check",
@@ -78,6 +88,7 @@ val BetaFeatureDefs = listOf(
         bit = 60,
         getMethod = "get_handle_leak_water_status",
         setMethod = "set_handle_leak_water_status",
+        section = FeatureSection.ROBOT,
     ),
     BetaFeatureDef(
         id = "voice_control_led",
@@ -86,6 +97,7 @@ val BetaFeatureDefs = listOf(
         bit = 58,
         getMethod = "get_ap_mic_led_status",
         setMethod = "set_ap_mic_led_status",
+        section = FeatureSection.ROBOT,
     ),
     BetaFeatureDef(
         id = "carpet_deep_clean",
@@ -94,6 +106,7 @@ val BetaFeatureDefs = listOf(
         bit = 3,
         getMethod = "app_get_carpet_deep_clean_status",
         setMethod = "app_set_carpet_deep_clean_status",
+        section = FeatureSection.CARPET,
     ),
     BetaFeatureDef(
         id = "clean_fluid_delivery",
@@ -102,6 +115,7 @@ val BetaFeatureDefs = listOf(
         bit = 112,
         getMethod = "get_auto_delivery_cleaning_fluid",
         setMethod = "set_auto_delivery_cleaning_fluid",
+        section = FeatureSection.DOCK,
     ),
     BetaFeatureDef(
         id = "dust_collection_switch",
@@ -110,6 +124,7 @@ val BetaFeatureDefs = listOf(
         bit = null,
         getMethod = "get_dust_collection_switch_status",
         setMethod = "set_dust_collection_switch_status",
+        section = FeatureSection.DOCK,
     ),
     BetaFeatureDef(
         id = "identify_furniture",
@@ -126,6 +141,7 @@ val BetaFeatureDefs = listOf(
         bit = null,
         getMethod = "get_identify_ground_material_status",
         setMethod = "set_identify_ground_material_status",
+        section = FeatureSection.FLOOR,
     ),
     BetaFeatureDef(
         id = "follow_ground_material",
@@ -134,12 +150,17 @@ val BetaFeatureDefs = listOf(
         bit = null,
         getMethod = "get_clean_follow_ground_material_status",
         setMethod = "set_clean_follow_ground_material_status",
+        section = FeatureSection.FLOOR,
     ),
 )
 
 /** The features this robot's `newFeatureSet` advertises. */
 fun supportedBetaFeatures(newFeatureSet: String?): List<BetaFeatureDef> =
     BetaFeatureDefs.filter { it.bit == null || newFeatureBit(newFeatureSet, it.bit) }
+
+/** The reads of [features] that belong on [section], in the order the definitions list them. */
+fun List<BetaFeatureState>.inSection(section: FeatureSection): List<BetaFeatureState> =
+    filter { it.def.section == section }
 
 /**
  * Names for `newFeatureSet` bits from 32 up (python-roborock NewFeatureStrBit), for listing what a
