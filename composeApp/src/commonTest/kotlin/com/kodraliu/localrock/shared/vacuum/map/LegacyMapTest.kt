@@ -36,10 +36,10 @@ class LegacyMapTest {
             127 -> wall++
             128 -> floor++
         }
-        // From the captured fixture: 170284 outside / 4580 wall (low3==1) / 51660 floor (other).
-        assertEquals(170284, outside)
+        // Captured fixture: floor is low3==7; cells with a room id but other low bits are outside the walls.
+        assertEquals(176278, outside)
         assertEquals(4580, wall)
-        assertEquals(51660, floor)
+        assertEquals(45666, floor)
     }
 
     @Test

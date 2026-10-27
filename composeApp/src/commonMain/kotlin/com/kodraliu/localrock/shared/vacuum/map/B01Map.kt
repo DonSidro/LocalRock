@@ -274,7 +274,7 @@ fun ParsedMap.roomAtNorm(normX: Float, normY: Float): ParsedMapRoom? {
     if (originalGrid != null) {
         // Legacy: (byte >> 3) & 0x1f encodes room ID per pixel.
         val v = originalGrid[idx].toInt() and 0xff
-        if (v == 0 || (v and 0x07) == 1) return null  // outside or wall
+        if ((v and 0x07) != 7) return null  // outside, wall or an unscanned cell
         val roomId = (v ushr 3) and 0x1f
         return if (roomId > 0) rooms.find { it.id == roomId } else null
     }
