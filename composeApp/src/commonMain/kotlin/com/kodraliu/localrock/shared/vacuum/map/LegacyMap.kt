@@ -210,9 +210,15 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
             if (y < imageHeight - 1 && roomAt[i + imageWidth] == roomAt[i]) open[i] = minOf(open[i], open[i + imageWidth] + 1)
         }
     }
+    // Open enough is good enough: among the cells at least 70% as open as the room's best one, the
+    // name goes on the one nearest the room's middle, so it is neither on a gap nor out at an edge.
+    val mostOpen = mutableMapOf<Int, Int>()
+    for (i in roomAt.indices) {
+        val id = roomAt[i]
+        if (id != 0 && open[i] > (mostOpen[id] ?: 0)) mostOpen[id] = open[i]
+    }
     val labelX = mutableMapOf<Int, Int>()
     val labelY = mutableMapOf<Int, Int>()
-    val labelOpen = mutableMapOf<Int, Int>()
     val labelDistance = mutableMapOf<Int, Float>()
     for (y in 0 until imageHeight) {
         for (x in 0 until imageWidth) {
@@ -220,13 +226,11 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
             val roomId = roomAt[i]
             if (roomId == 0) continue
             val count = roomCount[roomId] ?: continue
+            if (open[i] * 10 < (mostOpen[roomId] ?: 0) * 7) continue
             val dx = x - roomSumX[roomId]!! / count.toFloat()
             val dy = y - roomSumY[roomId]!! / count.toFloat()
             val distance = dx * dx + dy * dy
-            val best = labelOpen[roomId] ?: -1
-            // The most open cell wins; among equally open cells, the one nearest the room's middle.
-            if (open[i] > best || (open[i] == best && distance < (labelDistance[roomId] ?: Float.MAX_VALUE))) {
-                labelOpen[roomId] = open[i]
+            if (distance < (labelDistance[roomId] ?: Float.MAX_VALUE)) {
                 labelDistance[roomId] = distance
                 labelX[roomId] = x
                 labelY[roomId] = y
