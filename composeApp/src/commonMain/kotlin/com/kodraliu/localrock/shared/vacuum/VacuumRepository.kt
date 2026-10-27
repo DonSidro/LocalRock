@@ -1137,9 +1137,6 @@ class VacuumRepository(
             val parsed = b01.getOrNull()
                 ?: runCatching { parseLegacyMap(resp.data) }.getOrNull()
             _parsedMap.value = parsed
-            parsed?.obstacles?.takeIf { it.isNotEmpty() }?.let { list ->
-                println("[VacLocal] obstacles: " + list.joinToString { "${it.type}@${it.x},${it.y} photo=${it.photoId}" })
-            }
             if (parsed != null && parsed.rooms.isNotEmpty()) {
                 _rooms.value = parsed.rooms
             }

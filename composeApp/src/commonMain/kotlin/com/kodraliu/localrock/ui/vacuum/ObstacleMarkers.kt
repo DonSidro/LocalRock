@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -77,7 +80,11 @@ internal fun ObstacleSheetContent(obstacle: MapObstacle, loadPhoto: suspend (Str
             .onSuccess { photo = it }
             .onFailure { failure = it.message ?: "The robot didn't send it" }
     }
-    Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 24.dp)) {
+    // The photo is capped so it fits a half-open sheet on a phone, and the sheet scrolls for the rest.
+    val photoFrame = Modifier.heightIn(max = 320.dp).aspectRatio(1f, matchHeightConstraintsFirst = true)
+    Column(
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
+    ) {
         Text(obstacle.typeName ?: "Obstacle", style = MaterialTheme.typography.titleLarge)
         val details = listOfNotNull(
             obstacle.confidence?.takeIf { it > 0f }?.let { "${(it * 100).roundToInt()}% confidence" },
@@ -101,7 +108,7 @@ internal fun ObstacleSheetContent(obstacle: MapObstacle, loadPhoto: suspend (Str
             current != null -> Image(
                 bitmap = current,
                 contentDescription = "Photo of the obstacle",
-                modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(MaterialTheme.shapes.medium),
+                modifier = photoFrame.align(Alignment.CenterHorizontally).clip(MaterialTheme.shapes.medium),
                 contentScale = ContentScale.Fit,
             )
             failure != null -> Text(
@@ -109,7 +116,7 @@ internal fun ObstacleSheetContent(obstacle: MapObstacle, loadPhoto: suspend (Str
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,
             )
-            else -> Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+            else -> Box(photoFrame.align(Alignment.CenterHorizontally), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         }
