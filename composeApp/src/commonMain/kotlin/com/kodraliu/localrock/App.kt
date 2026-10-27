@@ -23,6 +23,7 @@ import com.kodraliu.localrock.ui.LocalAppContainer
 import com.kodraliu.localrock.ui.SystemBarsAppearance
 import com.kodraliu.localrock.ui.VacDarkColorScheme
 import com.kodraliu.localrock.ui.VacLightColorScheme
+import com.kodraliu.localrock.ui.adaptive.ProvideWindowLayout
 import com.kodraliu.localrock.ui.messages.MessageBannerArea
 import com.kodraliu.localrock.ui.messages.TransientMessageHost
 import com.kodraliu.localrock.ui.navigation.AppNavHost
@@ -59,12 +60,14 @@ fun App(container: AppContainer) {
 
     CompositionLocalProvider(LocalAppContainer provides container) {
         MaterialTheme(colorScheme = colorScheme) {
-            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Column(Modifier.fillMaxSize()) {
-                    MessageBannerArea(container.messages)
-                    Box(Modifier.weight(1f)) {
-                        AppNavHost()
-                        TransientMessageHost(container.messages)
+            ProvideWindowLayout {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    Column(Modifier.fillMaxSize()) {
+                        MessageBannerArea(container.messages)
+                        Box(Modifier.weight(1f)) {
+                            AppNavHost()
+                            TransientMessageHost(container.messages)
+                        }
                     }
                 }
             }
