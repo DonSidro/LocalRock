@@ -221,13 +221,7 @@ fun VacuumDetailScreen(
     var selectedRoomIds by remember { mutableStateOf(emptyList<Int>()) }
 
     var sessionRoomIds by remember { mutableStateOf(emptyList<Int>()) }
-    var showDockSheet by remember { mutableStateOf(false) }
-    var showRoomsSheet by remember { mutableStateOf(false) }
-    var showOrderSheet by remember { mutableStateOf(false) }
-    var showMoreSheet by remember { mutableStateOf(false) }
-    var showCleaningModeSheet by remember { mutableStateOf(false) }
-    var showRecoverSheet by remember { mutableStateOf(false) }
-    var showRoutinesSheet by remember { mutableStateOf(false) }
+    var panel by remember { mutableStateOf<DetailPanel?>(null) }
     var openObstacle by remember { mutableStateOf<MapObstacle?>(null) }
     val routines by viewModel.routines.collectAsState()
     var recoverLoading by remember { mutableStateOf(false) }
@@ -260,28 +254,28 @@ fun VacuumDetailScreen(
             if (!viewModel.repository.floorMapsLoaded.value) delay(MAP_LIST_RETRY_MS)
         } while (!viewModel.repository.floorMapsLoaded.value)
     }
-    LaunchedEffect(showCleaningModeSheet) {
-        if (showCleaningModeSheet) runCatching { viewModel.repository.fetchMopMode() }
+    LaunchedEffect(panel == DetailPanel.CleaningMode) {
+        if (panel == DetailPanel.CleaningMode) runCatching { viewModel.repository.fetchMopMode() }
     }
     val perRoomMode = isCustomizeModeSet(status.fanPower, status.waterBoxCustomMode, mopMode)
     // Null while the robot's room settings are being read, false when that failed. Saving is only
     // offered once they are known, or the defaults shown meanwhile would overwrite them.
     var roomModesLoaded by remember { mutableStateOf<Boolean?>(null) }
-    LaunchedEffect(showCleaningModeSheet, perRoomMode) {
+    LaunchedEffect(panel == DetailPanel.CleaningMode, perRoomMode) {
         roomModesLoaded = null
-        if (showCleaningModeSheet && perRoomMode) {
+        if (panel == DetailPanel.CleaningMode && perRoomMode) {
             roomModesLoaded = runCatching { viewModel.repository.fetchRoomCleanModes() }.isSuccess
         }
     }
-    LaunchedEffect(showDockSheet) {
-        if (showDockSheet) runCatching { viewModel.repository.fetchDockSettings() }
+    LaunchedEffect(panel == DetailPanel.Dock) {
+        if (panel == DetailPanel.Dock) runCatching { viewModel.repository.fetchDockSettings() }
     }
-    LaunchedEffect(showRoutinesSheet) {
-        if (showRoutinesSheet) viewModel.loadRoutines()
+    LaunchedEffect(panel == DetailPanel.Routines) {
+        if (panel == DetailPanel.Routines) viewModel.loadRoutines()
     }
 
-    LaunchedEffect(showRecoverSheet, recoverTick) {
-        if (showRecoverSheet) {
+    LaunchedEffect(panel == DetailPanel.Maps, recoverTick) {
+        if (panel == DetailPanel.Maps) {
             recoverLoading = true
             runCatching { viewModel.repository.fetchFloorMaps() }
             recoverLoading = false
@@ -317,7 +311,7 @@ fun VacuumDetailScreen(
                 floorMaps = floorMaps,
                 currentFloorFlag = currentFloorFlag,
                 onLoadMap = { viewModel.refreshMap() },
-                onRecover = { showRecoverSheet = true },
+                onRecover = { panel = DetailPanel.Maps },
                 onRoomTap = { roomId ->
                     selectedRoomIds = if (roomId in selectedRoomIds)
                         selectedRoomIds.filter { it != roomId }
@@ -362,8 +356,8 @@ fun VacuumDetailScreen(
                     sessionRoomIds = emptyList()
                     viewModel.run("Returning to dock") { it.dock() }
                 },
-                onCleaningMode = { showCleaningModeSheet = true },
-                onMore = { showMoreSheet = true },
+                onCleaningMode = { panel = DetailPanel.CleaningMode },
+                onMore = { panel = DetailPanel.More },
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
             )
         }
@@ -375,46 +369,40 @@ fun VacuumDetailScreen(
         }
     }
 
-    if (showMoreSheet) {
-        ModalBottomSheet(onDismissRequest = { showMoreSheet = false }) {
-            MoreActionsSheetContent(
-                onAction = { action ->
-                    showMoreSheet = false
-                    when (action) {
-                        MoreAction.ROOMS -> showRoomsSheet = true
-                        MoreAction.ZONES -> onZoneClean()
-                        MoreAction.PIN_GO -> onPinGo()
-                        MoreAction.REMOTE -> onRemote()
-                        MoreAction.SCHEDULE -> onSchedule()
-                        MoreAction.CAMERA -> onCamera()
-                        MoreAction.DOCK -> showDockSheet = true
-                        MoreAction.HISTORY -> onHistory()
-                        MoreAction.MAPS -> showRecoverSheet = true
-                        MoreAction.EDIT_MAP -> onMapEdit()
-                        MoreAction.ROUTINES -> showRoutinesSheet = true
-                    }
-                },
-            )
+    val onMoreAction: (MoreAction) -> Unit = { action ->
+        val target = panelForMoreAction(action)
+        if (target != null) {
+            panel = target
+        } else {
+            panel = null
+            when (action) {
+                MoreAction.ZONES -> onZoneClean()
+                MoreAction.PIN_GO -> onPinGo()
+                MoreAction.REMOTE -> onRemote()
+                MoreAction.SCHEDULE -> onSchedule()
+                MoreAction.CAMERA -> onCamera()
+                MoreAction.HISTORY -> onHistory()
+                MoreAction.EDIT_MAP -> onMapEdit()
+                else -> Unit
+            }
         }
     }
 
-    if (showRoutinesSheet) {
-        ModalBottomSheet(onDismissRequest = { showRoutinesSheet = false }) {
-            RoutinesSheetContent(
+    val PanelBody: @Composable (DetailPanel) -> Unit = { currentPanel ->
+        when (currentPanel) {
+            DetailPanel.More -> MoreActionsSheetContent(onAction = onMoreAction)
+
+            DetailPanel.Routines -> RoutinesSheetContent(
                 state = routines,
                 busy = busy,
                 onRun = { scene ->
-                    showRoutinesSheet = false
+                    panel = null
                     viewModel.runRoutine(scene)
                 },
                 onRetry = { viewModel.loadRoutines() },
             )
-        }
-    }
 
-    if (showRoomsSheet) {
-        ModalBottomSheet(onDismissRequest = { showRoomsSheet = false }) {
-            RoomsSheetContent(
+            DetailPanel.Rooms -> RoomsSheetContent(
                 rooms = parsedMap?.rooms ?: emptyList(),
                 selectedRoomIds = selectedRoomIds,
                 busy = busy,
@@ -427,48 +415,39 @@ fun VacuumDetailScreen(
                     val toClean = selectedRoomIds
                     sessionRoomIds = toClean
                     selectedRoomIds = emptyList()
-                    showRoomsSheet = false
+                    panel = null
                     viewModel.run { it.cleanRooms(toClean, cleaningCount) }
                 },
                 onLoadMap = {
-                    showRoomsSheet = false
+                    panel = null
                     viewModel.refreshMap()
                 },
                 onDefaultOrder = {
-                    showRoomsSheet = false
-                    showOrderSheet = true
+                    panel = DetailPanel.Order
                 },
             )
-        }
-    }
 
-    if (showOrderSheet) {
-        ModalBottomSheet(onDismissRequest = { showOrderSheet = false }) {
-            CleanOrderSheetContent(
+            DetailPanel.Order -> CleanOrderSheetContent(
                 rooms = parsedMap?.rooms ?: emptyList(),
                 savedOrder = remember(currentFloorFlag) { viewModel.defaultCleanOrder() },
                 busy = busy,
                 onSave = { order ->
-                    showOrderSheet = false
+                    panel = null
                     viewModel.saveDefaultCleanOrder(order)
                 },
                 onRemove = {
-                    showOrderSheet = false
+                    panel = null
                     viewModel.removeDefaultCleanOrder()
                 },
             )
-        }
-    }
 
-    if (showDockSheet) {
-        ModalBottomSheet(onDismissRequest = { showDockSheet = false }) {
-            DockSheetContent(
+            DetailPanel.Dock -> DockSheetContent(
                 status = status,
                 busy = busy,
                 dockSettings = dockSettings,
                 dockCapabilities = viewModel.dockCapabilities,
-                onEmptyDustbin = { showDockSheet = false; viewModel.run { it.collectDust() } },
-                onWashMop = { showDockSheet = false; viewModel.run { it.washMop() } },
+                onEmptyDustbin = { panel = null; viewModel.run { it.collectDust() } },
+                onWashMop = { panel = null; viewModel.run { it.washMop() } },
                 // Dry keeps the sheet open so the drying status row appears in place.
                 onDryMop = { viewModel.run { it.startDryer() } },
                 onStopDry = { viewModel.run { it.stopDryer() } },
@@ -476,12 +455,39 @@ fun VacuumDetailScreen(
                 onWashFrequencyChange = { mode, minutes -> viewModel.run { repo -> repo.setWashFrequency(mode, minutes) } },
                 onAutoEmptyModeChange = { mode -> viewModel.run { repo -> repo.setAutoEmptyMode(mode) } },
             )
-        }
-    }
 
-    if (showRecoverSheet) {
-        ModalBottomSheet(onDismissRequest = { showRecoverSheet = false }) {
-            MapsSheetContent(
+            DetailPanel.CleaningMode -> CleaningModeSheetContent(
+                currentFanPower = status.fanPower,
+                currentWaterMode = status.waterBoxCustomMode,
+                currentRoute = mopMode,
+                cleaningCount = cleaningCount,
+                busy = busy,
+                supportsSmartPlan = supportsSmartPlan,
+                rooms = parsedMap?.rooms ?: emptyList(),
+                roomCleanModes = roomCleanModes,
+                roomModesLoaded = roomModesLoaded,
+                onPlanSelected = { plan ->
+                    viewModel.run {
+                        when (plan) {
+                            CleanPlan.SMART -> it.setCleanMotorMode(VacuumFanPower.SMART, WaterBoxMode.SMART, MopRoute.SMART)
+                            CleanPlan.MANUAL -> {
+                                // Water slide robots get a slide code, as python-roborock does.
+                                val water = if (supportsWaterSlide) WaterBoxMode.SLIDE_MEDIUM else WaterBoxMode.LOW
+                                it.setCleanMotorMode(VacuumFanPower.BALANCED, water, MopRoute.STANDARD)
+                            }
+                            // The three codes the official app sent for its Customize tab.
+                            CleanPlan.PER_ROOM -> it.setCleanMotorMode(VacuumFanPower.CUSTOM, WaterBoxMode.CUSTOM, MopRoute.CUSTOM)
+                        }
+                    }
+                },
+                onSaveRoomModes = { modes -> viewModel.run("Room settings saved") { it.saveRoomCleanModes(modes) } },
+                onFanPowerSelected = { level -> viewModel.run { it.setFanPower(level) } },
+                onWaterModeSelected = { level -> viewModel.run { it.setWaterBoxMode(level) } },
+                onRouteSelected = { mode -> viewModel.run { it.setMopMode(mode) } },
+                onCountChange = { cleaningCount = it },
+            )
+
+            DetailPanel.Maps -> MapsSheetContent(
                 floorMaps = floorMaps,
                 currentFloorFlag = currentFloorFlag,
                 loading = recoverLoading,
@@ -502,18 +508,24 @@ fun VacuumDetailScreen(
                 onSmartSwitchingChange = { smart -> viewModel.run { it.setSmartMapSwitching(smart) } },
                 onEnableMapSaving = { viewModel.run("Map saving on") { it.enableMapSaving() } },
                 onLoad = { flag ->
-                    showRecoverSheet = false
+                    panel = null
                     viewModel.run { it.switchFloor(flag) }
                 },
                 onRename = { renamingMap = it },
                 onDelete = { deletingMap = it },
                 onStartMapping = {
-                    showRecoverSheet = false
+                    panel = null
                     viewModel.run("Mapping started") { it.startMapping() }
                 },
                 onSaveNewMap = { viewModel.run("New map saved") { it.saveNewMap() } },
                 onRecheck = { recoverTick++ },
             )
+        }
+    }
+
+    if (panel != null) {
+        ModalBottomSheet(onDismissRequest = { panel = null }) {
+            PanelBody(panel!!)
         }
     }
 
@@ -549,41 +561,6 @@ fun VacuumDetailScreen(
             },
             onDismiss = { deletingMap = null },
         )
-    }
-
-    if (showCleaningModeSheet) {
-        ModalBottomSheet(onDismissRequest = { showCleaningModeSheet = false }) {
-            CleaningModeSheetContent(
-                currentFanPower = status.fanPower,
-                currentWaterMode = status.waterBoxCustomMode,
-                currentRoute = mopMode,
-                cleaningCount = cleaningCount,
-                busy = busy,
-                supportsSmartPlan = supportsSmartPlan,
-                rooms = parsedMap?.rooms ?: emptyList(),
-                roomCleanModes = roomCleanModes,
-                roomModesLoaded = roomModesLoaded,
-                onPlanSelected = { plan ->
-                    viewModel.run {
-                        when (plan) {
-                            CleanPlan.SMART -> it.setCleanMotorMode(VacuumFanPower.SMART, WaterBoxMode.SMART, MopRoute.SMART)
-                            CleanPlan.MANUAL -> {
-                                // Water slide robots get a slide code, as python-roborock does.
-                                val water = if (supportsWaterSlide) WaterBoxMode.SLIDE_MEDIUM else WaterBoxMode.LOW
-                                it.setCleanMotorMode(VacuumFanPower.BALANCED, water, MopRoute.STANDARD)
-                            }
-                            // The three codes the official app sent for its Customize tab.
-                            CleanPlan.PER_ROOM -> it.setCleanMotorMode(VacuumFanPower.CUSTOM, WaterBoxMode.CUSTOM, MopRoute.CUSTOM)
-                        }
-                    }
-                },
-                onSaveRoomModes = { modes -> viewModel.run("Room settings saved") { it.saveRoomCleanModes(modes) } },
-                onFanPowerSelected = { level -> viewModel.run { it.setFanPower(level) } },
-                onWaterModeSelected = { level -> viewModel.run { it.setWaterBoxMode(level) } },
-                onRouteSelected = { mode -> viewModel.run { it.setMopMode(mode) } },
-                onCountChange = { cleaningCount = it },
-            )
-        }
     }
 }
 
@@ -1168,8 +1145,6 @@ private fun ControlBar(
     }
 }
 
-
-private enum class MoreAction { ROOMS, ZONES, PIN_GO, REMOTE, SCHEDULE, CAMERA, DOCK, HISTORY, MAPS, EDIT_MAP, ROUTINES }
 
 @Composable
 private fun MoreActionsSheetContent(onAction: (MoreAction) -> Unit) {
