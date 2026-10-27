@@ -218,6 +218,22 @@ class MapEditCommandsTest {
     }
 
     @Test
+    fun a_refused_split_says_to_draw_the_line_across_the_whole_room() {
+        val refused = Json.parseToJsonElement("""{"code":-10006,"message":"Split map failed"}""") as JsonObject
+        val shown = splitFailure(RobotCommandException("split_segment", refused))
+        assertTrue(shown is MapEditException)
+        assertEquals(SPLIT_REFUSED_MESSAGE, shown.message)
+        assertTrue(SPLIT_REFUSED_MESSAGE.contains("all the way across the room"))
+    }
+
+    @Test
+    fun other_split_errors_are_left_as_the_robot_said_them() {
+        val other = Json.parseToJsonElement("""{"code":-10005,"message":"Param is not an array"}""") as JsonObject
+        val error = RobotCommandException("split_segment", other)
+        assertEquals(error, splitFailure(error))
+    }
+
+    @Test
     fun robot_errors_read_well() {
         val error = Json.parseToJsonElement("""{"code":-10006,"message":"Split map failed"}""") as JsonObject
         assertEquals(

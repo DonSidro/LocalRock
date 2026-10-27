@@ -343,6 +343,20 @@ internal fun mergeSegmentData(segmentA: Int, segmentB: Int): JsonArray =
 internal const val SPLIT_FAILED_CODE = -10006
 
 /**
+ * What the robot's `-10006 Split map failed` means in practice. It checks that the line cuts the
+ * room in two, not how long the line is: on a Qrevo Pro a 1100 long cut across a narrow room worked
+ * while a 950 long cut that stopped inside a wider room did not, and the official app was refused
+ * the same way for a line that ended inside the room. A 5400 long line past both walls worked.
+ */
+internal const val SPLIT_REFUSED_MESSAGE =
+    "The robot couldn't split the room along that line. Draw the line all the way across the room, " +
+        "past the wall on both sides, so it cuts the room in two."
+
+/** A refused split in words that say what to change; any other error is left as it was. */
+internal fun splitFailure(e: RobotCommandException): Exception =
+    if (e.code() == SPLIT_FAILED_CODE) MapEditException(SPLIT_REFUSED_MESSAGE) else e
+
+/**
  * The two ways to send a split line, in the order to try them. In the capture the robot refused a
  * line (`-10006 Split map failed`) and accepted the same line with its ends swapped; the accepted
  * one started at the lower Y. So the lower-Y end goes first, and the reverse is the fallback.
