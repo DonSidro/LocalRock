@@ -13,6 +13,9 @@ internal fun DetailPanel.title(): String = when (this) {
     DetailPanel.Maps -> "Maps"
 }
 
+/** True when a panel is shown as a headed view in the wide-window side pane. `More` is the pane's home content, not a headed panel. */
+internal fun sidePaneShowsPanel(panel: DetailPanel?): Boolean = panel != null && panel != DetailPanel.More
+
 /** Actions offered by the "More" panel; sheet actions open a panel, the rest navigate away. */
 internal enum class MoreAction { ROOMS, ZONES, PIN_GO, REMOTE, SCHEDULE, CAMERA, DOCK, HISTORY, MAPS, EDIT_MAP, ROUTINES }
 
