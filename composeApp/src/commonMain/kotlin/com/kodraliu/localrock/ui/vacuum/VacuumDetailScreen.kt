@@ -156,6 +156,7 @@ import com.kodraliu.localrock.shared.vacuum.roomCleanModesFor
 import com.kodraliu.localrock.shared.vacuum.washFrequencyLabel
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
+import com.kodraliu.localrock.shared.vacuum.map.MapObstacle
 import com.kodraliu.localrock.shared.vacuum.map.roomAtNorm
 import com.kodraliu.localrock.ui.AppColors
 import kotlinx.coroutines.delay
@@ -227,6 +228,7 @@ fun VacuumDetailScreen(
     var showCleaningModeSheet by remember { mutableStateOf(false) }
     var showRecoverSheet by remember { mutableStateOf(false) }
     var showRoutinesSheet by remember { mutableStateOf(false) }
+    var openObstacle by remember { mutableStateOf<MapObstacle?>(null) }
     val routines by viewModel.routines.collectAsState()
     var recoverLoading by remember { mutableStateOf(false) }
     var recoverTick by remember { mutableIntStateOf(0) }
@@ -321,6 +323,7 @@ fun VacuumDetailScreen(
                         selectedRoomIds.filter { it != roomId }
                     else selectedRoomIds + roomId
                 },
+                onObstacleTap = { openObstacle = it },
                 onFloorSwitch = { flag -> viewModel.run { it.switchFloor(flag) } },
                 onEditMap = onMapEdit,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -363,6 +366,12 @@ fun VacuumDetailScreen(
                 onMore = { showMoreSheet = true },
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
             )
+        }
+    }
+
+    openObstacle?.let { obstacle ->
+        ModalBottomSheet(onDismissRequest = { openObstacle = null }) {
+            ObstacleSheetContent(obstacle, loadPhoto = { viewModel.repository.fetchObstaclePhoto(it) })
         }
     }
 
@@ -591,6 +600,7 @@ private fun MapHeroSection(
     onLoadMap: () -> Unit,
     onRecover: () -> Unit,
     onRoomTap: (Int) -> Unit,
+    onObstacleTap: (MapObstacle) -> Unit,
     onFloorSwitch: (Int) -> Unit,
     onEditMap: () -> Unit,
     modifier: Modifier = Modifier,
@@ -613,6 +623,7 @@ private fun MapHeroSection(
                 viewportScope = deviceId to currentFloorFlag,
                 selectedRoomIds = selectedRoomIds,
                 onRoomTap = onRoomTap,
+                onObstacleTap = onObstacleTap,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -744,6 +755,7 @@ private fun VacuumMapImage(
     map: ParsedMap,
     selectedRoomIds: List<Int>,
     onRoomTap: (Int) -> Unit,
+    onObstacleTap: (MapObstacle) -> Unit,
     modifier: Modifier = Modifier,
     viewportScope: Any? = null,
 ) {
@@ -762,6 +774,9 @@ private fun VacuumMapImage(
     // In dark mode `primary` is a bright cyan, so white-on-primary would be unreadable.
     val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary)
     val currentOnRoomTap by rememberUpdatedState(onRoomTap)
+    val currentOnObstacleTap by rememberUpdatedState(onObstacleTap)
+    val obstacleFill = MaterialTheme.colorScheme.tertiary
+    val obstacleRing = MaterialTheme.colorScheme.surface
 
     // A parsed map is mostly blank grid, so open framed on the floor plan rather than on padding.
     val bounds = remember(map) { map.contentBoundsNorm() }
@@ -806,6 +821,9 @@ private fun VacuumMapImage(
                         },
                         onTap = { tapOffset ->
                             val content = currentMap.fittedSize(size.toSize())
+                            // An obstacle dot is small, so a tap near one opens it before any room.
+                            currentMap.obstacleAt(tapOffset, content, mapViewport.offset, mapViewport.scale, 20.dp.toPx())
+                                ?.let { currentOnObstacleTap(it); return@detectTapGestures }
                             val p = (tapOffset - mapViewport.offset) / mapViewport.scale
                             val normX = p.x / content.width
                             val normY = p.y / content.height
@@ -831,6 +849,8 @@ private fun VacuumMapImage(
                     filterQuality = FilterQuality.None,
                 )
             }
+
+            drawObstacles(map, content, mapViewport.offset, mapViewport.scale, obstacleFill, obstacleRing)
 
             // Labels are drawn outside the zoom transform so they stay a constant, legible size
             // instead of growing to 8x with the map. Selected rooms carry their cleaning order,

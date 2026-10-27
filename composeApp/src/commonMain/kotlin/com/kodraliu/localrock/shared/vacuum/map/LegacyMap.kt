@@ -26,6 +26,7 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     var segmentMaterials: Map<Int, Int> = emptyMap()
     var segmentMaterialDirections: Map<Int, Int> = emptyMap()
     val unmodeledRestrictionBlocks = mutableSetOf<Int>()
+    val obstacles = mutableListOf<MapObstacle>()
 
     var off = headerLen
     while (off + 8 <= bytes.size) {
@@ -121,6 +122,12 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
             in UNMODELED_RESTRICTION_BLOCKS ->
                 if (entryCount(bytes, off, blockHeaderLen, blockDataLen) > 0) unmodeledRestrictionBlocks += type
         }
+        if (type in OBSTACLE_BLOCKS) {
+            obstacles += parseObstacles(
+                bytes, off + blockHeaderLen, entryCount(bytes, off, blockHeaderLen, blockDataLen), blockDataLen,
+                ignored = type == BLOCK_IGNORED_OBSTACLES || type == BLOCK_IGNORED_OBSTACLES_WITH_PHOTO,
+            )
+        }
         off += blockHeaderLen + blockDataLen
     }
 
@@ -183,6 +190,7 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         carpetAreas = carpetAreas,
         carpetFlagsPresent = carpetsFromFlags != null,
         thresholds = thresholds,
+        obstacles = obstacles,
         originalGrid = pixels,
     )
 }
@@ -251,6 +259,16 @@ private const val BLOCK_FORBIDDEN_ZONES = 9        // persistent no-go zones
 private const val BLOCK_VIRTUAL_WALLS = 10
 private const val BLOCK_FORBIDDEN_MOP_ZONES = 12   // persistent no-mop zones
 private const val BLOCK_SEGMENT_MATERIALS = 24
+
+// Obstacle blocks, ids from vacuum-map-parser-roborock: 13 obstacles, 14 ignored obstacles, 15 and 16
+// the same with a photo id per record.
+private const val BLOCK_OBSTACLES = 13
+private const val BLOCK_IGNORED_OBSTACLES = 14
+private const val BLOCK_OBSTACLES_WITH_PHOTO = 15
+private const val BLOCK_IGNORED_OBSTACLES_WITH_PHOTO = 16
+private val OBSTACLE_BLOCKS = setOf(
+    BLOCK_OBSTACLES, BLOCK_IGNORED_OBSTACLES, BLOCK_OBSTACLES_WITH_PHOTO, BLOCK_IGNORED_OBSTACLES_WITH_PHOTO,
+)
 
 // Identified on an S8 Pro Ultra by adding one of each with the official app and finding the exact
 // captured corners in these blocks (2026-09-28).

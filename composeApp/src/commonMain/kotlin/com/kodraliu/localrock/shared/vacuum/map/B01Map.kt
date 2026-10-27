@@ -112,6 +112,8 @@ data class ParsedMap(
     val carpetFlagsPresent: Boolean = false,
     /** Thresholds / door sills drawn in the Roborock app (legacy block 28). Shown, not edited. */
     val thresholds: List<MapZone> = emptyList(),
+    /** Obstacles the robot recognised (legacy blocks 13-16). Shown, not edited. */
+    val obstacles: List<MapObstacle> = emptyList(),
 
     val originalGrid: ByteArray? = null,
 ) {
@@ -130,7 +132,8 @@ data class ParsedMap(
             other.unmodeledRestrictionBlocks == unmodeledRestrictionBlocks &&
             other.format == format &&
             other.carpetAreas == carpetAreas &&
-            other.thresholds == thresholds
+            other.thresholds == thresholds &&
+            other.obstacles == obstacles
 
     override fun hashCode(): Int {
         var r = width
@@ -149,6 +152,7 @@ data class ParsedMap(
         r = 31 * r + format.hashCode()
         r = 31 * r + carpetAreas.hashCode()
         r = 31 * r + thresholds.hashCode()
+        r = 31 * r + obstacles.hashCode()
         return r
     }
 }
