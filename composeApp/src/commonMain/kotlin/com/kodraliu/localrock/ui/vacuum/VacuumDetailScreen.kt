@@ -143,6 +143,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import kotlin.math.PI
@@ -871,6 +872,8 @@ private fun DrawScope.drawMapLayer(image: ImageBitmap, view: MapView, height: Fl
     }
 }
 
+private const val MIN_LABEL_WIDTH_PX = 60
+
 @Composable
 private fun VacuumMapImage(
     map: ParsedMap,
@@ -1044,7 +1047,18 @@ private fun VacuumMapImage(
                     is3D -> labelStyle.copy(color = Color.White, shadow = Shadow(Color(0xE6000000), Offset(0f, 1f), 3f))
                     else -> labelStyle
                 }
-                val measured = textMeasurer.measure(text, style)
+                // A name is shortened to fit inside its room, as the Roborock app does, so it never runs out
+                // over the black between rooms.
+                val roomWidthPx = (room.labelSpanCells ?: 0) * view.k * scale
+                val measured = if (roomWidthPx > 0f) {
+                    textMeasurer.measure(
+                        text, style,
+                        overflow = TextOverflow.Ellipsis, softWrap = false, maxLines = 1,
+                        constraints = Constraints(maxWidth = roomWidthPx.toInt().coerceAtLeast(MIN_LABEL_WIDTH_PX)),
+                    )
+                } else {
+                    textMeasurer.measure(text, style)
+                }
                 val tw = measured.size.width.toFloat()
                 val th = measured.size.height.toFloat()
                 val padX = 6.dp.toPx()
@@ -1066,6 +1080,8 @@ private fun VacuumMapImage(
                             shadow = null,
                             drawStyle = Stroke(width = 0.8.dp.toPx(), join = StrokeJoin.Round),
                         ),
+                        overflow = TextOverflow.Ellipsis, softWrap = false, maxLines = 1,
+                        constraints = Constraints(maxWidth = measured.size.width.coerceAtLeast(1)),
                     )
                     drawText(outline, topLeft = topLeft)
                 }

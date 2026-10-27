@@ -255,6 +255,8 @@ data class ParsedMapRoom(
     val name: String,
     val labelNormX: Float? = null,
     val labelNormY: Float? = null,
+    /** How many cells of the room run across the map at its label, so a name can be fitted inside it. */
+    val labelSpanCells: Int? = null,
 )
 
 data class ParsedMapPoint(

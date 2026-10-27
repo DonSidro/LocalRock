@@ -436,7 +436,7 @@ private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     }
     // A wide faint band for the ground the robot has covered, under the thin line of its route.
     canvas.drawPath(main, Paint().apply {
-        color = Color(0x2EFFFFFF)
+        color = Color(0x4CE5E5E5) // the app's mopPathColor, #e5e5e54c
         style = PaintingStyle.Stroke
         strokeWidth = 6.5f
         strokeCap = StrokeCap.Round
@@ -452,7 +452,7 @@ private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     }
     // The trips to the dock to wash the mop are dashed.
     canvas.drawPath(wash, Paint().apply {
-        color = palette.path
+        color = Color(0x33FFFFFF) // the app's backWashPathColor, #FFFFFF33
         style = PaintingStyle.Stroke
         strokeWidth = 0.9f
         pathEffect = PathEffect.dashPathEffect(floatArrayOf(2f, 3f))
