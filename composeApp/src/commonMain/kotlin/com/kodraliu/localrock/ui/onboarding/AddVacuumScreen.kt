@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.ui.onboarding
 
 import com.kodraliu.localrock.ui.exceptBottom
+import com.kodraliu.localrock.ui.adaptive.CenteredContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -287,83 +288,85 @@ fun AddVacuumScreen(onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding.exceptBottom())
-                .verticalScroll(rememberScrollState())
-                // Edge to edge: the content scrolls behind the navigation bar and ends above it.
-                .padding(bottom = padding.calculateBottomPadding())
-                .padding(horizontal = 16.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(
-                "Put the robot in pairing mode, then connect it to your home Wi-Fi.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        CenteredContent {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding.exceptBottom())
+                    .verticalScroll(rememberScrollState())
+                    // Edge to edge: the content scrolls behind the navigation bar and ends above it.
+                    .padding(bottom = padding.calculateBottomPadding())
+                    .padding(horizontal = 16.dp, vertical = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(
+                    "Put the robot in pairing mode, then connect it to your home Wi-Fi.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
-            ServerVacuumCard(
-                adminPassword = adminPassword,
-                onAdminPasswordChange = { adminPassword = it },
-                devices = devices,
-                selectedDuid = selectedDuid,
-                loadingDevices = loadingDevices,
-                enabled = !running,
-                onLoadDevices = { model.loadDevices(adminPassword.trim()) },
-                onSelectDevice = { model.selectDuid(it) },
-            )
+                ServerVacuumCard(
+                    adminPassword = adminPassword,
+                    onAdminPasswordChange = { adminPassword = it },
+                    devices = devices,
+                    selectedDuid = selectedDuid,
+                    loadingDevices = loadingDevices,
+                    enabled = !running,
+                    onLoadDevices = { model.loadDevices(adminPassword.trim()) },
+                    onSelectDevice = { model.selectDuid(it) },
+                )
 
-            NetworkDetailsCard(
-                ssid = ssid,
-                password = password,
-                timezone = timezone,
-                running = running,
-                canStartPairing = canStartPairing,
-                onSsidChange = { ssid = it },
-                onPasswordChange = { password = it },
-                onTimezoneChange = { timezone = it },
-                onStartPairing = {
-                    model.start(
-                        adminPassword = adminPassword.trim(),
-                        ssid = ssid.trim(),
-                        password = password,
-                        timezone = timezone.trim(),
+                NetworkDetailsCard(
+                    ssid = ssid,
+                    password = password,
+                    timezone = timezone,
+                    running = running,
+                    canStartPairing = canStartPairing,
+                    onSsidChange = { ssid = it },
+                    onPasswordChange = { password = it },
+                    onTimezoneChange = { timezone = it },
+                    onStartPairing = {
+                        model.start(
+                            adminPassword = adminPassword.trim(),
+                            ssid = ssid.trim(),
+                            password = password,
+                            timezone = timezone.trim(),
+                        )
+                    },
+                )
+
+                SetupProgressCard(step = step, running = running, serverStatus = serverStatus)
+
+                error?.let { message ->
+                    SetupMessageCard(
+                        title = "Pairing failed",
+                        message = message,
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
                     )
-                },
-            )
+                }
 
-            SetupProgressCard(step = step, running = running, serverStatus = serverStatus)
+                result?.let { message ->
+                    SetupMessageCard(
+                        title = "Robot connected",
+                        message = message,
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
 
-            error?.let { message ->
-                SetupMessageCard(
-                    title = "Pairing failed",
-                    message = message,
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                SetupLogsCard(step = step, running = running, error = error, result = result)
+
+                Text(
+                    "After the robot joins your network, it will appear in the device list. " +
+                        "This can take around 30 seconds.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp),
                 )
+
+                Spacer(Modifier.height(8.dp))
             }
-
-            result?.let { message ->
-                SetupMessageCard(
-                    title = "Robot connected",
-                    message = message,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
-
-            SetupLogsCard(step = step, running = running, error = error, result = result)
-
-            Text(
-                "After the robot joins your network, it will appear in the device list. " +
-                    "This can take around 30 seconds.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp),
-            )
-
-            Spacer(Modifier.height(8.dp))
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.ui.settings
 
 import com.kodraliu.localrock.ui.exceptBottom
+import com.kodraliu.localrock.ui.adaptive.CenteredContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -84,150 +85,152 @@ fun SettingsScreen(onDone: () -> Unit, allowCancel: Boolean) {
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding.exceptBottom())
-                .verticalScroll(rememberScrollState())
-                // Edge to edge: the content scrolls behind the navigation bar and ends above it.
-                .padding(bottom = padding.calculateBottomPadding())
-                .padding(horizontal = 24.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            SectionLabel("Appearance")
-            val themeModes = listOf(
-                ThemeMode.SYSTEM to "System",
-                ThemeMode.LIGHT to "Light",
-                ThemeMode.DARK to "Dark",
-            )
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                themeModes.forEachIndexed { index, (mode, label) ->
-                    SegmentedButton(
-                        selected = themeMode == mode,
-                        onClick = { container.appSettings.setThemeMode(mode) },
-                        shape = SegmentedButtonDefaults.itemShape(index = index, count = themeModes.size),
-                    ) {
-                        Text(label)
+        CenteredContent {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding.exceptBottom())
+                    .verticalScroll(rememberScrollState())
+                    // Edge to edge: the content scrolls behind the navigation bar and ends above it.
+                    .padding(bottom = padding.calculateBottomPadding())
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                SectionLabel("Appearance")
+                val themeModes = listOf(
+                    ThemeMode.SYSTEM to "System",
+                    ThemeMode.LIGHT to "Light",
+                    ThemeMode.DARK to "Dark",
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    themeModes.forEachIndexed { index, (mode, label) ->
+                        SegmentedButton(
+                            selected = themeMode == mode,
+                            onClick = { container.appSettings.setThemeMode(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = themeModes.size),
+                        ) {
+                            Text(label)
+                        }
                     }
                 }
-            }
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-            SectionLabel("Connection")
-            OutlinedTextField(
-                value = url,
-                onValueChange = { url = it },
-                label = { Text("Server URL") },
-                placeholder = { Text("https://api-test.example.com") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                "The address of your self-hosted LocalRock server on your network.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            Spacer(Modifier.height(4.dp))
-            Button(
-                enabled = url.isNotBlank(),
-                onClick = {
-                    container.appSettings.setServerBaseUrl(url.trim())
-                    onDone()
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Save") }
-            if (allowCancel) {
-                TextButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
-            }
-            if (userData == null) {
-                TextButton(
-                    onClick = { container.authRepository.enterDemo() },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Explore the demo (no server needed)") }
-            }
-
-            // Alerts are about robots, and there are none to watch before signing in.
-            if (userData != null) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                NotificationSettings()
-            }
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-            SectionLabel("Contribute")
-            Text(
-                "LocalRock is a free, open-source community project. Issue reports, ideas, and " +
-                    "pull requests are all welcome.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(
-                onClick = { uriHandler.openUri(PROJECT_URL) },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.Default.Favorite, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Contribute on GitHub")
-            }
-
-            if (donationsEnabled) {
+                SectionLabel("Connection")
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("Server URL") },
+                    placeholder = { Text("https://api-test.example.com") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 Text(
-                    "A small donation helps keep it maintained. It is never required — the app " +
-                        "is and stays free.",
+                    "The address of your self-hosted LocalRock server on your network.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Spacer(Modifier.height(4.dp))
+                Button(
+                    enabled = url.isNotBlank(),
+                    onClick = {
+                        container.appSettings.setServerBaseUrl(url.trim())
+                        onDone()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Save") }
+                if (allowCancel) {
+                    TextButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+                }
+                if (userData == null) {
+                    TextButton(
+                        onClick = { container.authRepository.enterDemo() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Explore the demo (no server needed)") }
+                }
+
+                // Alerts are about robots, and there are none to watch before signing in.
+                if (userData != null) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    NotificationSettings()
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                SectionLabel("Contribute")
+                Text(
+                    "LocalRock is a free, open-source community project. Issue reports, ideas, and " +
+                        "pull requests are all welcome.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                OutlinedButton(
-                    onClick = { uriHandler.openUri(donationUrl) },
+                Button(
+                    onClick = { uriHandler.openUri(PROJECT_URL) },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Donate") }
-            }
+                ) {
+                    Icon(Icons.Default.Favorite, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Contribute on GitHub")
+                }
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                if (donationsEnabled) {
+                    Text(
+                        "A small donation helps keep it maintained. It is never required — the app " +
+                            "is and stays free.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(
+                        onClick = { uriHandler.openUri(donationUrl) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Donate") }
+                }
 
-            SectionLabel("About")
-            Text(
-                "LocalRock $APP_VERSION",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                "Control vacuums locally through your own server. Not affiliated with, " +
-                    "endorsed by, or connected to Roborock. \"Roborock\" is a trademark of its owner.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (whatsNew != null) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                SectionLabel("About")
+                Text(
+                    "LocalRock $APP_VERSION",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "Control vacuums locally through your own server. Not affiliated with, " +
+                        "endorsed by, or connected to Roborock. \"Roborock\" is a trademark of its owner.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (whatsNew != null) {
+                    OutlinedButton(
+                        onClick = { showWhatsNew = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("What's new in $APP_VERSION") }
+                }
                 OutlinedButton(
-                    onClick = { showWhatsNew = true },
+                    onClick = { uriHandler.openUri(PRIVACY_URL) },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("What's new in $APP_VERSION") }
-            }
-            OutlinedButton(
-                onClick = { uriHandler.openUri(PRIVACY_URL) },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Privacy policy") }
+                ) { Text("Privacy policy") }
 
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Thanks & open-source licenses",
-                style = MaterialTheme.typography.labelLarge,
-            )
-            Text(
-                ACKNOWLEDGEMENTS,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Built for the self-hosting community.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Thanks & open-source licenses",
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Text(
+                    ACKNOWLEDGEMENTS,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Built for the self-hosting community.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(16.dp))
+            }
         }
     }
 

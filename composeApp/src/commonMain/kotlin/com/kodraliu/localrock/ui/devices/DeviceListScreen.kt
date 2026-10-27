@@ -14,8 +14,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -134,19 +136,23 @@ fun DeviceListScreen(
                 }
 
                 else -> {
-                    LazyColumn(
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 320.dp),
                         modifier = Modifier.fillMaxSize(),
-                        // Edge to edge: the list scrolls behind the navigation bar and ends above it.
+                        // Edge to edge: the grid scrolls behind the navigation bar and ends above it.
                         contentPadding = PaddingValues(
                             start = 16.dp,
                             top = 16.dp,
                             end = 16.dp,
                             bottom = 16.dp + padding.calculateBottomPadding(),
                         ),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         error?.let { msg ->
-                            item { ErrorCard(message = msg, onRetry = viewModel::refresh) }
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                ErrorCard(message = msg, onRetry = viewModel::refresh)
+                            }
                         }
                         items(devices, key = { it.duid }) { device ->
                             DeviceCard(
@@ -156,7 +162,7 @@ fun DeviceListScreen(
                                 onClick = { onDeviceClick(device) },
                             )
                         }
-                        item { Spacer(Modifier.height(80.dp)) }
+                        item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(80.dp)) }
                     }
                 }
             }
