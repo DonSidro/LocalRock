@@ -1072,7 +1072,8 @@ private fun VacuumMapImage(
                     )
                 }
                 val topLeft = Offset(cx - tw / 2, cy - th / 2)
-                if (is3D && !selected) {
+                if (!selected) {
+                    // A dark edge keeps white names readable over the white route and the light rooms.
                     val outline = textMeasurer.measure(
                         text,
                         style.copy(
@@ -1080,8 +1081,6 @@ private fun VacuumMapImage(
                             shadow = null,
                             drawStyle = Stroke(width = 0.8.dp.toPx(), join = StrokeJoin.Round),
                         ),
-                        overflow = TextOverflow.Ellipsis, softWrap = false, maxLines = 1,
-                        constraints = Constraints(maxWidth = measured.size.width.coerceAtLeast(1)),
                     )
                     drawText(outline, topLeft = topLeft)
                 }
