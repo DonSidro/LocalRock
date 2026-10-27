@@ -116,7 +116,7 @@ data class ParsedMap(
     val obstacles: List<MapObstacle> = emptyList(),
 
     val originalGrid: ByteArray? = null,
-    /** Per path point: bit 0 mopping, bit 2 vacuum only, bit 1 or 3 on a trip to wash the mop. Empty if unknown. */
+    /** Per path point: bit 1 is a trip to wash the mop. Empty if unknown. */
     val pathFlags: List<Int> = emptyList(),
     /** One byte per grid cell, 1 where the robot has seen carpet; null if the map has none. */
     val carpetMask: ByteArray? = null,

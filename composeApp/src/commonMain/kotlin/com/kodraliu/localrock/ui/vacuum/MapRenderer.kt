@@ -412,24 +412,20 @@ private fun drawWall(canvas: Canvas, map: ParsedMap, wall: VirtualWall) {
 
 private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     val main = Path()
-    val pure = Path()
     val wash = Path()
     var kind = -1
     var started = false
     for ((i, point) in map.pathMm.withIndex()) {
         val flag = map.pathFlags.getOrElse(i) { 0 }
-        val now = when {
-            flag and 0b1010 != 0 -> 2
-            flag and 0b100 != 0 -> 1
-            else -> 0
-        }
+        // As the app's route parser does: only bit 1 is a wash trip; bits 3 and 4 stay on the main route.
+        val now = if (flag and 0b10 != 0) 2 else 0
         val cellX = (point.x / 50f) - map.pixelOffsetLeft
         val cellY = (map.height - 1) - ((point.y / 50f) - map.pixelOffsetTop)
         if (cellX !in 0f..map.width.toFloat() || cellY !in 0f..map.height.toFloat()) {
             started = false
             continue
         }
-        val target = when (now) { 2 -> wash; 1 -> pure; else -> main }
+        val target = if (now == 2) wash else main
         if (!started || now != kind) target.moveTo(cellX, cellY) else target.lineTo(cellX, cellY)
         started = true
         kind = now
@@ -442,7 +438,7 @@ private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
         strokeCap = StrokeCap.Round
         strokeJoin = StrokeJoin.Round
     })
-    for (line in listOf(main, pure)) {
+    for (line in listOf(main)) {
         canvas.drawPath(line, Paint().apply {
             color = palette.path
             style = PaintingStyle.Stroke
