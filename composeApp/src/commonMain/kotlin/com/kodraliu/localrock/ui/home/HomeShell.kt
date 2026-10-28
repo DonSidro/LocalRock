@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -32,9 +31,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -97,8 +99,9 @@ fun HomeShell(topNav: NavHostController) {
     val nestedNav = rememberNavController()
 
     // The selected robot defaults to the first paired device; if it disappears, re-default so the
-    // pane never points at a robot that is no longer there.
-    var selectedDuid by remember { mutableStateOf<String?>(null) }
+    // pane never points at a robot that is no longer there. Saveable so the selection (and thus the
+    // robot you were on) survives navigating away to Settings/Add vacuum and back.
+    var selectedDuid by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(devices) {
         if (selectedDuid == null || devices.none { it.duid == selectedDuid && it.localKey != null }) {
             selectedDuid = devices.firstOrNull { it.localKey != null }?.duid
@@ -114,9 +117,23 @@ fun HomeShell(topNav: NavHostController) {
         selectedDuid = duid
     }
 
-    // Swap the nested back stack whenever the selected robot changes.
+    // Swap the nested back stack whenever the selected robot changes. Guarded so a restored stack
+    // that already shows the selected robot is left alone (preserving the sub-screen), and a robot
+    // that vanished clears its stale session back to the placeholder.
     LaunchedEffect(selectedDuid) {
-        val duid = selectedDuid ?: return@LaunchedEffect
+        val duid = selectedDuid
+        if (duid == null) {
+            runCatching {
+                nestedNav.navigate(RobotPlaceholder) {
+                    popUpTo(nestedNav.graph.id) { inclusive = true }
+                }
+            }
+            return@LaunchedEffect
+        }
+        val alreadyShowing = runCatching {
+            nestedNav.getBackStackEntry<VacuumGraph>().toRoute<VacuumGraph>().duid == duid
+        }.getOrDefault(false)
+        if (alreadyShowing) return@LaunchedEffect
         nestedNav.navigate(VacuumGraph(duid)) {
             popUpTo(nestedNav.graph.id) { inclusive = true }
         }
@@ -151,7 +168,7 @@ fun HomeShell(topNav: NavHostController) {
 
     if (layout.twoPane) {
         Row(Modifier.fillMaxSize()) {
-            Column(Modifier.width(288.dp).fillMaxHeight().statusBarsPadding()) {
+            Column(Modifier.width(288.dp).fillMaxHeight()) {
                 sidebar()
             }
             VerticalDivider()
@@ -178,9 +195,10 @@ fun HomeShell(topNav: NavHostController) {
 }
 
 /**
- * The selected robot's nested navigation. Always composed (even before a robot is selected) so the
+ * The selected robot's nested navigation. Composed whenever there is at least one device, so the
  * nav controller's graph is set before [HomeShell]'s selection effect navigates.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun RobotContent(
     nestedNav: NavHostController,
@@ -208,6 +226,10 @@ private fun RobotContent(
                 val graphEntry = remember(entry) { nestedNav.getBackStackEntry<VacuumGraph>() }
                 val duid = graphEntry.toRoute<VacuumGraph>().duid
                 val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
+                // The detail is the robot home; Android system-back must not pop the graph's start
+                // destination (which would leave a blank pane). Open the drawer instead, or do
+                // nothing in two-pane where there is no drawer.
+                BackHandler(onBack = { onOpenSidebar?.invoke() })
                 VacuumDetailScreen(
                     viewModel = viewModel,
                     onOpenSidebar = onOpenSidebar,
@@ -313,7 +335,7 @@ private fun HomeEmptyState(
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                error ?: "Add your first vacuum, or pull down to check the server again.",
+                error ?: "Add your first vacuum to get started.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
