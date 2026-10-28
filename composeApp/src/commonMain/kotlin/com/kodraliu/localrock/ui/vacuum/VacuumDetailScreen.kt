@@ -244,6 +244,7 @@ fun VacuumDetailScreen(
     var renamingMap by remember { mutableStateOf<FloorMap?>(null) }
     var deletingMap by remember { mutableStateOf<FloorMap?>(null) }
     var backingUpMap by remember { mutableStateOf<FloorMap?>(null) }
+    var backingUpPicture by remember { mutableStateOf<ParsedMap?>(null) }
     var restoringMap by remember { mutableStateOf<FloorMap?>(null) }
     var choosingMapToKeep by remember { mutableStateOf(false) }
     var lastCleanArea by remember { mutableStateOf<Long?>(null) }
@@ -451,7 +452,10 @@ fun VacuumDetailScreen(
                 },
                 onRename = { renamingMap = it },
                 onDelete = { deletingMap = it },
-                onBackup = { backingUpMap = it },
+                onBackup = { floor, picture ->
+                    backingUpPicture = picture
+                    backingUpMap = floor
+                },
                 onRestore = { restoringMap = it },
                 loadSavedMap = { flag, backup -> viewModel.repository.fetchSavedMap(flag, backup) },
                 onStartMapping = {
@@ -643,6 +647,7 @@ fun VacuumDetailScreen(
     backingUpMap?.let { floor ->
         BackupMapDialog(
             floor = floor,
+            picture = backingUpPicture,
             onConfirm = {
                 backingUpMap = null
                 viewModel.run("Map backed up") { it.backupFloorMap(floor.mapFlag) }
@@ -2052,7 +2057,7 @@ private fun MapsSheetContent(
     onLoad: (Int) -> Unit,
     onRename: (FloorMap) -> Unit,
     onDelete: (FloorMap) -> Unit,
-    onBackup: (FloorMap) -> Unit,
+    onBackup: (FloorMap, picture: ParsedMap?) -> Unit,
     onRestore: (FloorMap) -> Unit,
     loadSavedMap: suspend (mapFlag: Int, backup: Boolean) -> ParsedMap,
     onStartMapping: () -> Unit,
@@ -2230,7 +2235,7 @@ private fun MapsSheetContent(
                         }
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
-                        OutlinedButton(onClick = { onBackup(floor) }, enabled = canManage) {
+                        OutlinedButton(onClick = { onBackup(floor, previews[previewKey(floor, backup = false)]) }, enabled = canManage) {
                             Text("Back up now")
                         }
                         // Restoring was only captured for the loaded map.
@@ -2386,16 +2391,30 @@ private fun SavedMapImage(map: ParsedMap, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun BackupMapDialog(floor: FloorMap, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+private fun BackupMapDialog(floor: FloorMap, picture: ParsedMap?, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Back up \"${floor.name}\"?") },
         text = {
-            Text(
-                "The robot saves this map as it is now, with its rooms, zones, walls and carpets. " +
-                    (floor.backupAt?.let { "It keeps one backup per map, so this replaces the backup from ${formatCleanRecordTime(it)}." }
-                        ?: "It keeps one backup per map."),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // The map as the robot will save it; absent while the sheet is still fetching it.
+                if (picture != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .clip(MaterialTheme.shapes.medium)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    ) {
+                        SavedMapImage(picture, Modifier.fillMaxSize().padding(8.dp))
+                    }
+                }
+                Text(
+                    "The robot saves this map as it is now, with its rooms, zones, walls and carpets. " +
+                        (floor.backupAt?.let { "It keeps one backup per map, so this replaces the backup from ${formatCleanRecordTime(it)}." }
+                            ?: "It keeps one backup per map."),
+                )
+            }
         },
         confirmButton = { TextButton(onClick = onConfirm) { Text("Back up") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
