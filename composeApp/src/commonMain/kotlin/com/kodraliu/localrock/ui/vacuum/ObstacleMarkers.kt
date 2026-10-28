@@ -23,17 +23,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.vacuum.map.MapObstacle
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
-import com.kodraliu.localrock.ui.AppColors
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.decodeToImageBitmap
 
@@ -50,24 +51,38 @@ internal fun ParsedMap.obstacleAt(tap: Offset, content: Size, offset: Offset, sc
         ?.second
 
 /**
- * Obstacles as dots of a fixed size, drawn over the zoomed map like the room labels. Orange is a
- * colour no room, robot or dock uses; the white ring and dark halo keep a dot visible on light and
- * dark maps alike. One with a photo is larger and has a white centre, so it reads as something to open.
+ * Obstacles as small round badges with a traffic cone, as the Roborock app draws them, of a fixed size
+ * like the room labels. A dark halo keeps one visible on light and dark maps; one with a photo is a
+ * little larger with a white ring, so it reads as something to open.
  */
 internal fun DrawScope.drawObstacles(map: ParsedMap, content: Size, offset: Offset, scale: Float) {
     for (o in map.obstacles) {
         val c = map.obstacleOnScreen(o, content, offset, scale)
         if (c.x < 0f || c.x > size.width || c.y < 0f || c.y > size.height) continue
         val hasPhoto = o.photoId != null
-        val r = (if (hasPhoto) 9 else 7).dp.toPx()
-        drawCircle(color = OBSTACLE_HALO, radius = r + 2.5.dp.toPx(), center = c)
-        drawCircle(color = AppColors.Warn, radius = r, center = c)
-        drawCircle(color = Color.White, radius = r, center = c, style = Stroke(width = 2.dp.toPx()))
-        if (hasPhoto) drawCircle(color = Color.White, radius = 3.dp.toPx(), center = c)
+        val r = (if (hasPhoto) 9 else 8).dp.toPx()
+        drawCircle(color = OBSTACLE_HALO, radius = r + 1.5.dp.toPx(), center = c)
+        drawCircle(color = if (hasPhoto) Color.White else OBSTACLE_RING, radius = r, center = c)
+        drawCircle(color = OBSTACLE_FILL, radius = r - 1.6.dp.toPx(), center = c)
+        val cone = Path().apply {
+            moveTo(c.x, c.y - r * 0.52f)
+            lineTo(c.x + r * 0.30f, c.y + r * 0.32f)
+            lineTo(c.x - r * 0.30f, c.y + r * 0.32f)
+            close()
+        }
+        drawPath(cone, Color.White)
+        drawRoundRect(
+            color = Color.White,
+            topLeft = Offset(c.x - r * 0.46f, c.y + r * 0.28f),
+            size = Size(r * 0.92f, r * 0.2f),
+            cornerRadius = CornerRadius(r * 0.06f),
+        )
     }
 }
 
 private val OBSTACLE_HALO = Color.Black.copy(alpha = 0.35f)
+private val OBSTACLE_RING = Color(0xFFA7E3DB)
+private val OBSTACLE_FILL = Color(0xFF2A7F86)
 
 /** What a tapped obstacle is, and its photo when the robot kept one. */
 @Composable
