@@ -227,6 +227,8 @@ fun VacuumDetailScreen(
     val map3DYaw by viewModel.map3DYaw.collectAsState()
     val map3DTilt by viewModel.map3DTilt.collectAsState()
     val map3D by viewModel.map3D.collectAsState()
+    val supportsSmartPlan by viewModel.supportsSmartPlan.collectAsState()
+    val supportsWaterSlide by viewModel.supportsWaterSlide.collectAsState()
     val parsedMap by viewModel.repository.parsedMap.collectAsState()
     val floorMaps by viewModel.repository.floorMaps.collectAsState()
     val currentFloorFlag by viewModel.repository.currentFloorFlag.collectAsState()
@@ -856,6 +858,7 @@ private fun VacuumMapImage(
     map: ParsedMap,
     selectedRoomIds: List<Int>,
     onRoomTap: (Int) -> Unit,
+    onObstacleTap: (MapObstacle) -> Unit,
     is3D: Boolean,
     yawDegrees: Float,
     onYawChange: (Float) -> Unit,
@@ -886,6 +889,7 @@ private fun VacuumMapImage(
     // In dark mode `primary` is a bright cyan, so white-on-primary would be unreadable.
     val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary)
     val currentOnRoomTap by rememberUpdatedState(onRoomTap)
+    val currentOnObstacleTap by rememberUpdatedState(onObstacleTap)
     val currentYaw by rememberUpdatedState(yawDegrees)
     val currentOnYawChange by rememberUpdatedState(onYawChange)
     val currentTilt by rememberUpdatedState(tiltDegrees)
@@ -939,9 +943,13 @@ private fun VacuumMapImage(
                             pan = Offset.Zero
                         },
                         onTap = { tap ->
+                            // An obstacle dot is small, so a tap near one opens it before any room.
+                            val tapView = viewFor(size.width.toFloat(), size.height.toFloat())
+                            map.obstacleAt(tap, tapView, bitmap.width / map.width.toFloat(), 20.dp.toPx())
+                                ?.let { currentOnObstacleTap(it); return@detectTapGestures }
                             // The same transform that drew the map, run backwards, so a tap lands on
                             // the room under the finger at any heading, zoom or tilt.
-                            val at = viewFor(size.width.toFloat(), size.height.toFloat()).toBitmap(tap.x, tap.y)
+                            val at = tapView.toBitmap(tap.x, tap.y)
                             map.roomAtNorm(at.x / bitmap.width, at.y / bitmap.height)
                                 ?.let { currentOnRoomTap(it.id) }
                         },
