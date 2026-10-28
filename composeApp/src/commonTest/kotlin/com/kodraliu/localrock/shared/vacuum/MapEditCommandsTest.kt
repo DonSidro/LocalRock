@@ -52,8 +52,9 @@ class MapEditCommandsTest {
     }
 
     @Test
-    fun save_map_is_refused_for_maps_other_than_index_0() {
-        assertFailsWith<MapEditException> { encodeSaveMapParams(listOf(noGo), emptyList(), mapIndex = 1) }
+    fun save_map_names_the_robots_only_map_whatever_its_index() {
+        // A Qrevo S Pro kept its only map as map 1 and accepted [100, 1] (issue #88).
+        assertTrue(saveMapData(listOf(noGo), emptyList(), mapIndex = 1).toString().endsWith("[100,1]]"))
     }
 
     @Test
@@ -91,7 +92,7 @@ class MapEditCommandsTest {
             """{"map_index":0,"type":1,"zone_data":[[30660,24711,32317,24711,32317,23109,30660,23109]]}""",
             encodeCarpetAreaParams(listOf(carpetA), 0, withFlags = false).toString(),
         )
-        assertFailsWith<MapEditException> { encodeCarpetAreaParams(listOf(carpetA), 1, withFlags = false) }
+        assertTrue(encodeCarpetAreaParams(listOf(carpetA), 1, withFlags = false).toString().startsWith("{\"map_index\":1,"))
     }
 
     @Test
@@ -253,7 +254,7 @@ class MapEditCommandsTest {
         assertNull(restrictionSaveBlocker(map(blocks = setOf(19, 30, 31)), mapIndex = 0))
         assertTrue(restrictionSaveBlocker(map(blocks = setOf(23)), 0)!!.contains("mop-only"))
         assertTrue(restrictionSaveBlocker(map(noMop = listOf(noGo.copy(kind = ZoneKind.NO_MOP))), 0)!!.contains("no-mop"))
-        assertTrue(restrictionSaveBlocker(map(), mapIndex = 1)!!.contains("map 0"))
+        assertNull(restrictionSaveBlocker(map(), mapIndex = 1))
         assertTrue(restrictionSaveBlocker(map(), mapIndex = null)!!.contains("single saved map"))
     }
 
@@ -261,6 +262,7 @@ class MapEditCommandsTest {
     fun save_map_index_comes_from_a_single_map_list() {
         // The capture's get_multi_maps_list: one map, "Hus", mapFlag 0.
         assertEquals(0, saveMapIndex(listOf(FloorMap("Hus", 0))))
+        assertEquals(1, saveMapIndex(listOf(FloorMap("Home", 1))))
         assertNull(saveMapIndex(emptyList()))
         assertNull(saveMapIndex(listOf(FloorMap("Down", 0), FloorMap("Up", 1))))
     }

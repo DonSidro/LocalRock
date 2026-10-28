@@ -58,8 +58,9 @@ internal const val SAVE_MAP_TYPE_NO_GO = 0
 internal const val SAVE_MAP_TYPE_WALL = 1
 
 /**
- * Trailing entry the official app always appends to save_map, observed as `[100, 0]` on a robot
- * whose map list held a single map with mapFlag 0. Sent only in that captured situation.
+ * Trailing entry the official app always appends to save_map, `[100, mapFlag]` of the map being
+ * edited: captured as `[100, 0]` on a robot whose only map had mapFlag 0, and `[100, 1]` worked on a
+ * Qrevo S Pro whose only map is map 1 (issue #88).
  */
 internal const val SAVE_MAP_TYPE_MAP_INDEX = 100
 
@@ -86,14 +87,12 @@ fun restrictionSaveBlocker(map: ParsedMap, mapIndex: Int?): String? = mapIndexBl
 private const val MOP_ONLY_AREAS_BLOCK = 23
 
 /**
- * Every captured map edit named map index 0 (save_map's `[100, 0]`, and `"map_index": 0` on
- * carpets and thresholds) on a robot with one saved map. Anything else is not confirmed.
+ * Map edits name the map they change by its mapFlag (save_map's `[100, n]`, and `"map_index": n` on
+ * carpets and thresholds). The map being edited is only certain when the robot holds exactly one map.
+ * That map need not be map 0: a robot that once had a second floor can keep its only map as map 1.
  */
-fun mapIndexBlocker(mapIndex: Int?): String? = when (mapIndex) {
-    null -> "Saving map edits is only supported on robots with a single saved map for now."
-    0 -> null
-    else -> "Saving map edits is only confirmed for map 0. This robot's map is $mapIndex."
-}
+fun mapIndexBlocker(mapIndex: Int?): String? =
+    if (mapIndex == null) "Saving map edits is only supported on robots with a single saved map for now." else null
 
 fun restrictionVertexCount(walls: Int, zones: Int): Int = walls * 2 + zones * 4
 
@@ -171,10 +170,9 @@ internal fun encodeSaveMapParams(noGoZones: List<MapZone>, walls: List<VirtualWa
 
 /**
  * `[walls..., no-go zones..., [100, mapIndex]]`. The S7 takes the same list as its plain params,
- * `[100, 0]` included, and replaces its whole set with it like the S8 does (issue #14).
+ * `[100, mapIndex]` included, and replaces its whole set with it like the S8 does (issue #14).
  */
 internal fun saveMapData(noGoZones: List<MapZone>, walls: List<VirtualWall>, mapIndex: Int): JsonArray {
-    if (mapIndex != 0) throw MapEditException("Saving zones is only confirmed for map index 0")
     val vertices = restrictionVertexCount(walls.size, noGoZones.size)
     if (vertices > MAX_RESTRICTION_VERTICES) {
         throw MapEditException("Too many restrictions: $vertices of $MAX_RESTRICTION_VERTICES points used")
