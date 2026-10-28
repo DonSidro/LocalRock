@@ -33,6 +33,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import com.kodraliu.localrock.ui.rememberUse24HourClock
+import com.kodraliu.localrock.ui.adaptive.CenteredContent
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -71,35 +72,43 @@ fun ScheduleScreen(
                 },
             )
         },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
-                Icon(Icons.Default.Add, "Add schedule")
-            }
-        },
     ) { padding ->
-        if (timers.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(Icons.Default.Schedule, null, Modifier.size(48.dp), MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("No schedules yet", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Tap + to schedule a recurring clean",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
+        CenteredContent {
+            if (timers.isEmpty()) {
+                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Default.Schedule, null, Modifier.size(48.dp), MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("No schedules yet", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Tap + to schedule a recurring clean",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(contentPadding = padding) {
+                    items(timers, key = { it.id }) { timer ->
+                        TimerRow(
+                            timer = timer,
+                            onToggle = { viewModel.run { it.toggleTimer(timer) } },
+                            onDelete = { viewModel.run { it.deleteTimer(timer) } },
+                        )
+                        HorizontalDivider(Modifier.padding(start = 72.dp))
+                    }
                 }
             }
-        } else {
-            LazyColumn(contentPadding = padding) {
-                items(timers, key = { it.id }) { timer ->
-                    TimerRow(
-                        timer = timer,
-                        onToggle = { viewModel.run { it.toggleTimer(timer) } },
-                        onDelete = { viewModel.run { it.deleteTimer(timer) } },
-                    )
-                    HorizontalDivider(Modifier.padding(start = 72.dp))
-                }
+
+            // On wide windows the content column is centred, so keep the FAB with it instead of
+            // floating it at the far edge of the window.
+            FloatingActionButton(
+                onClick = { showAddDialog = true },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 16.dp + padding.calculateBottomPadding()),
+            ) {
+                Icon(Icons.Default.Add, "Add schedule")
             }
         }
     }

@@ -17,18 +17,26 @@ internal class LiveMapViewport {
     var offset by mutableStateOf(Offset.Zero)
     private var identity: Any? = null
     private var framedSize: Size? = null
+    private var framedFit: Pair<Float, Offset>? = null
 
     fun frameIfNeeded(key: Any?, size: Size, fit: Pair<Float, Offset>?) {
         if (fit == null || size.width <= 0f || size.height <= 0f) return
-        if (identity != key || framedSize != size) {
+        val old = framedSize
+        if (identity != key || old == null) {
             reset(fit)
             identity = key
-            framedSize = size
+        } else if (old != size) {
+            // The view resized (fold/unfold or rotate). Re-fit a view the user has not moved;
+            // otherwise keep their zoom and the map point under the view centre.
+            if (framedFit == (scale to offset)) reset(fit)
+            else offset += Offset((size.width - old.width) / 2f, (size.height - old.height) / 2f)
         }
+        framedSize = size
     }
 
     fun reset(fit: Pair<Float, Offset>) {
         scale = fit.first
         offset = fit.second
+        framedFit = fit
     }
 }

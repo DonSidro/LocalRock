@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.ui.onboarding
 
 import com.kodraliu.localrock.ui.exceptBottom
+import com.kodraliu.localrock.ui.adaptive.CenteredContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -75,101 +76,103 @@ fun ServerSetupScreen(onDone: () -> Unit, onBack: (() -> Unit)? = null) {
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding.exceptBottom())
-                .verticalScroll(rememberScrollState())
-                // Edge to edge: the content scrolls behind the navigation bar and ends above it.
-                .padding(bottom = padding.calculateBottomPadding())
-                .padding(horizontal = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Spacer(Modifier.height(8.dp))
-            Surface(
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.size(56.dp),
+        CenteredContent {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding.exceptBottom())
+                    .verticalScroll(rememberScrollState())
+                    // Edge to edge: the content scrolls behind the navigation bar and ends above it.
+                    .padding(bottom = padding.calculateBottomPadding())
+                    .padding(horizontal = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(56.dp),
                 ) {
-                    Icon(
-                        Icons.Default.Dns,
-                        contentDescription = null,
-                        modifier = Modifier.size(28.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Dns,
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
                 }
-            }
 
-            Text(
-                "Where is your server?",
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            Text(
-                "LocalRock talks only to the LocalRock server running on your own network. " +
-                    "Enter its address to continue.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            OutlinedTextField(
-                value = url,
-                onValueChange = { url = it },
-                label = { Text("Server address") },
-                placeholder = { Text("https://192.168.1.10:555") },
-                singleLine = true,
-                isError = url.isNotBlank() && !looksValid,
-                supportingText = {
-                    Text(
-                        if (url.isNotBlank() && !looksValid) {
-                            "Start with http:// or https://"
-                        } else {
-                            // The Ktor client keeps only scheme/host/port, so a trailing path is
-                            // silently dropped — worth saying before someone debugs it for an hour.
-                            "Use the server root, including the port. Don't add /admin."
-                        }
-                    )
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Button(
-                enabled = looksValid,
-                onClick = {
-                    container.appSettings.setServerBaseUrl(trimmed)
-                    onDone()
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Continue") }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(onClick = { uriHandler.openUri(SERVER_GUIDE_URL) }) {
-                    Text("Server setup guide")
-                    Spacer(Modifier.width(6.dp))
-                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                }
-            }
-
-            if (userData == null) {
                 Text(
-                    "No server yet?",
-                    style = MaterialTheme.typography.labelLarge,
+                    "Where is your server?",
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                Text(
+                    "LocalRock talks only to the LocalRock server running on your own network. " +
+                        "Enter its address to continue.",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                TextButton(onClick = { container.authRepository.enterDemo() }) {
-                    Text("Explore the demo instead")
+
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("Server address") },
+                    placeholder = { Text("https://192.168.1.10:555") },
+                    singleLine = true,
+                    isError = url.isNotBlank() && !looksValid,
+                    supportingText = {
+                        Text(
+                            if (url.isNotBlank() && !looksValid) {
+                                "Start with http:// or https://"
+                            } else {
+                                // The Ktor client keeps only scheme/host/port, so a trailing path is
+                                // silently dropped — worth saying before someone debugs it for an hour.
+                                "Use the server root, including the port. Don't add /admin."
+                            }
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Button(
+                    enabled = looksValid,
+                    onClick = {
+                        container.appSettings.setServerBaseUrl(trimmed)
+                        onDone()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Continue") }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = { uriHandler.openUri(SERVER_GUIDE_URL) }) {
+                        Text("Server setup guide")
+                        Spacer(Modifier.width(6.dp))
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                    }
                 }
+
+                if (userData == null) {
+                    Text(
+                        "No server yet?",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = { container.authRepository.enterDemo() }) {
+                        Text("Explore the demo instead")
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }
