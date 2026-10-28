@@ -354,9 +354,22 @@ private fun drawOverlays(canvas: Canvas, map: ParsedMap, palette: MapPalette, dr
 }
 
 // Square dock, round robot: the two markers stay distinguishable without relying on colour.
-private fun drawMarkers(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
-    map.chargerMm?.let { drawMarker(canvas, map, it, palette.charger, palette.markerRing, square = true) }
-    map.robotMm?.let { drawMarker(canvas, map, it, palette.robot, palette.markerRing, square = false) }
+private fun drawMarkers(canvas: Canvas, map: ParsedMap, palette: MapPalette, yaw: Float = 0f, squash: Float = 1f) {
+    map.chargerMm?.let { p -> upright(canvas, map, p, yaw, squash) { drawMarker(canvas, map, p, palette.charger, palette.markerRing, square = true) } }
+    map.robotMm?.let { p -> upright(canvas, map, p, yaw, squash) { drawMarker(canvas, map, p, palette.robot, palette.markerRing, square = false) } }
+}
+
+/** Draws a marker undoing the map's turn and tilt around its own spot, so it stays upright on screen. */
+private inline fun upright(canvas: Canvas, map: ParsedMap, point: ParsedMapPoint, yaw: Float, squash: Float, draw: () -> Unit) {
+    val x = (point.x / 50f) - map.pixelOffsetLeft
+    val y = (map.height - 1) - ((point.y / 50f) - map.pixelOffsetTop)
+    canvas.save()
+    canvas.translate(x, y)
+    canvas.rotate(-yaw)
+    canvas.scale(1f, 1f / squash)
+    canvas.translate(-x, -y)
+    draw()
+    canvas.restore()
 }
 
 /**
@@ -374,7 +387,7 @@ internal fun DrawScope.drawRouteAndMarkers(map: ParsedMap, view: MapView, scale:
         scale(scale.toFloat(), scale.toFloat(), Offset.Zero)
     }) {
         if (map.pathMm.size >= 2) drawPath(drawContext.canvas, map, palette)
-        drawMarkers(drawContext.canvas, map, palette)
+        drawMarkers(drawContext.canvas, map, palette, view.yawDegrees, view.squash)
     }
 }
 
