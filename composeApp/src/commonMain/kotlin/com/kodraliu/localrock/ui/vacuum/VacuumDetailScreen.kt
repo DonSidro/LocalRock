@@ -1091,14 +1091,14 @@ private fun VacuumMapImage(
         }
 
         // Zoom is shown relative to the framed view, which is the resting state.
-        if (zoom > 1.05f) {
+        if (mapViewport.zoom > 1.05f) {
             Surface(
                 modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
                 color = Color.Black.copy(alpha = 0.6f),
                 shape = MaterialTheme.shapes.small,
             ) {
                 Text(
-                    "${(zoom * 100).toInt()}%",
+                    "${(mapViewport.zoom * 100).toInt()}%",
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White,

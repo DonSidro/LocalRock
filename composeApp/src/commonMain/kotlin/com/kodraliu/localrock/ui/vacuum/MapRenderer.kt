@@ -109,10 +109,11 @@ internal fun supersampleFor(map: ParsedMap): Int = (2400 / maxOf(map.width, map.
 fun rememberMapLayers(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap> {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val palette = if (dark) DarkPalette else LightPalette
-    // A live update replaces the map object every few seconds. The floor only depends on the grid and
-    // rooms, so it is not redrawn for a robot that has merely moved; the overlay carries the route.
+    // A live update replaces the map object every few seconds. The floor and the zones only depend on the
+    // grid, rooms and restrictions, so neither is redrawn for a robot that has merely moved; the route and
+    // the markers are drawn as vectors on top.
     val floor = remember(map.floorKey(), dark, scale) { renderLayer(map, palette, scale, overlay = false) }
-    val overlay = remember(map, dark, scale) { renderLayer(map, palette, scale, overlay = true) }
+    val overlay = remember(map.restrictionsKey(), dark, scale) { renderLayer(map, palette, scale, overlay = true) }
     return floor to overlay
 }
 
@@ -122,7 +123,13 @@ fun rememberMapLayers(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap
  */
 internal fun ParsedMap.floorKey(): List<Any?> = listOf(
     width, height, resolution, pixelOffsetLeft, pixelOffsetTop, format,
-    grid.contentHashCode(), originalGrid?.contentHashCode(), rooms, segmentMaterials, segmentMaterialDirections,
+    grid.contentHashCode(), originalGrid?.contentHashCode(), carpetMask?.contentHashCode(), rooms,
+    segmentMaterials, segmentMaterialDirections,
+)
+
+/** What the zones and virtual walls are drawn from. */
+internal fun ParsedMap.restrictionsKey(): List<Any?> = listOf(
+    width, height, pixelOffsetLeft, pixelOffsetTop, carpetAreas, thresholds, noMopZones, noGoZones, virtualWalls,
 )
 
 /**
@@ -379,11 +386,8 @@ private inline fun upright(canvas: Canvas, map: ParsedMap, point: ParsedMapPoint
 internal fun DrawScope.drawRouteAndMarkers(map: ParsedMap, view: MapView, scale: Int, dark: Boolean) {
     val palette = if (dark) DarkPalette else LightPalette
     withTransform({
-        translate(left = view.canvasW / 2f + view.pan.x, top = view.canvasH / 2f + view.pan.y)
-        scale(view.k, view.k, Offset.Zero)
-        rotate(view.yawDegrees, Offset.Zero)
-        scale(1f, view.squash, Offset.Zero)
-        translate(left = -view.centerX, top = -view.centerY)
+        // The same matrix as the floor, so the route lies on the rooms it ran over at any heading and tilt.
+        transform(view.layerMatrix(0f))
         scale(scale.toFloat(), scale.toFloat(), Offset.Zero)
     }) {
         if (map.pathMm.size >= 2) drawPath(drawContext.canvas, map, palette)
