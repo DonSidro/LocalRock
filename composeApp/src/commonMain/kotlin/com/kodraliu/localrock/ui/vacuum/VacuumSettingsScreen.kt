@@ -1246,31 +1246,33 @@ private fun ValleyScreen(
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(padding).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+        CenteredContent {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(padding).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Limit charging and drying to off-peak hours", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        if (enabled) "${clockText(startHour, startMinute)} to ${clockText(endHour, endMinute)}" else "Off",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Limit charging and drying to off-peak hours", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            if (enabled) "${clockText(startHour, startMinute)} to ${clockText(endHour, endMinute)}" else "Off",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = enabled, onCheckedChange = { enabled = it; commit() })
                 }
-                Switch(checked = enabled, onCheckedChange = { enabled = it; commit() })
-            }
-            if (enabled) {
-                HorizontalDivider()
-                Text("Start time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                ClockStepper(startHour, startMinute, onHourChange = { startHour = it; timesTouched = true }, onMinuteChange = { startMinute = it; timesTouched = true })
-                Text("End time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                ClockStepper(endHour, endMinute, onHourChange = { endHour = it; timesTouched = true }, onMinuteChange = { endMinute = it; timesTouched = true })
+                if (enabled) {
+                    HorizontalDivider()
+                    Text("Start time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    ClockStepper(startHour, startMinute, onHourChange = { startHour = it; timesTouched = true }, onMinuteChange = { startMinute = it; timesTouched = true })
+                    Text("End time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    ClockStepper(endHour, endMinute, onHourChange = { endHour = it; timesTouched = true }, onMinuteChange = { endMinute = it; timesTouched = true })
+                }
             }
         }
     }
@@ -1436,10 +1438,12 @@ private fun FeatureSectionScreen(
             )
         },
     ) { padding ->
-        LazyColumn(contentPadding = padding) {
-            items(features, key = { it.def.id }) { f ->
-                FeatureToggleRow(f, onToggle)
-                HorizontalDivider(Modifier.padding(start = 72.dp))
+        CenteredContent {
+            LazyColumn(contentPadding = padding) {
+                items(features, key = { it.def.id }) { f ->
+                    FeatureToggleRow(f, onToggle)
+                    HorizontalDivider(Modifier.padding(start = 72.dp))
+                }
             }
         }
     }
@@ -1464,19 +1468,21 @@ private fun CarpetScreen(
             )
         },
     ) { padding ->
-        LazyColumn(contentPadding = padding) {
-            item {
-                SettingRowClickable(
-                    icon = Icons.Default.GridView,
-                    iconTint = AppColors.Good,
-                    title = "Carpet mode",
-                    subtitle = options.getOrElse(carpetMode) { "Standard" },
-                    onClick = { showDialog = true },
-                )
-            }
-            items(features, key = { it.def.id }) { f ->
-                HorizontalDivider(Modifier.padding(start = 72.dp))
-                FeatureToggleRow(f, onToggle)
+        CenteredContent {
+            LazyColumn(contentPadding = padding) {
+                item {
+                    SettingRowClickable(
+                        icon = Icons.Default.GridView,
+                        iconTint = AppColors.Good,
+                        title = "Carpet mode",
+                        subtitle = options.getOrElse(carpetMode) { "Standard" },
+                        onClick = { showDialog = true },
+                    )
+                }
+                items(features, key = { it.def.id }) { f ->
+                    HorizontalDivider(Modifier.padding(start = 72.dp))
+                    FeatureToggleRow(f, onToggle)
+                }
             }
         }
     }
