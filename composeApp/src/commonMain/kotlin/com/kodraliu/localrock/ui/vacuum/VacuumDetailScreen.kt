@@ -1051,8 +1051,8 @@ private fun VacuumMapImage(
                 }
                 // Each name has a round badge with its room type in front, as in the Roborock app. A room the
                 // robot has no entry for shows the badge alone. A selected room keeps its numbered pill.
-                val badge = if (selected) 0f else 18.dp.toPx()
-                val badgeGap = if (selected) 0f else 4.dp.toPx()
+                val badge = if (selected) 0f else 16.dp.toPx()
+                val badgeGap = if (selected) 0f else 3.dp.toPx()
                 val unnamed = room.tag == null && !selected
                 // A name is shortened to fit inside its room, so it never runs out over the black between rooms.
                 val yawRad = view.yawDegrees * (PI / 180.0)
