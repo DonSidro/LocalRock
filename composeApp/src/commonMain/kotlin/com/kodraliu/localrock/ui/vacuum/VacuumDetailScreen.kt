@@ -32,8 +32,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.BatteryUnknown
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -190,7 +190,7 @@ private val ACTIVE_CLEANING_STATES = setOf(
 @Composable
 fun VacuumDetailScreen(
     viewModel: VacuumViewModel,
-    onBack: () -> Unit,
+    onOpenSidebar: (() -> Unit)?,
     onSettings: () -> Unit,
     onZoneClean: () -> Unit,
     onMapEdit: () -> Unit,
@@ -279,8 +279,10 @@ fun VacuumDetailScreen(
             TopAppBar(
                 title = { Text(viewModel.deviceName, style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Go back")
+                    if (onOpenSidebar != null) {
+                        IconButton(onClick = onOpenSidebar) {
+                            Icon(Icons.Default.Menu, contentDescription = "Open menu")
+                        }
                     }
                 },
                 actions = {

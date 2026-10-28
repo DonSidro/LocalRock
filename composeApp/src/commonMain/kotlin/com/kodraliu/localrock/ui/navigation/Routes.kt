@@ -7,11 +7,13 @@ import kotlinx.serialization.Serializable
 @Serializable data object Welcome
 @Serializable data object ServerSetup
 @Serializable data object Login
+@Serializable data object Home
 @Serializable data object DeviceList
 @Serializable data object AppSettings
 @Serializable data object AddVacuum
 
 @Serializable data class VacuumGraph(val duid: String)
+@Serializable data object RobotPlaceholder
 @Serializable data object VacuumMain
 @Serializable data object VacuumSettings
 @Serializable data object VacuumZoneClean

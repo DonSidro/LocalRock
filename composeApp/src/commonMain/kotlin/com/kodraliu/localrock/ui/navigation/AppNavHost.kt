@@ -7,16 +7,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.toRoute
-import com.kodraliu.localrock.shared.AppContainer
 import com.kodraliu.localrock.ui.LocalAppContainer
-import com.kodraliu.localrock.ui.devices.DeviceListScreen
-import com.kodraliu.localrock.ui.devices.DeviceListViewModel
+import com.kodraliu.localrock.ui.home.HomeShell
 import com.kodraliu.localrock.ui.intro.SplashScreen
 import com.kodraliu.localrock.ui.intro.WelcomeScreen
 import com.kodraliu.localrock.ui.login.LoginScreen
@@ -24,16 +19,6 @@ import com.kodraliu.localrock.ui.onboarding.AddVacuumScreen
 import com.kodraliu.localrock.ui.onboarding.ServerSetupScreen
 import com.kodraliu.localrock.ui.settings.APP_VERSION
 import com.kodraliu.localrock.ui.settings.SettingsScreen
-import com.kodraliu.localrock.ui.vacuum.CameraLiveViewScreen
-import com.kodraliu.localrock.ui.vacuum.ScheduleScreen
-import com.kodraliu.localrock.ui.vacuum.VacuumDetailScreen
-import com.kodraliu.localrock.ui.vacuum.VacuumHistoryScreen
-import com.kodraliu.localrock.ui.vacuum.VacuumPinGoScreen
-import com.kodraliu.localrock.ui.vacuum.VacuumRemoteScreen
-import com.kodraliu.localrock.ui.vacuum.VacuumSettingsScreen
-import com.kodraliu.localrock.ui.vacuum.VacuumViewModel
-import com.kodraliu.localrock.ui.vacuum.MapEditScreen
-import com.kodraliu.localrock.ui.vacuum.ZoneCleanScreen
 import com.kodraliu.localrock.ui.whatsnew.WhatsNewSheet
 import com.kodraliu.localrock.ui.whatsnew.shouldShowWhatsNew
 import com.kodraliu.localrock.ui.whatsnew.whatsNewFor
@@ -54,26 +39,14 @@ fun AppNavHost() {
         if (!splashDone) return@LaunchedEffect
         val destination: Any = when {
             !introSeen -> Welcome
-            demoMode -> DeviceList
+            demoMode -> Home
             serverUrl.isNullOrBlank() -> ServerSetup
             userData == null -> Login
-            else -> DeviceList
+            else -> Home
         }
         navController.navigate(destination) {
             popUpTo(navController.graph.id) { inclusive = true }
         }
-    }
-
-    // A tapped notification names a robot. Go there once the app is past its first screens and
-    // the list that robot lives in is loaded, replacing whatever was open above the list.
-    val pendingOpen by container.pendingOpenDuid.collectAsState()
-    val devices by container.deviceRepository.devices.collectAsState()
-    LaunchedEffect(splashDone, userData, pendingOpen, devices) {
-        val duid = pendingOpen ?: return@LaunchedEffect
-        if (!splashDone || userData == null) return@LaunchedEffect
-        if (devices.none { it.duid == duid && it.localKey != null }) return@LaunchedEffect
-        container.consumePendingOpen()
-        navController.navigate(VacuumGraph(duid)) { popUpTo<DeviceList>() }
     }
 
     NavHost(navController = navController, startDestination = Splash) {
@@ -103,14 +76,8 @@ fun AppNavHost() {
             LoginScreen(onServerSetup = { navController.navigate(ServerSetup) })
         }
 
-        composable<DeviceList> {
-            val viewModel: DeviceListViewModel = viewModel { DeviceListViewModel(container) }
-            DeviceListScreen(
-                viewModel = viewModel,
-                onSettings = { navController.navigate(AppSettings) },
-                onDeviceClick = { device -> navController.navigate(VacuumGraph(device.duid)) },
-                onAddVacuum = { navController.navigate(AddVacuum) },
-            )
+        composable<Home> {
+            HomeShell(topNav = navController)
             // Once after an update, over the first screen that is really the app.
             val release = whatsNewFor(APP_VERSION)
             if (release != null && shouldShowWhatsNew(introSeen, lastSeenVersion, APP_VERSION)) {
@@ -127,107 +94,6 @@ fun AppNavHost() {
 
         composable<AddVacuum> {
             AddVacuumScreen(onBack = { navController.popBackStack() })
-        }
-
-        navigation<VacuumGraph>(startDestination = VacuumMain) {
-
-            composable<VacuumMain> { entry ->
-                val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
-                val duid = graphEntry.toRoute<VacuumGraph>().duid
-                val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
-                VacuumDetailScreen(
-                    viewModel = viewModel,
-                    onBack = { navController.popBackStack<VacuumGraph>(inclusive = true) },
-                    onSettings = { navController.navigate(VacuumSettings) },
-                    onZoneClean = { navController.navigate(VacuumZoneClean) },
-                    onMapEdit = { navController.navigate(VacuumMapEdit) },
-                    onSchedule = { navController.navigate(VacuumSchedule) },
-                    onCamera = { navController.navigate(VacuumCamera) },
-                    onRemote = { navController.navigate(VacuumRemote) },
-                    onPinGo = { navController.navigate(VacuumPinGo) },
-                    onHistory = { navController.navigate(VacuumHistory) },
-                )
-            }
-
-            composable<VacuumRemote> { entry ->
-                val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
-                val duid = graphEntry.toRoute<VacuumGraph>().duid
-                val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
-                VacuumRemoteScreen(
-                    viewModel = viewModel,
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            composable<VacuumPinGo> { entry ->
-                val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
-                val duid = graphEntry.toRoute<VacuumGraph>().duid
-                val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
-                VacuumPinGoScreen(
-                    viewModel = viewModel,
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            composable<VacuumHistory> { entry ->
-                val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
-                val duid = graphEntry.toRoute<VacuumGraph>().duid
-                val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
-                VacuumHistoryScreen(
-                    viewModel = viewModel,
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            composable<VacuumCamera> { entry ->
-                val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
-                val duid = graphEntry.toRoute<VacuumGraph>().duid
-                val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
-                CameraLiveViewScreen(
-                    viewModel = viewModel,
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            composable<VacuumSettings> { entry ->
-                val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
-                val duid = graphEntry.toRoute<VacuumGraph>().duid
-                val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
-                VacuumSettingsScreen(
-                    viewModel = viewModel,
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            composable<VacuumZoneClean> { entry ->
-                val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
-                val duid = graphEntry.toRoute<VacuumGraph>().duid
-                val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
-                ZoneCleanScreen(
-                    viewModel = viewModel,
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            composable<VacuumMapEdit> { entry ->
-                val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
-                val duid = graphEntry.toRoute<VacuumGraph>().duid
-                val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
-                MapEditScreen(
-                    viewModel = viewModel,
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            composable<VacuumSchedule> { entry ->
-                val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
-                val duid = graphEntry.toRoute<VacuumGraph>().duid
-                val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
-                ScheduleScreen(
-                    viewModel = viewModel,
-                    onBack = { navController.popBackStack() },
-                )
-            }
         }
     }
 }
