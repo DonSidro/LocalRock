@@ -104,11 +104,22 @@ internal fun supersampleFor(map: ParsedMap): Int = (2400 / maxOf(map.width, map.
 @Composable
 fun rememberMapLayers(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap> {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return remember(map, dark, scale) {
-        val palette = if (dark) DarkPalette else LightPalette
-        renderLayer(map, palette, scale, overlay = false) to renderLayer(map, palette, scale, overlay = true)
-    }
+    val palette = if (dark) DarkPalette else LightPalette
+    // A live update replaces the map object every few seconds. The floor only depends on the grid and
+    // rooms, so it is not redrawn for a robot that has merely moved; the overlay carries the route.
+    val floor = remember(map.floorKey(), dark, scale) { renderLayer(map, palette, scale, overlay = false) }
+    val overlay = remember(map, dark, scale) { renderLayer(map, palette, scale, overlay = true) }
+    return floor to overlay
 }
+
+/**
+ * What the floor, wall and selection layers are drawn from. Live updates give a new map object without
+ * changing any of it, so these layers are keyed on this and not on the object.
+ */
+internal fun ParsedMap.floorKey(): List<Any?> = listOf(
+    width, height, resolution, pixelOffsetLeft, pixelOffsetTop, format,
+    grid.contentHashCode(), originalGrid?.contentHashCode(), rooms, segmentMaterials, segmentMaterialDirections,
+)
 
 /**
  * The map's wall cells alone, on a transparent bitmap at [scale] times the grid, as (side, top). The
@@ -117,9 +128,11 @@ fun rememberMapLayers(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap
  * geometry to rebuild.
  */
 @Composable
-fun rememberWallBitmaps(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap> {
+fun rememberWallBitmaps(map: ParsedMap, scale: Int, enabled: Boolean): Pair<ImageBitmap, ImageBitmap>? {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return remember(map, dark, scale) {
+    // Only the 3D view draws the walls, so the flat map does not pay for two more full-size bitmaps.
+    if (!enabled) return null
+    return remember(map.floorKey(), dark, scale) {
         val wall = (if (dark) DarkPalette else LightPalette).wall
         renderWalls(map, lerp(wall, Color.White, 0.10f), scale) to renderWalls(map, lerp(wall, Color.White, 0.30f), scale)
     }
@@ -169,7 +182,7 @@ private fun hsv(hue: Float, saturation: Float, value: Float): Color {
 @Composable
 fun rememberSelectionBitmap(map: ParsedMap, selectedRoomIds: List<Int>, scale: Int): ImageBitmap? {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return remember(map, selectedRoomIds, dark, scale) {
+    return remember(map.floorKey(), selectedRoomIds, dark, scale) {
         if (selectedRoomIds.isEmpty()) {
             null
         } else {

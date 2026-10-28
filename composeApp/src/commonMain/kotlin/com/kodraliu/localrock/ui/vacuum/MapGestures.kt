@@ -69,3 +69,17 @@ internal suspend fun PointerInputScope.detectMapGestures(
         } while (!cancelled && event.changes.any { it.pressed })
     }
 }
+
+/**
+ * Whether a two-finger movement is a camera tilt: the fingers dragged together, mostly up or down, without
+ * pinching or twisting. Anything else is a pinch, a twist or a pan, so a pinch whose midpoint drifts does
+ * not also tip the camera, and two fingers can still pan the 3D model.
+ */
+internal fun isTiltDrag(fingers: Int, pan: Offset, zoom: Float, rotation: Float): Boolean =
+    fingers >= 2 &&
+        abs(zoom - 1f) < TILT_MAX_ZOOM_CHANGE &&
+        abs(rotation) < TILT_MAX_ROTATION_DEGREES &&
+        abs(pan.y) > 2f * abs(pan.x)
+
+private const val TILT_MAX_ZOOM_CHANGE = 0.015f
+private const val TILT_MAX_ROTATION_DEGREES = 1.5f

@@ -889,7 +889,7 @@ private fun VacuumMapImage(
     // in the layers' own pixels (wall height, label lift) is in cells times this.
     val scale = remember(map) { supersampleFor(map) }
     val (bitmap, overlayBitmap) = rememberMapLayers(map, scale)
-    val (wallSide, wallTop) = rememberWallBitmaps(map, scale)
+    val walls = rememberWallBitmaps(map, scale, enabled = is3D)
     val selectionBitmap = rememberSelectionBitmap(map, selectedRoomIds, scale)
     val wallHeight = WALL_HEIGHT_CELLS * scale
     val labelRooms = remember(map.rooms) { map.rooms.filter { it.labelNormX != null && it.labelNormY != null } }
@@ -956,7 +956,7 @@ private fun VacuumMapImage(
                     // heading chosen with the rotate button, and two fingers pan it.
                     detectMapGestures { centroid, panChange, zoomChange, rotation, fingers ->
                         val newZoom = (mapViewport.zoom * zoomChange).coerceIn(MIN_ZOOM, MAX_ZOOM)
-                        val tilting = is3D && fingers >= 2
+                        val tilting = is3D && isTiltDrag(fingers, panChange, zoomChange, rotation)
                         val center = Offset(size.width / 2f, size.height / 2f)
                         // The pan is kept in units of the framed view; this works in pixels and converts back.
                         val fit = currentViewFor(size.width.toFloat(), size.height.toFloat()).k / mapViewport.zoom
@@ -1003,7 +1003,8 @@ private fun VacuumMapImage(
             // choice reads at a glance without hiding where the robot has been.
             selectionBitmap?.let { drawMapLayer(it, view, 0f, quality) }
             drawMapLayer(overlayBitmap, view, 0f, quality)
-            if (is3D) {
+            if (is3D && walls != null) {
+                val (wallSide, wallTop) = walls
                 // Walls rise by stacking the wall layer at climbing heights, then capping it with the
                 // lighter top. Each layer goes through the same transform as the floor, so the
                 // extrusion lines up at every heading.
