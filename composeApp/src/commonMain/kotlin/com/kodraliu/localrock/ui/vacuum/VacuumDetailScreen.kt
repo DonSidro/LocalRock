@@ -97,6 +97,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -600,7 +601,9 @@ fun VacuumDetailScreen(
     }
 
     if (!twoPane) panel?.let { current ->
-        ModalBottomSheet(onDismissRequest = { panel = null }) { PanelBody(current) }
+        // The Maps sheet has map pictures and buttons below the fold, so it opens at full height.
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = current == DetailPanel.Maps)
+        ModalBottomSheet(onDismissRequest = { panel = null }, sheetState = sheetState) { PanelBody(current) }
     }
 
     renamingMap?.let { floor ->
@@ -2226,7 +2229,7 @@ private fun MapsSheetContent(
                             Spacer(Modifier.weight(1f))
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
                         OutlinedButton(onClick = { onBackup(floor) }, enabled = canManage) {
                             Text("Back up now")
                         }
