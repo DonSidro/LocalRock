@@ -60,10 +60,10 @@ internal fun DrawScope.drawObstacles(map: ParsedMap, content: Size, offset: Offs
         val c = map.obstacleOnScreen(o, content, offset, scale)
         if (c.x < 0f || c.x > size.width || c.y < 0f || c.y > size.height) continue
         val hasPhoto = o.photoId != null
-        val r = (if (hasPhoto) 9 else 8).dp.toPx()
+        val r = (if (hasPhoto) 7 else 6).dp.toPx()
         drawCircle(color = OBSTACLE_HALO, radius = r + 1.5.dp.toPx(), center = c)
         drawCircle(color = if (hasPhoto) Color.White else OBSTACLE_RING, radius = r, center = c)
-        drawCircle(color = OBSTACLE_FILL, radius = r - 1.6.dp.toPx(), center = c)
+        drawCircle(color = OBSTACLE_FILL, radius = r - 1.3.dp.toPx(), center = c)
         val cone = Path().apply {
             moveTo(c.x, c.y - r * 0.52f)
             lineTo(c.x + r * 0.30f, c.y + r * 0.32f)
