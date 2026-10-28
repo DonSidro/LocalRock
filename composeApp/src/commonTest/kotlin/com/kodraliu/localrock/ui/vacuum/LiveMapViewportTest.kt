@@ -52,6 +52,16 @@ class LiveMapViewportTest {
         assertEquals(2f, state.scale)
     }
 
+    @Test fun resizeRefitsAViewTheUserHasNotMoved() {
+        val state = LiveMapViewport()
+        val key = map.viewportIdentity("a" to 1)
+        state.frameIfNeeded(key, size, fit)
+        val resizedFit = 3f to Offset(1f, 2f)
+        state.frameIfNeeded(key, Size(600f, 400f), resizedFit)
+        assertEquals(resizedFit.first, state.scale)
+        assertEquals(resizedFit.second, state.offset)
+    }
+
     @Test fun resizeKeepsTheMapPointAtTheViewCentre() {
         val state = LiveMapViewport()
         val key = map.viewportIdentity("a" to 1)
