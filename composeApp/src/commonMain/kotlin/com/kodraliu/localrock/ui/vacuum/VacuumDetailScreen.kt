@@ -238,6 +238,8 @@ fun VacuumDetailScreen(
     var recoverTick by remember { mutableIntStateOf(0) }
     var renamingMap by remember { mutableStateOf<FloorMap?>(null) }
     var deletingMap by remember { mutableStateOf<FloorMap?>(null) }
+    var backingUpMap by remember { mutableStateOf<FloorMap?>(null) }
+    var restoringMap by remember { mutableStateOf<FloorMap?>(null) }
     var choosingMapToKeep by remember { mutableStateOf(false) }
     var lastCleanArea by remember { mutableStateOf<Long?>(null) }
     var cleaningCount by remember { mutableIntStateOf(1) }
@@ -444,6 +446,8 @@ fun VacuumDetailScreen(
                 },
                 onRename = { renamingMap = it },
                 onDelete = { deletingMap = it },
+                onBackup = { backingUpMap = it },
+                onRestore = { restoringMap = it },
                 onStartMapping = {
                     panel = null
                     viewModel.run("Mapping started") { it.startMapping() }
@@ -625,6 +629,28 @@ fun VacuumDetailScreen(
                 viewModel.run("Map deleted") { it.deleteFloorMap(floor.mapFlag) }
             },
             onDismiss = { deletingMap = null },
+        )
+    }
+
+    backingUpMap?.let { floor ->
+        BackupMapDialog(
+            floor = floor,
+            onConfirm = {
+                backingUpMap = null
+                viewModel.run("Map backed up") { it.backupFloorMap(floor.mapFlag) }
+            },
+            onDismiss = { backingUpMap = null },
+        )
+    }
+
+    restoringMap?.let { floor ->
+        RestoreBackupDialog(
+            floor = floor,
+            onConfirm = {
+                restoringMap = null
+                viewModel.run("Map restored from backup") { it.restoreFloorMapBackup(floor.mapFlag) }
+            },
+            onDismiss = { restoringMap = null },
         )
     }
 }
@@ -2018,6 +2044,8 @@ private fun MapsSheetContent(
     onLoad: (Int) -> Unit,
     onRename: (FloorMap) -> Unit,
     onDelete: (FloorMap) -> Unit,
+    onBackup: (FloorMap) -> Unit,
+    onRestore: (FloorMap) -> Unit,
     onStartMapping: () -> Unit,
     onSaveNewMap: () -> Unit,
     onRecheck: () -> Unit,
@@ -2028,8 +2056,9 @@ private fun MapsSheetContent(
     ) {
         Text("Maps", style = MaterialTheme.typography.headlineSmall)
         Text(
-            "The maps stored on your robot. Moved the dock somewhere the map doesn't cover? " +
-                "Delete the map, then let the robot map the home again.",
+            "The maps stored on your robot. The robot keeps one backup of each map: back it up while " +
+                "the map looks right, and restore it if the map goes wrong. Moved the dock somewhere the " +
+                "map doesn't cover? Delete the map, then let the robot map the home again.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -2128,6 +2157,11 @@ private fun MapsSheetContent(
                             if (selected) {
                                 Text("Currently loaded", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             }
+                            Text(
+                                floor.backupAt?.let { "Backup from ${formatCleanRecordTime(it)}" } ?: "No backup yet",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                         IconButton(onClick = { onRename(floor) }, enabled = canManage) {
                             Icon(Icons.Default.Edit, contentDescription = "Rename ${floor.name}")
@@ -2144,6 +2178,15 @@ private fun MapsSheetContent(
                             Button(onClick = { onLoad(floor.mapFlag) }, enabled = !busy && !selected) {
                                 Text(if (selected) "Loaded" else "Load")
                             }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onBackup(floor) }, enabled = canManage) {
+                            Text("Back up now")
+                        }
+                        // Restoring was only captured for the loaded map.
+                        OutlinedButton(onClick = { onRestore(floor) }, enabled = canManage && selected && floor.backupAt != null) {
+                            Text("Restore backup")
                         }
                     }
                     HorizontalDivider()
@@ -2237,6 +2280,45 @@ private fun KeepMapDialog(
                 onClick = { onConfirm(keep) },
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
             ) { Text("Keep this map") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun BackupMapDialog(floor: FloorMap, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Back up \"${floor.name}\"?") },
+        text = {
+            Text(
+                "The robot saves this map as it is now, with its rooms, zones, walls and carpets. " +
+                    (floor.backupAt?.let { "It keeps one backup per map, so this replaces the backup from ${formatCleanRecordTime(it)}." }
+                        ?: "It keeps one backup per map."),
+            )
+        },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Back up") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun RestoreBackupDialog(floor: FloorMap, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Restore \"${floor.name}\"?") },
+        text = {
+            Text(
+                "The map goes back to the backup from ${floor.backupAt?.let { formatCleanRecordTime(it) } ?: "earlier"}. " +
+                    "Everything changed on it since then is lost: rooms, room names, no-go zones, walls, carpets " +
+                    "and thresholds. Check your routines afterwards.",
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) { Text("Restore") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

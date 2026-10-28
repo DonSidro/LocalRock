@@ -110,4 +110,8 @@ data class ValleySettings(
     val endMinute: Int = 0,
 )
 
-data class FloorMap(val name: String, val mapFlag: Int)
+/**
+ * A saved map. [savedAt] is when the robot last stored it and [backupAt] when its on-robot backup
+ * was made, both in the robot's own epoch seconds; [backupAt] is null when the map has no backup.
+ */
+data class FloorMap(val name: String, val mapFlag: Int, val savedAt: Long? = null, val backupAt: Long? = null)

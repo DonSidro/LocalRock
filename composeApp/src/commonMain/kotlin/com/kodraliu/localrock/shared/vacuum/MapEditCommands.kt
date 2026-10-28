@@ -12,6 +12,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /*
@@ -478,6 +481,45 @@ internal fun labStatusData(labStatus: Int, reserveMap: Int?): JsonArray =
         put("lab_status", JsonPrimitive(labStatus))
         reserveMap?.let { put("reserve_map", JsonPrimitive(it)) }
     })))
+
+/**
+ * The `map_info` entries of get_multi_maps_list. An unnamed map must still be listed: saving zones
+ * relies on the count being right. Each map lists its on-robot backup under `bak_maps`.
+ */
+internal fun parseFloorMapList(mapInfo: JsonArray): List<FloorMap> = mapInfo.mapNotNull { elem ->
+    val o = runCatching { elem.jsonObject }.getOrNull() ?: return@mapNotNull null
+    val flag = o["mapFlag"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+    val name = o["name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: "Map ${flag + 1}"
+    val backup = runCatching { o["bak_maps"]?.jsonArray?.firstOrNull()?.jsonObject }.getOrNull()
+    FloorMap(
+        name = name,
+        mapFlag = flag,
+        savedAt = o["add_time"]?.jsonPrimitive?.longOrNull,
+        backupAt = backup?.get("add_time")?.jsonPrimitive?.longOrNull,
+    )
+}
+
+/*
+ * On-robot map backups, from captures of the official app on the S8 Pro Ultra (2026-10-28, with
+ * multi-level maps on and off). The robot keeps one backup per saved map (max_bak_map 1), listed
+ * under the map as bak_maps. Backing up replaces it. Restoring put the map back as it was at backup
+ * time: a no-go zone added after the backup was gone again, a wall in the backup stayed. Neither
+ * used need_retry or start/end_edit_map. The older get_recover_maps answers unknown_method on the
+ * S8 and on the Qrevo Curv 2 Flow.
+ */
+
+/** `{"map_flag": 0}`, the form manual_bak_map and recover_multi_map were captured with. */
+internal fun encodeMapFlagParams(mapFlag: Int): JsonObject = JsonObject(mapOf("map_flag" to JsonPrimitive(mapFlag)))
+
+/** Replaces [mapFlag]'s backup with the map as it is now. Answered ["ok"] within 2 s. */
+suspend fun VacuumSession.backupMap(mapFlag: Int): V1Response =
+    sendCommandRaw("manual_bak_map", encodeMapFlagParams(mapFlag), timeoutMs = MAP_EDIT_TIMEOUT_MS)
+        .requireOk("manual_bak_map")
+
+/** Puts [mapFlag] back to its backup. Answered ["ok"] after about 2.5 s, map_status passing 19. */
+suspend fun VacuumSession.restoreMapBackup(mapFlag: Int): V1Response =
+    sendCommandRaw("recover_multi_map", encodeMapFlagParams(mapFlag), timeoutMs = MAP_EDIT_TIMEOUT_MS)
+        .requireOk("recover_multi_map")
 
 suspend fun VacuumSession.setLabStatus(labStatus: Int, reserveMap: Int?): V1Response =
     sendData("set_lab_status", labStatusData(labStatus, reserveMap))
