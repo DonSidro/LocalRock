@@ -104,4 +104,21 @@ class MapViewTest {
         assertNear(400f / 300f, upright)
         assertNear(2f, turned)
     }
+
+    @Test
+    fun a_layer_is_drawn_where_the_label_and_the_tap_think_it_is_at_any_heading_and_tilt() {
+        // The floor, the walls and the route go through layerMatrix; labels, obstacles and taps through
+        // toScreen. They must be the same transform, or the names drift off the rooms once the model turns.
+        for (yaw in listOf(0f, 35f, 90f, 137f, 270f)) {
+            for (squash in listOf(1f, 0.6f, 0.4f)) {
+                val v = view(yaw, squash)
+                for (height in listOf(0f, 12f)) {
+                    val viaLayer = v.layerMatrix(height).map(Offset(200f, 40f))
+                    val viaScreen = v.toScreen(200f, 40f, height)
+                    assertNear(viaScreen.x, viaLayer.x)
+                    assertNear(viaScreen.y, viaLayer.y)
+                }
+            }
+        }
+    }
 }

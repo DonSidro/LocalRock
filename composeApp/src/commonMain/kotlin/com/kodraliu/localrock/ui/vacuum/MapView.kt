@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.ui.vacuum
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Matrix
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -78,4 +79,31 @@ internal fun fitScale(
         extentH = (contentW * s + contentH * c) * squash
     }
     return minOf(canvasW / extentW, canvasH / extentH)
+}
+
+/**
+ * The view for a canvas whose floor plan is framed with scale [fit]. The user's [zoom] is a multiple of that
+ * frame and their [pan] is in units of it, so a canvas that changes size (a fold, a rotation of the phone)
+ * keeps the zoom and the point of the plan under its centre.
+ */
+internal fun framedView(
+    canvasW: Float, canvasH: Float, centerX: Float, centerY: Float,
+    fit: Float, zoom: Float, pan: Offset, yawDegrees: Float, squash: Float,
+): MapView = MapView(
+    canvasW = canvasW, canvasH = canvasH, centerX = centerX, centerY = centerY,
+    k = fit * zoom, pan = pan * fit, yawDegrees = yawDegrees, squash = squash,
+)
+
+/**
+ * The matrix that carries a layer pixel [height] up to the screen, built in the order [MapView.toScreen] uses:
+ * turn about the plan's centre first, then squash in screen space as a tilted camera does. Floor, walls and
+ * route all draw through it, so they cannot drift from the labels and taps at any heading or tilt.
+ */
+internal fun MapView.layerMatrix(height: Float): Matrix = Matrix().apply {
+    translate(0f, -height * k * lift)
+    translate(canvasW / 2f + pan.x, canvasH / 2f + pan.y)
+    scale(k, k)
+    scale(1f, squash)
+    rotateZ(yawDegrees)
+    translate(-centerX, -centerY)
 }

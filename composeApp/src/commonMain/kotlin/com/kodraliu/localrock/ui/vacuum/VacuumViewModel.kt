@@ -91,6 +91,11 @@ class VacuumViewModel(
         saveMap3DViewSoon()
     }
 
+    /** A twist or drag arrives as a change, so two events in one frame both count. */
+    fun turnMap3DBy(degrees: Float) = setMap3DYaw(_map3DYaw.value + degrees)
+
+    fun tiltMap3DBy(degrees: Float) = setMap3DTilt(_map3DTilt.value + degrees)
+
     fun setMap3DTilt(degrees: Float) {
         _map3DTilt.value = degrees.coerceIn(MAP_3D_MIN_TILT, MAP_3D_MAX_TILT)
         saveMap3DViewSoon()
