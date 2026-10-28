@@ -1,5 +1,7 @@
 package com.kodraliu.localrock.shared.vacuum
 
+import com.kodraliu.localrock.shared.model.Product
+
 /**
  * Maps the technical model string the robot reports (`roborock.vacuum.a101`) to the name Roborock
  * actually sells it under ("Roborock Qrevo Pro"), so the app can show the latter.
@@ -68,3 +70,10 @@ object ProductCatalog {
     /** The name Roborock sells [model] under, or [model] itself when it isn't in the catalog. */
     fun displayName(model: String?): String? = model?.let { names[it] ?: it }
 }
+
+/**
+ * The name to show for a robot: the one the server gives its product, so a new model gets a proper name
+ * without an app update, and otherwise the catalogue's, or the model as reported.
+ */
+fun productDisplayName(product: Product?): String? =
+    product?.name?.takeIf { it.isNotBlank() } ?: ProductCatalog.displayName(product?.model)

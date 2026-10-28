@@ -12,7 +12,7 @@ import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.RoomType
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
-import com.kodraliu.localrock.shared.vacuum.ProductCatalog
+import com.kodraliu.localrock.shared.vacuum.productDisplayName
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
 import kotlinx.coroutines.Job
@@ -42,7 +42,7 @@ class VacuumViewModel(
 
     val deviceName: String = device.name
     val modelName: String? = container.deviceRepository.productsByDuid.value[duid]?.model
-    val modelDisplayName: String? = ProductCatalog.displayName(modelName)
+    val modelDisplayName: String? = productDisplayName(container.deviceRepository.productsByDuid.value[duid])
     val firmwareVersion: String? = device.fv
     private val serverFeatureSet = device.newFeatureSet
     val dockCapabilities = DockCapabilities(modelName, device.featureSet, device.newFeatureSet)

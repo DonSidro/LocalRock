@@ -509,7 +509,14 @@ fun VacuumDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(viewModel.deviceName, style = MaterialTheme.typography.titleLarge) },
+                title = {
+                    Column {
+                        Text(viewModel.deviceName, style = MaterialTheme.typography.titleLarge)
+                        viewModel.modelDisplayName?.let {
+                            Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Go back")
