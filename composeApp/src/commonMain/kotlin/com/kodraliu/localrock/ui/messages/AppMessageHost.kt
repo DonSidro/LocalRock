@@ -110,8 +110,8 @@ fun BoxScope.TransientMessageHost(center: MessageCenter) {
                 // The app draws behind the navigation bar, so keep the toast above it (#51);
                 // cap the width so it stays readable (not stretched) on two-pane windows.
                 modifier = Modifier
-                    .fillMaxWidth()
                     .widthIn(max = 560.dp)
+                    .fillMaxWidth()
                     .navigationBarsPadding()
                     .padding(16.dp),
             ) {

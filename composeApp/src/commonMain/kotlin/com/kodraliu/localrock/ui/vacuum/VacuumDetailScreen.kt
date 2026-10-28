@@ -231,7 +231,8 @@ fun VacuumDetailScreen(
     var sessionRoomIds by remember { mutableStateOf(emptyList<Int>()) }
     var panel by remember { mutableStateOf<DetailPanel?>(null) }
     var openObstacle by remember { mutableStateOf<MapObstacle?>(null) }
-    BackHandler(enabled = LocalWindowLayout.current.twoPane && panel != null) { panel = null }
+    val twoPane = LocalWindowLayout.current.twoPane
+    BackHandler(enabled = twoPane && sidePaneShowsPanel(panel)) { panel = null }
     val routines by viewModel.routines.collectAsState()
     var recoverLoading by remember { mutableStateOf(false) }
     var recoverTick by remember { mutableIntStateOf(0) }
@@ -240,8 +241,7 @@ fun VacuumDetailScreen(
     var choosingMapToKeep by remember { mutableStateOf(false) }
     var lastCleanArea by remember { mutableStateOf<Long?>(null) }
     var cleaningCount by remember { mutableIntStateOf(1) }
-    // The map's pan/zoom lives here so it survives the compact ↔ two-pane switch; VacuumMapImage
-    // re-fits it to the pane size on resize.
+    // The map's pan/zoom lives here so it survives the compact ↔ two-pane switch.
     val mapViewport = remember { LiveMapViewport() }
 
 
@@ -296,9 +296,10 @@ fun VacuumDetailScreen(
 
     val onMoreAction: (MoreAction) -> Unit = { action ->
         when (action) {
-            // panelForMoreAction maps exactly these four to a panel; the rest navigate away.
-            MoreAction.ROOMS, MoreAction.DOCK, MoreAction.MAPS, MoreAction.ROUTINES ->
-                panel = checkNotNull(panelForMoreAction(action))
+            MoreAction.ROOMS -> panel = DetailPanel.Rooms
+            MoreAction.DOCK -> panel = DetailPanel.Dock
+            MoreAction.MAPS -> panel = DetailPanel.Maps
+            MoreAction.ROUTINES -> panel = DetailPanel.Routines
             MoreAction.ZONES -> { panel = null; onZoneClean() }
             MoreAction.PIN_GO -> { panel = null; onPinGo() }
             MoreAction.REMOTE -> { panel = null; onRemote() }
@@ -511,42 +512,39 @@ fun VacuumDetailScreen(
             )
         },
     ) { paddingValues ->
-        val twoPane = LocalWindowLayout.current.twoPane
         val dividerColor = MaterialTheme.colorScheme.outlineVariant
+        val MapHero: @Composable (Modifier) -> Unit = { modifier ->
+            MapHeroSection(
+                deviceId = viewModel.repository.duid,
+                parsedMap = parsedMap,
+                busy = busy,
+                selectedRoomIds = selectedRoomIds,
+                sessionRoomNames = sessionRoomNames,
+                floorMaps = floorMaps,
+                currentFloorFlag = currentFloorFlag,
+                onLoadMap = onLoadMap,
+                onRecover = onRecover,
+                onRoomTap = onRoomTap,
+                onObstacleTap = { openObstacle = it },
+                onFloorSwitch = onFloorSwitch,
+                onEditMap = onMapEdit,
+                mapViewport = mapViewport,
+                modifier = modifier,
+            )
+        }
 
         if (twoPane) {
             Row(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-                MapHeroSection(
-                    deviceId = viewModel.repository.duid,
-                    parsedMap = parsedMap,
-                    busy = busy,
-                    selectedRoomIds = selectedRoomIds,
-                    sessionRoomNames = sessionRoomNames,
-                    floorMaps = floorMaps,
-                    currentFloorFlag = currentFloorFlag,
-                    onLoadMap = onLoadMap,
-                    onRecover = onRecover,
-                    onRoomTap = onRoomTap,
-                    onObstacleTap = { openObstacle = it },
-                    onFloorSwitch = onFloorSwitch,
-                    onEditMap = onMapEdit,
-                    mapViewport = mapViewport,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                )
+                MapHero(Modifier.weight(1f).fillMaxSize())
 
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth(0.42f)
                         .widthIn(min = 320.dp, max = 480.dp)
+                        .fillMaxWidth(0.42f)
                         .fillMaxHeight()
                         .background(MaterialTheme.colorScheme.surface)
                         .drawBehind {
-                            drawLine(
-                                color = dividerColor,
-                                start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                                end = androidx.compose.ui.geometry.Offset(0f, size.height),
-                                strokeWidth = 1.dp.toPx(),
-                            )
+                            drawLine(dividerColor, Offset.Zero, Offset(0f, size.height), 1.dp.toPx())
                         },
                 ) {
                     Column(
@@ -555,22 +553,18 @@ fun VacuumDetailScreen(
                             .fillMaxWidth()
                             .consumeWindowInsets(WindowInsets.navigationBars),
                     ) {
-                        if (sidePaneShowsPanel(panel)) {
-                            panel?.let { currentPanel ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    IconButton(onClick = { panel = null }) {
-                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                                    }
-                                    Text(
-                                        currentPanel.title(),
-                                        style = MaterialTheme.typography.titleMedium,
-                                    )
+                        val headed = panel.takeIf { sidePaneShowsPanel(it) }
+                        if (headed != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                IconButton(onClick = { panel = null }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                                 }
-                                PanelBody(currentPanel)
+                                Text(headed.title(), style = MaterialTheme.typography.titleMedium)
                             }
+                            PanelBody(headed)
                         } else {
                             MoreActionsSheetContent(onAction = onMoreAction)
                         }
@@ -583,23 +577,7 @@ fun VacuumDetailScreen(
             // The map is the screen. Status and controls sit in a fixed band beneath it so the hero
             // never scrolls out of view and the primary action never moves under the thumb.
             Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-                MapHeroSection(
-                    deviceId = viewModel.repository.duid,
-                    parsedMap = parsedMap,
-                    busy = busy,
-                    selectedRoomIds = selectedRoomIds,
-                    sessionRoomNames = sessionRoomNames,
-                    floorMaps = floorMaps,
-                    currentFloorFlag = currentFloorFlag,
-                    onLoadMap = onLoadMap,
-                    onRecover = onRecover,
-                    onRoomTap = onRoomTap,
-                    onObstacleTap = { openObstacle = it },
-                    onFloorSwitch = onFloorSwitch,
-                    onEditMap = onMapEdit,
-                    mapViewport = mapViewport,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
+                MapHero(Modifier.weight(1f).fillMaxSize())
 
                 ControlBand()
             }
@@ -612,10 +590,8 @@ fun VacuumDetailScreen(
         }
     }
 
-    if (!LocalWindowLayout.current.twoPane && panel != null) {
-        ModalBottomSheet(onDismissRequest = { panel = null }) {
-            PanelBody(panel!!)
-        }
+    if (!twoPane) panel?.let { current ->
+        ModalBottomSheet(onDismissRequest = { panel = null }) { PanelBody(current) }
     }
 
     renamingMap?.let { floor ->
@@ -1237,6 +1213,8 @@ private fun ControlBar(
     }
 }
 
+
+private enum class MoreAction { ROOMS, ZONES, PIN_GO, REMOTE, SCHEDULE, CAMERA, DOCK, HISTORY, MAPS, EDIT_MAP, ROUTINES }
 
 @Composable
 private fun MoreActionsSheetContent(onAction: (MoreAction) -> Unit) {
