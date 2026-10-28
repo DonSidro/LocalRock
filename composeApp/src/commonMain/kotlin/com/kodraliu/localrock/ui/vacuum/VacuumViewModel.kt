@@ -21,7 +21,7 @@ class VacuumViewModel(
 ) : ViewModel() {
 
     private val device = requireNotNull(container.deviceRepository.devices.value.find { it.duid == duid }) {
-        "Device $duid not found — navigate to DeviceList first to load devices"
+        "Device $duid not found — navigate to the home screen first to load devices"
     }
 
     val deviceName: String = device.name

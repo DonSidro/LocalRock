@@ -8,7 +8,6 @@ import kotlinx.serialization.Serializable
 @Serializable data object ServerSetup
 @Serializable data object Login
 @Serializable data object Home
-@Serializable data object DeviceList
 @Serializable data object AppSettings
 @Serializable data object AddVacuum
 
