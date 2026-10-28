@@ -898,8 +898,11 @@ private fun VacuumMapImage(
     // A parsed map is mostly blank grid, so frame the floor plan rather than the padding around it.
     val bounds = remember(map) { map.contentBoundsNorm() }
     // Each view starts framed, and keeps its own zoom and position while it is showing.
-    var zoom by remember(map, is3D) { mutableStateOf(1f) }
-    var pan by remember(map, is3D) { mutableStateOf(Offset.Zero) }
+    // Zoom and position belong to the user. A live update replaces the map object every few seconds, so
+    // they are only reset when the map's coordinate space changes, not on each update.
+    val identity = map.viewportIdentity(viewportScope)
+    var zoom by remember(identity, is3D) { mutableStateOf(1f) }
+    var pan by remember(identity, is3D) { mutableStateOf(Offset.Zero) }
 
     val identity = map.viewportIdentity(viewportScope)
     val mapViewport = providedMapViewport ?: remember { LiveMapViewport() }
@@ -907,13 +910,17 @@ private fun VacuumMapImage(
     LaunchedEffect(identity, viewport, fit) {
         mapViewport.frameIfNeeded(identity, viewport, fit)
     }
+    // The gesture handlers outlive a live update, so they read the current map and view, not the ones they started with.
+    val currentMap by rememberUpdatedState(map)
+    val currentBitmap by rememberUpdatedState(bitmap)
+    val currentViewFor by rememberUpdatedState(::viewFor)
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
                 .clipToBounds()
-                .pointerInput(map, is3D) {
+                .pointerInput(identity, is3D) {
                     // Pinch zooms about the fingers. In 3D the model behaves like a maps app's 3D
                     // view: one finger moves it, a two-finger twist turns it to any heading, and two
                     // fingers dragged up or down together tip the camera. The flat map keeps the
@@ -935,7 +942,7 @@ private fun VacuumMapImage(
                         if (tilting && panChange.y != 0f) currentOnTiltChange(currentTilt - panChange.y * TILT_DEGREES_PER_PX)
                     }
                 }
-                .pointerInput(map, is3D) {
+                .pointerInput(identity, is3D) {
                     detectTapGestures(
                         // Double tap returns to the framed view; the heading is left as it is.
                         onDoubleTap = {
@@ -944,13 +951,13 @@ private fun VacuumMapImage(
                         },
                         onTap = { tap ->
                             // An obstacle dot is small, so a tap near one opens it before any room.
-                            val tapView = viewFor(size.width.toFloat(), size.height.toFloat())
-                            map.obstacleAt(tap, tapView, bitmap.width / map.width.toFloat(), 20.dp.toPx())
+                            val tapView = currentViewFor(size.width.toFloat(), size.height.toFloat())
+                            currentMap.obstacleAt(tap, tapView, currentBitmap.width / currentMap.width.toFloat(), 20.dp.toPx())
                                 ?.let { currentOnObstacleTap(it); return@detectTapGestures }
                             // The same transform that drew the map, run backwards, so a tap lands on
                             // the room under the finger at any heading, zoom or tilt.
                             val at = tapView.toBitmap(tap.x, tap.y)
-                            map.roomAtNorm(at.x / bitmap.width, at.y / bitmap.height)
+                            currentMap.roomAtNorm(at.x / currentBitmap.width, at.y / currentBitmap.height)
                                 ?.let { currentOnRoomTap(it.id) }
                         },
                     )
