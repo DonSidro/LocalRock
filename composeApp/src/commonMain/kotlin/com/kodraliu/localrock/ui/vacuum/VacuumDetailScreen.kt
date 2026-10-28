@@ -246,6 +246,7 @@ fun VacuumDetailScreen(
     var backingUpMap by remember { mutableStateOf<FloorMap?>(null) }
     var backingUpPicture by remember { mutableStateOf<ParsedMap?>(null) }
     var restoringMap by remember { mutableStateOf<FloorMap?>(null) }
+    var restoringPicture by remember { mutableStateOf<ParsedMap?>(null) }
     var choosingMapToKeep by remember { mutableStateOf(false) }
     var lastCleanArea by remember { mutableStateOf<Long?>(null) }
     var cleaningCount by remember { mutableIntStateOf(1) }
@@ -456,7 +457,10 @@ fun VacuumDetailScreen(
                     backingUpPicture = picture
                     backingUpMap = floor
                 },
-                onRestore = { restoringMap = it },
+                onRestore = { floor, picture ->
+                    restoringPicture = picture
+                    restoringMap = floor
+                },
                 loadSavedMap = { flag, backup -> viewModel.repository.fetchSavedMap(flag, backup) },
                 onStartMapping = {
                     panel = null
@@ -659,6 +663,7 @@ fun VacuumDetailScreen(
     restoringMap?.let { floor ->
         RestoreBackupDialog(
             floor = floor,
+            picture = restoringPicture,
             onConfirm = {
                 restoringMap = null
                 viewModel.run("Map restored from backup") { it.restoreFloorMapBackup(floor.mapFlag) }
@@ -2058,7 +2063,7 @@ private fun MapsSheetContent(
     onRename: (FloorMap) -> Unit,
     onDelete: (FloorMap) -> Unit,
     onBackup: (FloorMap, picture: ParsedMap?) -> Unit,
-    onRestore: (FloorMap) -> Unit,
+    onRestore: (FloorMap, backupPicture: ParsedMap?) -> Unit,
     loadSavedMap: suspend (mapFlag: Int, backup: Boolean) -> ParsedMap,
     onStartMapping: () -> Unit,
     onSaveNewMap: () -> Unit,
@@ -2239,7 +2244,7 @@ private fun MapsSheetContent(
                             Text("Back up now")
                         }
                         // Restoring was only captured for the loaded map.
-                        OutlinedButton(onClick = { onRestore(floor) }, enabled = canManage && selected && floor.backupAt != null) {
+                        OutlinedButton(onClick = { onRestore(floor, previews[previewKey(floor, backup = true)]) }, enabled = canManage && selected && floor.backupAt != null) {
                             Text("Restore backup")
                         }
                     }
@@ -2398,17 +2403,7 @@ private fun BackupMapDialog(floor: FloorMap, picture: ParsedMap?, onConfirm: () 
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // The map as the robot will save it; absent while the sheet is still fetching it.
-                if (picture != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .clip(MaterialTheme.shapes.medium)
-                            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-                    ) {
-                        SavedMapImage(picture, Modifier.fillMaxSize().padding(8.dp))
-                    }
-                }
+                picture?.let { DialogMapPicture(it) }
                 Text(
                     "The robot saves this map as it is now, with its rooms, zones, walls and carpets. " +
                         (floor.backupAt?.let { "It keeps one backup per map, so this replaces the backup from ${formatCleanRecordTime(it)}." }
@@ -2422,16 +2417,20 @@ private fun BackupMapDialog(floor: FloorMap, picture: ParsedMap?, onConfirm: () 
 }
 
 @Composable
-private fun RestoreBackupDialog(floor: FloorMap, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+private fun RestoreBackupDialog(floor: FloorMap, picture: ParsedMap?, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Restore \"${floor.name}\"?") },
         text = {
-            Text(
-                "The map goes back to the backup from ${floor.backupAt?.let { formatCleanRecordTime(it) } ?: "earlier"}. " +
-                    "Everything changed on it since then is lost: rooms, room names, no-go zones, walls, carpets " +
-                    "and thresholds. Check your routines afterwards.",
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // The backup the map goes back to; absent while the sheet is still fetching it.
+                picture?.let { DialogMapPicture(it) }
+                Text(
+                    "The map goes back to the backup from ${floor.backupAt?.let { formatCleanRecordTime(it) } ?: "earlier"}. " +
+                        "Everything changed on it since then is lost: rooms, room names, no-go zones, walls, carpets " +
+                        "and thresholds. Check your routines afterwards.",
+                )
+            }
         },
         confirmButton = {
             TextButton(
@@ -2441,6 +2440,20 @@ private fun RestoreBackupDialog(floor: FloorMap, onConfirm: () -> Unit, onDismis
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/** A saved map's picture at the top of a backup or restore dialog. */
+@Composable
+private fun DialogMapPicture(map: ParsedMap) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        SavedMapImage(map, Modifier.fillMaxSize().padding(8.dp))
+    }
 }
 
 @Composable
