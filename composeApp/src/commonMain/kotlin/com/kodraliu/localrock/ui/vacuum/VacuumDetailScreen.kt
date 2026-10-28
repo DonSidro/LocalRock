@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -112,6 +113,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -120,6 +122,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.backhandler.BackHandler
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -167,6 +170,7 @@ import com.kodraliu.localrock.shared.vacuum.map.MapObstacle
 import com.kodraliu.localrock.shared.vacuum.map.roomAtNorm
 import com.kodraliu.localrock.ui.AppColors
 import com.kodraliu.localrock.ui.adaptive.LocalWindowLayout
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.delay
 
 
@@ -448,6 +452,7 @@ fun VacuumDetailScreen(
                 onDelete = { deletingMap = it },
                 onBackup = { backingUpMap = it },
                 onRestore = { restoringMap = it },
+                loadSavedMap = { flag, backup -> viewModel.repository.fetchSavedMap(flag, backup) },
                 onStartMapping = {
                     panel = null
                     viewModel.run("Mapping started") { it.startMapping() }
@@ -2046,6 +2051,7 @@ private fun MapsSheetContent(
     onDelete: (FloorMap) -> Unit,
     onBackup: (FloorMap) -> Unit,
     onRestore: (FloorMap) -> Unit,
+    loadSavedMap: suspend (mapFlag: Int, backup: Boolean) -> ParsedMap,
     onStartMapping: () -> Unit,
     onSaveNewMap: () -> Unit,
     onRecheck: () -> Unit,
@@ -2066,6 +2072,28 @@ private fun MapsSheetContent(
             Text(blockedReason, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
         }
         val canManage = !busy && !loading && blockedReason == null
+
+        // A picture of each saved map and its backup, fetched when the sheet opens and again for a
+        // map or backup the robot reports as changed.
+        val previews = remember { mutableStateMapOf<String, ParsedMap>() }
+        val failedPreviews = remember { mutableStateMapOf<String, Boolean>() }
+        LaunchedEffect(floorMaps) {
+            for (floor in floorMaps) {
+                for (backup in listOf(false, true)) {
+                    if (backup && floor.backupAt == null) continue
+                    val key = previewKey(floor, backup)
+                    if (key in previews) continue
+                    failedPreviews.remove(key)
+                    try {
+                        previews[key] = loadSavedMap(floor.mapFlag, backup)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        failedPreviews[key] = true
+                    }
+                }
+            }
+        }
 
         // A robot that holds saved maps keeps maps, whatever its status says.
         if (mapSaving == false && floorMaps.isEmpty() && !loading) {
@@ -2181,6 +2209,24 @@ private fun MapsSheetContent(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SavedMapPreview(
+                            label = "Map",
+                            map = previews[previewKey(floor, backup = false)],
+                            failed = failedPreviews[previewKey(floor, backup = false)] == true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (floor.backupAt != null) {
+                            SavedMapPreview(
+                                label = "Backup",
+                                map = previews[previewKey(floor, backup = true)],
+                                failed = failedPreviews[previewKey(floor, backup = true)] == true,
+                                modifier = Modifier.weight(1f),
+                            )
+                        } else {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { onBackup(floor) }, enabled = canManage) {
                             Text("Back up now")
                         }
@@ -2283,6 +2329,57 @@ private fun KeepMapDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/** Changes when the robot stores the map or its backup again, so a new picture is fetched. */
+private fun previewKey(floor: FloorMap, backup: Boolean): String =
+    if (backup) "${floor.mapFlag}:backup:${floor.backupAt}" else "${floor.mapFlag}:map:${floor.savedAt}"
+
+/** A small picture of a saved map or its backup in the map list. */
+@Composable
+private fun SavedMapPreview(label: String, map: ParsedMap?, failed: Boolean, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(MaterialTheme.shapes.medium)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                map != null -> SavedMapImage(map, Modifier.fillMaxSize().padding(6.dp))
+                failed -> Text("Couldn't load", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+        }
+    }
+}
+
+/** The floor plan of [map], cut to the part that holds floor and fitted into the space. */
+@Composable
+private fun SavedMapImage(map: ParsedMap, modifier: Modifier = Modifier) {
+    val bitmap = rememberMapBitmap(map)
+    val bounds = remember(map) { map.contentBoundsNorm() }
+    Canvas(modifier) {
+        val usable = bounds.isUsable
+        val srcLeft = if (usable) bounds.left * bitmap.width else 0f
+        val srcTop = if (usable) bounds.top * bitmap.height else 0f
+        val srcW = (if (usable) bounds.width * bitmap.width else bitmap.width.toFloat()).coerceAtLeast(1f)
+        val srcH = (if (usable) bounds.height * bitmap.height else bitmap.height.toFloat()).coerceAtLeast(1f)
+        val scale = minOf(size.width / srcW, size.height / srcH)
+        val dstW = srcW * scale
+        val dstH = srcH * scale
+        drawImage(
+            image = bitmap,
+            srcOffset = IntOffset(srcLeft.toInt(), srcTop.toInt()),
+            srcSize = IntSize(srcW.toInt(), srcH.toInt()),
+            dstOffset = IntOffset(((size.width - dstW) / 2).toInt(), ((size.height - dstH) / 2).toInt()),
+            dstSize = IntSize(dstW.toInt(), dstH.toInt()),
+            filterQuality = FilterQuality.Low,
+        )
+    }
 }
 
 @Composable

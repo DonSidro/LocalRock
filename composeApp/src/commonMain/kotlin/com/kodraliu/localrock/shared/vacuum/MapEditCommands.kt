@@ -508,6 +508,12 @@ internal fun parseFloorMapList(mapInfo: JsonArray): List<FloorMap> = mapInfo.map
  * S8 and on the Qrevo Curv 2 Flow.
  */
 
+/** `{"map_index": 0}`, or `{"is_bak": 1, "map_index": 0}` for the map's backup. */
+internal fun savedMapParams(mapFlag: Int, backup: Boolean): JsonObject = JsonObject(buildMap {
+    if (backup) put("is_bak", JsonPrimitive(1))
+    put("map_index", JsonPrimitive(mapFlag))
+})
+
 /** `{"map_flag": 0}`, the form manual_bak_map and recover_multi_map were captured with. */
 internal fun encodeMapFlagParams(mapFlag: Int): JsonObject = JsonObject(mapOf("map_flag" to JsonPrimitive(mapFlag)))
 

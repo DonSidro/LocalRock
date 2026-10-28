@@ -1196,6 +1196,17 @@ class VacuumRepository(
      */
     suspend fun fetchMap(): MapResponse = mapFetchMutex.withLock { fetchMapLocked() }
 
+    /**
+     * A saved map, or with [backup] its on-robot backup, for showing in the map list. It takes its
+     * turn with the live map, since the session tracks one map request at a time.
+     */
+    suspend fun fetchSavedMap(mapFlag: Int, backup: Boolean): ParsedMap = mapFetchMutex.withLock {
+        val resp = session.fetchSavedMap(createSecurityData(rriotKeyProvider()), mapFlag, backup)
+        runCatching { parseB01Map(resp.data) }.getOrNull()
+            ?: runCatching { parseLegacyMap(resp.data) }.getOrNull()
+            ?: throw MapEditException("The robot sent a map this app can't read")
+    }
+
     private val photoMutex = Mutex()
     private val obstaclePhotos = mutableMapOf<String, ByteArray>()
 

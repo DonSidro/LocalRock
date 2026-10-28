@@ -70,6 +70,10 @@ class VacuumSession(
     private var collectorJob: Job? = null
     private var security: SecurityData? = null
     private var pendingMap: CompletableDeferred<MapResponse>? = null
+    /** Set while [pendingMap] is a saved-map request: only the frame answering this id completes it. */
+    private var pendingMapId: Int? = null
+    /** Saved-map requests sent so far. A late frame for one of them must never pass for the live map. */
+    private val savedMapRequestIds = mutableSetOf<Int>()
     /** Photos asked for with get_photo, by request id. */
     private val pendingBlobs = mutableMapOf<Int, CompletableDeferred<ByteArray>>()
 
@@ -214,13 +218,34 @@ class VacuumSession(
     }
 
 
-    suspend fun fetchMap(security: SecurityData, timeoutMs: Long = 30_000L): MapResponse {
+    suspend fun fetchMap(security: SecurityData, timeoutMs: Long = 30_000L): MapResponse =
+        requestMap(security, "get_map_v1", JsonArray(emptyList()), savedMap = false, timeoutMs = timeoutMs)
+
+    /**
+     * A saved map other than the live one, or with [backup] its on-robot backup, as the official app
+     * fetched them for its map list: `get_multi_map {"map_index": 0}`, `{"is_bak": 1, "map_index": 0}`
+     * (captured 2026-10-28). The robot answers ["ok"] (sometimes ["retry"] first) and then sends the
+     * map as a frame carrying the request id.
+     */
+    suspend fun fetchSavedMap(security: SecurityData, mapFlag: Int, backup: Boolean, timeoutMs: Long = 30_000L): MapResponse =
+        requestMap(security, "get_multi_map", savedMapParams(mapFlag, backup), savedMap = true, timeoutMs = timeoutMs)
+
+    private suspend fun requestMap(
+        security: SecurityData,
+        method: String,
+        params: JsonElement,
+        savedMap: Boolean,
+        timeoutMs: Long,
+    ): MapResponse {
         if (demo) return MapResponse(requestId = 0, data = ByteArray(0))
         check(collectorJob != null) { "Session must be started before fetchMap" }
         val deferred = CompletableDeferred<MapResponse>()
+        val requestId = nextRequestId()
         mutex.withLock {
             this.security = security
             pendingMap = deferred
+            pendingMapId = if (savedMap) requestId else null
+            if (savedMap) savedMapRequestIds += requestId
         }
         try {
             val ts = nowEpochSeconds()
@@ -228,10 +253,10 @@ class VacuumSession(
                 put("endpoint", security.endpoint)
                 put("nonce", security.nonceHex)
             }
-            val v1Payload = V1Envelope.encodeRequest(
-                requestId = nextRequestId(),
-                method = "get_map_v1",
-                params = emptyList(),
+            val v1Payload = V1Envelope.encodeRequestRaw(
+                requestId = requestId,
+                method = method,
+                params = params,
                 timestamp = ts,
                 extraInner = mapOf("security" to securityJson),
             )
@@ -247,7 +272,10 @@ class VacuumSession(
             mqtt.publish(topics.publishTopic, frame)
             return withTimeout(timeoutMs) { deferred.await() }
         } finally {
-            mutex.withLock { pendingMap = null }
+            mutex.withLock {
+                pendingMap = null
+                pendingMapId = null
+            }
         }
     }
 
@@ -291,7 +319,10 @@ class VacuumSession(
             val (sd, pendingMapDef) = mutex.withLock { security to pendingMap }
             if (sd != null && pendingMapDef != null) {
                 runCatching { decodeMapResponse(m, sd) }.getOrNull()?.let { mapResp ->
-                    if (!pendingMapDef.isCompleted) pendingMapDef.complete(mapResp)
+                    val wanted = mutex.withLock {
+                        pendingMapId?.let { it == mapResp.requestId } ?: (mapResp.requestId !in savedMapRequestIds)
+                    }
+                    if (wanted && !pendingMapDef.isCompleted) pendingMapDef.complete(mapResp)
                 }
             }
         }
