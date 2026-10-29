@@ -17,6 +17,7 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     var charger: ParsedMapPoint? = null
     var robot: ParsedMapPoint? = null
     var path: List<ParsedMapPoint> = emptyList()
+    var reportedCleanSegments: Set<Int>? = null
     var noGoZones: List<MapZone> = emptyList()
     var noMopZones: List<MapZone> = emptyList()
     var virtualWalls: List<VirtualWall> = emptyList()
@@ -36,11 +37,12 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         if (blockHeaderLen < 8 || blockHeaderLen > bytes.size - off) {
             throw MapParseException("Invalid block at off=$off: header_len=$blockHeaderLen")
         }
-        if (blockDataLen < 0 || off + blockHeaderLen + blockDataLen > bytes.size) {
+        if (blockDataLen < 0 || blockDataLen > bytes.size - off - blockHeaderLen) {
             throw MapParseException("Block body out of range at off=$off")
         }
         when (type) {
             BLOCK_DIGEST -> break
+            BLOCK_CLEAN_SEGMENTS -> reportedCleanSegments = parseRunSegments(bytes, off, blockHeaderLen, blockDataLen)
             BLOCK_IMAGE -> {
                 if (blockHeaderLen >= 28) {
                     val ih = off + 8
@@ -180,6 +182,8 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         chargerMm = charger,
         robotMm = robot,
         pathMm = path,
+        reportedCleanSegments = reportedCleanSegments,
+        legacyRevision = LegacyMapRevision(u32(bytes, 12).toLong() and 0xffffffffL, u32(bytes, 16).toLong() and 0xffffffffL),
         noGoZones = noGoZones,
         noMopZones = noMopZones,
         virtualWalls = virtualWalls,
@@ -257,6 +261,7 @@ private const val BLOCK_PATH = 3
 private const val BLOCK_ROBOT_POSITION = 8
 private const val BLOCK_FORBIDDEN_ZONES = 9        // persistent no-go zones
 private const val BLOCK_VIRTUAL_WALLS = 10
+private const val BLOCK_CLEAN_SEGMENTS = 11
 private const val BLOCK_FORBIDDEN_MOP_ZONES = 12   // persistent no-mop zones
 private const val BLOCK_SEGMENT_MATERIALS = 24
 
