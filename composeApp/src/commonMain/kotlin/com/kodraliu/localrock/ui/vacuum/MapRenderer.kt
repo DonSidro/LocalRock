@@ -80,10 +80,10 @@ private val DarkPalette = MapPalette(
  * the raw system setting, so the map never disagrees with the surface it sits on.
  */
 @Composable
-fun rememberMapBitmap(map: ParsedMap, drawRestrictions: Boolean = true): ImageBitmap {
+fun rememberMapBitmap(map: ParsedMap, drawRestrictions: Boolean = true, drawFurniture: Boolean = true): ImageBitmap {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return remember(map, dark, drawRestrictions) {
-        renderMap(map, if (dark) DarkPalette else LightPalette, drawRestrictions)
+    return remember(map, dark, drawRestrictions, drawFurniture) {
+        renderMap(map, if (dark) DarkPalette else LightPalette, drawRestrictions, drawFurniture, dark)
     }
 }
 
@@ -126,7 +126,7 @@ fun ParsedMap.contentBoundsNorm(): MapContentBounds {
 }
 
 /** [drawRestrictions] is false for the editor, which draws the shapes it is editing itself. */
-private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean): ImageBitmap {
+private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean, drawFurniture: Boolean, dark: Boolean): ImageBitmap {
     val bitmap = ImageBitmap(map.width, map.height)
     val canvas = Canvas(bitmap)
     val wallPaint = Paint().apply { color = palette.wall }
@@ -159,6 +159,7 @@ private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boo
             )
         }
     }
+    if (drawFurniture) drawMapFurniture(canvas, map, dark)
     if (map.pathMm.size >= 2) drawPath(canvas, map, palette)
     if (drawRestrictions) {
         map.carpetAreas.forEach { drawZone(canvas, map, it, CARPET_FILL, CARPET_STROKE) }

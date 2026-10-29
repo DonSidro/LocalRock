@@ -115,8 +115,12 @@ data class ParsedMap(
     /** Obstacles the robot recognised (legacy blocks 13-16). Shown, not edited. */
     val obstacles: List<MapObstacle> = emptyList(),
 
+    /** Existing furniture from legacy block 25, kept separately from restrictions and obstacles. */
+    val furnitureBlocks: List<MapFurnitureBlock> = emptyList(),
+
     val originalGrid: ByteArray? = null,
 ) {
+    val furniture: List<MapFurniture> by lazy { furnitureBlocks.flatMap { it.records } }
     val floorCells: Int by lazy { grid.count { (it.toInt() and 0xff) == 128 } }
     val wallCells: Int by lazy { grid.count { (it.toInt() and 0xff) == 127 } }
 
@@ -133,7 +137,8 @@ data class ParsedMap(
             other.format == format &&
             other.carpetAreas == carpetAreas &&
             other.thresholds == thresholds &&
-            other.obstacles == obstacles
+            other.obstacles == obstacles &&
+            other.furnitureBlocks == furnitureBlocks
 
     override fun hashCode(): Int {
         var r = width
@@ -153,6 +158,7 @@ data class ParsedMap(
         r = 31 * r + carpetAreas.hashCode()
         r = 31 * r + thresholds.hashCode()
         r = 31 * r + obstacles.hashCode()
+        r = 31 * r + furnitureBlocks.hashCode()
         return r
     }
 }

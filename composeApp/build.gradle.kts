@@ -71,6 +71,9 @@ kotlin {
             implementation(libs.ktor.client.mock)
             implementation(libs.kotlinx.coroutines.test)
         }
+        androidUnitTest.dependencies {
+            implementation("org.robolectric:robolectric:4.16.1")
+        }
     }
 }
 
