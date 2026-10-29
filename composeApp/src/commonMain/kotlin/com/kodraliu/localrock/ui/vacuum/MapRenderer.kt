@@ -30,60 +30,21 @@ private val THRESHOLD_FILL = Color(0x66ffb300)  // amber, small strips across do
 private val THRESHOLD_STROKE = Color(0xffffb300)
 
 /**
- * The map is the signature surface, so it gets a palette per theme instead of one light bitmap
- * that glows in a dark UI. Room tints stay in a narrow luminance band so no single room shouts,
- * and markers differ in shape as well as colour so they don't rely on colour alone.
- */
-private class MapPalette(
-    val wall: Color,
-    val floor: Color,
-    val rooms: List<Color>,
-    val path: Color,
-    val charger: Color,
-    val robot: Color,
-    /** Drawn behind both markers so they stay readable on any room tint. */
-    val markerRing: Color,
-)
-
-// Light is NOT the dark palette inverted: the rooms have to sit *above* their container, so the
-// hero behind them is near-white and these tints carry enough weight to advance against it.
-private val LightPalette = MapPalette(
-    // A softer slate than near-black: at 1px over pastel, near-black reads as harsh scratchy noise.
-    wall = Color(0xFF3A4A52),
-    floor = Color(0xFFE9EFEE),
-    rooms = listOf(
-        Color(0xFFBFE0DC), Color(0xFFC8DCEF), Color(0xFFCBE3C4), Color(0xFFEBDCC4),
-        Color(0xFFD8D2E8), Color(0xFFC9E2E4), Color(0xFFEBD5CC), Color(0xFFD3E0D0),
-    ),
-    // Deep enough to read as ink rather than neon against the pastels.
-    path = Color(0xFFC75B00),
-    charger = Color(0xFF1565C0),
-    robot = Color(0xFF00595A),
-    markerRing = Color(0xFFFFFFFF),
-)
-
-private val DarkPalette = MapPalette(
-    wall = Color(0xFF070B0C),
-    floor = Color(0xFF17201F),
-    rooms = listOf(
-        Color(0xFF1E3A38), Color(0xFF1F3140), Color(0xFF24382A), Color(0xFF3A3328),
-        Color(0xFF2E2A3B), Color(0xFF1C3639), Color(0xFF38292A), Color(0xFF26332A),
-    ),
-    path = Color(0xFFFFD54F),
-    charger = Color(0xFF64B5F6),
-    robot = Color(0xFF4CDADA),
-    markerRing = Color(0xFF0B1112),
-)
-
-/**
  * Follows whatever scheme is actually applied — including platform dynamic colour — rather than
  * the raw system setting, so the map never disagrees with the surface it sits on.
  */
 @Composable
-fun rememberMapBitmap(map: ParsedMap, drawRestrictions: Boolean = true): ImageBitmap {
+fun rememberMapBitmap(
+    map: ParsedMap,
+    drawRestrictions: Boolean = true,
+    drawCleaningPath: Boolean = true,
+    activeRunRoomIds: Set<Int> = emptySet(),
+    selectedRoomIds: Set<Int> = emptySet(),
+): ImageBitmap {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return remember(map, dark, drawRestrictions) {
-        renderMap(map, if (dark) DarkPalette else LightPalette, drawRestrictions)
+    val highlightedRooms = highlightedRoomIds(selectedRoomIds, activeRunRoomIds)
+    return remember(map, dark, drawRestrictions, drawCleaningPath, highlightedRooms) {
+        renderMap(map, if (dark) DarkMapPalette else LightMapPalette, drawRestrictions, drawCleaningPath, highlightedRooms)
     }
 }
 
@@ -109,7 +70,7 @@ fun ParsedMap.contentBoundsNorm(): MapContentBounds {
         val drawY = height - 1 - y
         for (x in 0 until width) {
             val gv = grid[rowOff + x].toInt() and 0xff
-            if (gv != 127 && gv != 128) continue
+            if (gv != 127 && gv != 128 && roomIdAtCell(x, y) == null) continue
             if (x < minX) minX = x
             if (x > maxX) maxX = x
             if (drawY < minY) minY = drawY
@@ -126,7 +87,10 @@ fun ParsedMap.contentBoundsNorm(): MapContentBounds {
 }
 
 /** [drawRestrictions] is false for the editor, which draws the shapes it is editing itself. */
-private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean): ImageBitmap {
+private fun renderMap(
+    map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean,
+    drawCleaningPath: Boolean, activeRunRoomIds: Set<Int>,
+): ImageBitmap {
     val bitmap = ImageBitmap(map.width, map.height)
     val canvas = Canvas(bitmap)
     val wallPaint = Paint().apply { color = palette.wall }
@@ -135,22 +99,21 @@ private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boo
     val w = map.width
     val h = map.height
     val grid = map.grid
-    val raw = map.originalGrid
     for (y in 0 until h) {
         val rowOff = y * w
         // Flip Y so the map reads with origin at the top (matches the Roborock app).
         val drawY = (h - 1 - y).toFloat()
         for (x in 0 until w) {
             val gv = grid[rowOff + x].toInt() and 0xff
-            val paint = when (gv) {
-                127 -> wallPaint
-                128 -> {
-                    if (raw != null) {
-                        val roomId = (raw[rowOff + x].toInt() ushr 3) and 0x1f
-                        roomPaint.color = palette.rooms[roomId % palette.rooms.size]
-                        roomPaint
-                    } else floorPaint
+            val roomId = map.roomIdAtCell(x, y)
+            val paint = when {
+                gv == 127 -> wallPaint
+                roomId != null -> {
+                    val tint = palette.rooms[roomId % palette.rooms.size]
+                    roomPaint.color = if (roomId in activeRunRoomIds) tint.active else tint.pale
+                    roomPaint
                 }
+                gv == 128 -> floorPaint
                 else -> continue
             }
             canvas.drawRect(
@@ -159,7 +122,16 @@ private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boo
             )
         }
     }
-    if (map.pathMm.size >= 2) drawPath(canvas, map, palette)
+    val outline = Paint().apply { style = PaintingStyle.Stroke; strokeWidth = 0.45f }
+    // Draw pale edges first, then target edges, so a neighbour cannot overwrite the emphasis.
+    for (emphasized in listOf(false, true)) map.forEachRoomEdge { id, x0, y0, x1, y1 ->
+        if ((id in activeRunRoomIds) == emphasized) {
+            outline.color = if (emphasized) palette.rooms[id % palette.rooms.size].outline else palette.roomOutline
+            outline.strokeWidth = if (emphasized) 0.7f else 0.35f
+            canvas.drawLine(Offset(x0, y0), Offset(x1, y1), outline)
+        }
+    }
+    if (drawCleaningPath && map.pathMm.size >= 2) drawPath(canvas, map, palette)
     if (drawRestrictions) {
         map.carpetAreas.forEach { drawZone(canvas, map, it, CARPET_FILL, CARPET_STROKE) }
         map.thresholds.forEach { drawZone(canvas, map, it, THRESHOLD_FILL, THRESHOLD_STROKE) }
