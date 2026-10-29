@@ -1511,7 +1511,7 @@ private fun CleaningModeSheetContent(
                     when (selectedTab) {
                         0 -> { suction(); water(); CountSelector(cleaningCount, onCountChange); route() }
                         1 -> { water(); CountSelector(cleaningCount, onCountChange); route() }
-                        2 -> { suction(); CountSelector(cleaningCount, onCountChange) }
+                        2 -> { suction(); CountSelector(cleaningCount, onCountChange); route() }
                     }
                 }
             }
