@@ -45,9 +45,13 @@ class AuthRepository(
         return try {
             login(email, code)
         } catch (e: LoginException) {
-            // The stored credentials are no longer valid — drop them so we stop retrying.
-            println("[VacLocal] silent re-login rejected (${e.responseCode}): ${e.message}")
-            settings.writeLoginCredentials(null, null)
+            if (!e.isCredentialsRejected) {
+                println("[VacLocal] silent re-login failed: ${e.message}")
+            } else {
+                // The stored credentials are no longer valid — drop them so we stop retrying.
+                println("[VacLocal] silent re-login rejected: ${e.message}")
+                settings.writeLoginCredentials(null, null)
+            }
             null
         } catch (e: Throwable) {
             // Network trouble: keep the credentials, this is worth retrying later.
