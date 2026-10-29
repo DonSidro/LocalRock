@@ -240,7 +240,15 @@ class VacuumViewModel(
         }
     }
 
-    fun run(successMessage: String? = null, action: suspend (VacuumRepository) -> Unit) {
+    /**
+     * Runs [action] with the screen marked busy and reads the status back. A failure goes to
+     * [onError] when one is given, for a bottom sheet that would hide the screen's message.
+     */
+    fun run(
+        successMessage: String? = null,
+        onError: ((String) -> Unit)? = null,
+        action: suspend (VacuumRepository) -> Unit,
+    ) {
         viewModelScope.launch {
             pendingActions++
             _busy.value = true
@@ -254,7 +262,8 @@ class VacuumViewModel(
                         successMessage?.let { container.messages.success(it) }
                     } catch (e: Throwable) {
                         coroutineContext.ensureActive()
-                        container.messages.error(describe(e))
+                        val text = describe(e)
+                        if (onError != null) onError(text) else container.messages.error(text)
                     }
                 }
             } finally {
