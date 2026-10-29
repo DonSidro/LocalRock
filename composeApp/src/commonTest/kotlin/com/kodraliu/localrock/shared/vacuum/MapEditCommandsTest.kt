@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -265,6 +266,39 @@ class MapEditCommandsTest {
         assertEquals(1, saveMapIndex(listOf(FloorMap("Home", 1))))
         assertNull(saveMapIndex(emptyList()))
         assertNull(saveMapIndex(listOf(FloorMap("Down", 0), FloorMap("Up", 1))))
+    }
+
+    @Test
+    fun backup_and_restore_name_the_map_by_its_flag() {
+        // manual_bak_map and recover_multi_map, captured on the S8 2026-10-28.
+        assertEquals("""{"map_flag":0}""", encodeMapFlagParams(0).toString())
+        assertEquals("""{"map_flag":2}""", encodeMapFlagParams(2).toString())
+    }
+
+    @Test
+    fun saved_map_and_backup_requests_match_capture() {
+        // get_multi_map as the official app sent it for the map list and the backup preview.
+        assertEquals("""{"map_index":0}""", savedMapParams(0, backup = false).toString())
+        assertEquals("""{"is_bak":1,"map_index":0}""", savedMapParams(0, backup = true).toString())
+    }
+
+    @Test
+    fun map_list_carries_each_maps_backup_time() {
+        // get_multi_maps_list from the S8 2026-10-28, after "Back up now" on "Hus".
+        val mapInfo = Json.parseToJsonElement(
+            """[{"mapFlag": 0, "add_time": 1792948453, "length": 3, "name": "Hus", "bak_maps": [{"mapFlag": 4, "add_time": 1793228732}]},""" +
+                """{"mapFlag": 1, "add_time": 1790866608, "length": 0, "name": "", "bak_maps": [{"mapFlag": 5, "add_time": 1790866608}]}]""",
+        ).jsonArray
+        assertEquals(
+            listOf(
+                FloorMap("Hus", 0, savedAt = 1792948453, backupAt = 1793228732),
+                FloorMap("Map 2", 1, savedAt = 1790866608, backupAt = 1790866608),
+            ),
+            parseFloorMapList(mapInfo),
+        )
+        // A map listed without bak_maps has no backup.
+        val noBackup = Json.parseToJsonElement("""[{"mapFlag": 0, "add_time": 1, "name": "Hus"}]""").jsonArray
+        assertNull(parseFloorMapList(noBackup).single().backupAt)
     }
 
     @Test
