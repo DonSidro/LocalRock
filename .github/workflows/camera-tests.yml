@@ -1,0 +1,139 @@
+name: Experimental camera
+on:
+  push:
+    branches: [experimental/camera-live-view, experimental/camera-controls, video-support]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: camera-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+  checks: write
+jobs:
+  native-offer:
+    runs-on: macos-26-intel
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check actual native offers and apply Opus/H264 answers
+        run: |
+          set -o pipefail
+          mkdir -p local-work/rtc-offer-check/Sources/RtcOfferCheck
+          cp tools/rtc-offer-check/Package.swift local-work/rtc-offer-check/
+          cp tools/rtc-offer-check/main.swift iosApp/iosApp/WebRtcOffer.swift local-work/rtc-offer-check/Sources/RtcOfferCheck/
+          {
+            swift package --package-path local-work/rtc-offer-check resolve
+            python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          root = Path('local-work/rtc-offer-check/.build/artifacts/webrtc/WebRTC/WebRTC.xcframework')
+          headers = root / 'macos-x86_64_arm64/WebRTC.framework/Headers'
+          source = root / 'ios-arm64/WebRTC.framework/Headers'
+          # M149's macOS slice omits public headers other than its umbrella. Use the
+          # matching API headers from the same checksum-verified XCFramework release.
+          # This affects the CI harness only; the iPhone app uses its complete iOS slice.
+          if not (headers / 'RTCAudioSource.h').is_file():
+              assert (source / 'RTCAudioSource.h').is_file()
+              for item in source.glob('*.h'):
+                  if not (headers / item.name).exists():
+                      shutil.copyfile(item, headers / item.name)
+              print('Restored matching M149 API headers for the macOS offer check.')
+          # The absent macOS-only view header is outside this headless peer test.
+          umbrella = headers / 'WebRTC.h'
+          umbrella.write_text(umbrella.read_text().replace('#import <WebRTC/RTCMTLNSVideoView.h>', ''))
+          PY
+            swift build --package-path local-work/rtc-offer-check
+            # Some SDK builds emit C++ diagnostics despite the Objective-C log setting.
+            # Keep runtime stderr out of CI output; the harness reports safe failures on stdout.
+            swift run --skip-build --package-path local-work/rtc-offer-check 2>/dev/null
+          } 2>&1 | tee offer-check.log
+      - name: Publish native offer verification
+        if: always() && github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.existsSync('offer-check.log') ? fs.readFileSync('offer-check.log', 'utf8') : 'Check did not start.';
+            await github.rest.checks.create({owner: context.repo.owner, repo: context.repo.repo,
+              head_sha: context.sha, name: 'Camera native offer verification', status: 'completed',
+              conclusion: '${{ job.status }}' === 'success' ? 'success' : 'failure',
+              output: {title: 'Actual WebRTC offers and answer acceptance', summary: 'Same Swift offer setup as the iPhone app, executed on macOS; device capture remains necessary.',
+                text: '```text\n' + log.slice(-24000) + '\n```'}});
+  shared-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Shared tests and Android compilation
+        run: |
+          set -o pipefail
+          ./gradlew :composeApp:testDebugUnitTest :composeApp:assembleDebug --stacktrace 2>&1 | tee build.log
+      - name: Publish compiler and test results
+        if: always() && github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.existsSync('build.log') ? fs.readFileSync('build.log', 'utf8') : 'Build did not start.';
+            const tests = 'composeApp/build/test-results/testDebugUnitTest';
+            let summary = '';
+            if (fs.existsSync(tests)) {
+              for (const f of fs.readdirSync(tests).filter(f => f.endsWith('.xml'))) {
+                const xml = fs.readFileSync(`${tests}/${f}`, 'utf8');
+                summary += xml.match(/<testsuite[^>]+>/)?.[0] + '\n';
+                if (!xml.includes('failures="0"')) summary += xml.slice(0, 16000);
+              }
+            }
+            await github.rest.checks.create({owner: context.repo.owner, repo: context.repo.repo,
+              head_sha: context.sha, name: 'Camera shared test diagnostics', status: 'completed',
+              conclusion: '${{ job.status }}' === 'success' ? 'success' : 'failure',
+              output: {title: 'Shared tests and Android compilation', summary: summary.slice(-10000) || 'See output.',
+                text: '```text\n' + log.slice(-48000) + '\n```'}});
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: camera-shared-test-reports
+          path: composeApp/build/reports/tests
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: emqx/CocoaMQTT
+          ref: '2.4.1'
+          path: local-work/dependencies/CocoaMQTT
+      - name: Locate the existing local package in this CI checkout
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('iosApp/iosApp.xcodeproj/project.pbxproj')
+          p.write_text(p.read_text().replace('../../CocoaMQTT-master', '../local-work/dependencies/CocoaMQTT'))
+          PY
+      - name: Compile shared iOS code and complete unsigned iPhone app
+        run: |
+          set -o pipefail
+          ./gradlew :composeApp:compileKotlinIosArm64 :composeApp:compileKotlinIosSimulatorArm64 --stacktrace 2>&1 | tee build.log
+          xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug -destination 'generic/platform=iOS' -derivedDataPath local-work/DerivedData CODE_SIGNING_ALLOWED=NO build 2>&1 | tee -a build.log
+      - name: Publish iOS compiler results
+        if: always() && github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.existsSync('build.log') ? fs.readFileSync('build.log', 'utf8') : 'Build did not start.';
+            await github.rest.checks.create({owner: context.repo.owner, repo: context.repo.repo,
+              head_sha: context.sha, name: 'Camera iOS build diagnostics', status: 'completed',
+              conclusion: '${{ job.status }}' === 'success' ? 'success' : 'failure',
+              output: {title: 'Shared iOS and Swift app compilation', summary: 'Unsigned generic iPhone build; hardware testing is separate.',
+                text: '```text\n' + log.slice(-48000) + '\n```'}});
+
