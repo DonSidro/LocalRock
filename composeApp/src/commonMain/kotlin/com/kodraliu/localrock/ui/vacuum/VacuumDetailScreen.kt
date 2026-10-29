@@ -157,6 +157,7 @@ import com.kodraliu.localrock.shared.vacuum.RoomCleanMode
 import com.kodraliu.localrock.shared.vacuum.SWITCH_MAP_MODE_SMART
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumFanPower
+import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.VacuumStateCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumStatus
 import com.kodraliu.localrock.shared.vacuum.WaterBoxMode
@@ -198,6 +199,8 @@ private val ROUTE_OPTIONS = listOf(
     MopRoute.DEEP_PLUS to "Deep+",
     MopRoute.FAST to "Fast",
 )
+
+private val DEEP_ROUTES = setOf(MopRoute.DEEP, MopRoute.DEEP_PLUS)
 
 private val ACTIVE_CLEANING_STATES = setOf(
     VacuumStateCodes.CLEANING, VacuumStateCodes.SEGMENT_CLEANING,
@@ -396,36 +399,45 @@ fun VacuumDetailScreen(
                 onAutoEmptyModeChange = { mode -> viewModel.run { repo -> repo.setAutoEmptyMode(mode) } },
             )
 
-            DetailPanel.CleaningMode -> CleaningModeSheetContent(
-                currentFanPower = status.fanPower,
-                currentWaterMode = status.waterBoxCustomMode,
-                currentRoute = mopMode,
-                cleaningCount = cleaningCount,
-                busy = busy,
-                supportsSmartPlan = supportsSmartPlan,
-                rooms = parsedMap?.rooms ?: emptyList(),
-                roomCleanModes = roomCleanModes,
-                roomModesLoaded = roomModesLoaded,
-                onPlanSelected = { plan ->
-                    viewModel.run {
-                        when (plan) {
-                            CleanPlan.SMART -> it.setCleanMotorMode(VacuumFanPower.SMART, WaterBoxMode.SMART, MopRoute.SMART)
-                            CleanPlan.MANUAL -> {
-                                // Water slide robots get a slide code, as python-roborock does.
-                                val water = if (supportsWaterSlide) WaterBoxMode.SLIDE_MEDIUM else WaterBoxMode.LOW
-                                it.setCleanMotorMode(VacuumFanPower.BALANCED, water, MopRoute.STANDARD)
+            DetailPanel.CleaningMode -> {
+                // A refusal is shown in the sheet; the screen's own message would be behind it.
+                var modeError by remember { mutableStateOf<String?>(null) }
+                fun runMode(successMessage: String? = null, action: suspend (VacuumRepository) -> Unit) {
+                    modeError = null
+                    viewModel.run(successMessage, onError = { modeError = it }, action = action)
+                }
+                CleaningModeSheetContent(
+                    currentFanPower = status.fanPower,
+                    currentWaterMode = status.waterBoxCustomMode,
+                    currentRoute = mopMode,
+                    cleaningCount = cleaningCount,
+                    busy = busy,
+                    supportsSmartPlan = supportsSmartPlan,
+                    rooms = parsedMap?.rooms ?: emptyList(),
+                    roomCleanModes = roomCleanModes,
+                    roomModesLoaded = roomModesLoaded,
+                    error = modeError,
+                    onPlanSelected = { plan ->
+                        runMode {
+                            when (plan) {
+                                CleanPlan.SMART -> it.setCleanMotorMode(VacuumFanPower.SMART, WaterBoxMode.SMART, MopRoute.SMART)
+                                CleanPlan.MANUAL -> {
+                                    // Water slide robots get a slide code, as python-roborock does.
+                                    val water = if (supportsWaterSlide) WaterBoxMode.SLIDE_MEDIUM else WaterBoxMode.LOW
+                                    it.setCleanMotorMode(VacuumFanPower.BALANCED, water, MopRoute.STANDARD)
+                                }
+                                // The three codes the official app sent for its Customize tab.
+                                CleanPlan.PER_ROOM -> it.setCleanMotorMode(VacuumFanPower.CUSTOM, WaterBoxMode.CUSTOM, MopRoute.CUSTOM)
                             }
-                            // The three codes the official app sent for its Customize tab.
-                            CleanPlan.PER_ROOM -> it.setCleanMotorMode(VacuumFanPower.CUSTOM, WaterBoxMode.CUSTOM, MopRoute.CUSTOM)
                         }
-                    }
-                },
-                onSaveRoomModes = { modes -> viewModel.run("Room settings saved") { it.saveRoomCleanModes(modes) } },
-                onFanPowerSelected = { level -> viewModel.run { it.setFanPower(level) } },
-                onWaterModeSelected = { level -> viewModel.run { it.setWaterBoxMode(level) } },
-                onRouteSelected = { mode -> viewModel.run { it.setMopMode(mode) } },
-                onCountChange = { cleaningCount = it },
-            )
+                    },
+                    onSaveRoomModes = { modes -> runMode("Room settings saved") { it.saveRoomCleanModes(modes) } },
+                    onFanPowerSelected = { level -> runMode { it.setFanPower(level) } },
+                    onWaterModeSelected = { level -> runMode { it.setWaterBoxMode(level) } },
+                    onRouteSelected = { mode -> runMode { it.setMopMode(mode) } },
+                    onCountChange = { cleaningCount = it },
+                )
+            }
 
             DetailPanel.Maps -> MapsSheetContent(
                 floorMaps = floorMaps,
@@ -1412,6 +1424,7 @@ private fun CleaningModeSheetContent(
     rooms: List<ParsedMapRoom>,
     roomCleanModes: List<RoomCleanMode>,
     roomModesLoaded: Boolean?,
+    error: String?,
     onPlanSelected: (CleanPlan) -> Unit,
     onSaveRoomModes: (List<RoomCleanMode>) -> Unit,
     onFanPowerSelected: (Int) -> Unit,
@@ -1448,6 +1461,14 @@ private fun CleaningModeSheetContent(
                     if (plans[it] != plan) onPlanSelected(plans[it])
                 }
             }
+        }
+        error?.let {
+            Text(
+                it,
+                modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
         if (smart) {
             Column(Modifier.padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -1591,7 +1612,11 @@ private fun RoomCleanModesEditor(
                         ModeOptionSelector("Water flow", WATER_OPTIONS.map { it.second }, WATER_OPTIONS.indexOfFirst { it.first == WaterBoxMode.normalize(mode.waterBoxMode) }, !busy) {
                             val water = WATER_OPTIONS[it].first
                             val fan = if (water == WaterBoxMode.OFF && mode.fanPower == VacuumFanPower.OFF) VacuumFanPower.BALANCED else mode.fanPower
-                            update(mode.copy(fanPower = fan, waterBoxMode = water))
+                            // The route is hidden without water. A Qrevo S Pro (02.33.88) refuses Deep and Deep+ in a
+                            // room that vacuums and a Qrevo Curv 2 Flow refuses Deep in any room, so a hidden one
+                            // would make the whole save fail.
+                            val route = if (water == WaterBoxMode.OFF && mode.mopMode in DEEP_ROUTES) MopRoute.STANDARD else mode.mopMode
+                            update(mode.copy(fanPower = fan, waterBoxMode = water, mopMode = route))
                         }
                         if (mode.waterBoxMode != WaterBoxMode.OFF) {
                             ModeOptionSelector("Route", ROUTE_OPTIONS.map { it.second }, ROUTE_OPTIONS.indexOfFirst { it.first == mode.mopMode }, !busy) {
