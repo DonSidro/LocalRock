@@ -5,7 +5,10 @@ import android.graphics.Color as AndroidColor
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import com.kodraliu.localrock.shared.vacuum.map.FURNITURE_CATALOG
+import com.kodraliu.localrock.ui.VacDarkColorScheme
+import com.kodraliu.localrock.ui.VacLightColorScheme
 import java.io.File
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -102,6 +105,43 @@ class FurnitureRenderingTest {
                         android.graphics.Paint().apply { color = AndroidColor.WHITE; textSize = 15f; isAntiAlias = true })
                 }
                 File(output, "$name-$row.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) }
+            }
+        }
+        renderCatalogPreviews(output)
+    }
+
+    // Review the same 64dp catalog and 48dp Items artwork on the actual theme surfaces.
+    private fun renderCatalogPreviews(output: File) {
+        for (dark in listOf(false, true)) for (previewSize in listOf(64, 48)) {
+            val scheme = if (dark) VacDarkColorScheme else VacLightColorScheme
+            val bitmap = Bitmap.createBitmap(336, 840, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(scheme.surface.toArgb())
+            val canvas = Canvas(bitmap.asImageBitmap())
+            val native = android.graphics.Canvas(bitmap)
+            val card = android.graphics.Paint().apply {
+                color = scheme.surfaceContainer.toArgb(); isAntiAlias = true
+            }
+            val label = android.graphics.Paint().apply {
+                color = scheme.onSurface.toArgb(); textSize = 10f; isAntiAlias = true
+                textAlign = android.graphics.Paint.Align.CENTER
+            }
+            for ((index, kind) in FURNITURE_CATALOG.withIndex()) {
+                val left = (index % 3) * 112f
+                val top = (index / 3) * 120f
+                native.drawRoundRect(left + 4, top + 4, left + 108, top + 116, 16f, 16f, card)
+                val ratio = minOf(previewSize.toFloat() / kind.widthMm, previewSize.toFloat() / kind.depthMm) * .85f
+                val w = kind.widthMm * ratio; val h = kind.depthMm * ratio
+                val x = left + (112 - w) / 2; val y = top + 8 + (64 - h) / 2
+                drawFurniturePreviewSymbol(canvas, listOf(Offset(x,y),Offset(x+w,y),Offset(x+w,y+h),Offset(x,y+h)),
+                    kind.type, kind.subtype, dark, 1f)
+                val words = kind.label.split(" ")
+                val lines = if (label.measureText(kind.label) <= 96f) listOf(kind.label)
+                    else listOf(words.dropLast(1).joinToString(" "), words.last())
+                for ((line, text) in lines.withIndex()) native.drawText(text, left + 56, top + 88 + line * 12, label)
+            }
+            val theme = if (dark) "dark" else "light"
+            File(output, "catalog-$theme-$previewSize.png").outputStream().use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
             }
         }
     }

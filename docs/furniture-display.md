@@ -3,7 +3,9 @@
 The Furniture layer and editor use all 21 S7 MaxV picker choices: two beds, TV stand,
 three sofas, two chaise sofas, dining set, square and coffee tables, shoe rack,
 wardrobe, nightstand, two litter boxes, pet cage, pet bed, pet bowls, floor mirror,
-and cat tower. The vector illustrations use a uniform gray fill with transparent detail cutouts.
+and cat tower. On the map, the vector illustrations use a uniform gray fill with
+transparent detail cutouts. The Add furniture catalog and Items list use the original
+colored illustrations with contrasting outlines for clear previews in either theme.
 Saved four-corner footprints control position, rotation and dimensions.
 
 Open **Edit map → Furniture**, using the tile below the zone tools. Save or discard

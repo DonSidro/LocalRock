@@ -265,7 +265,7 @@ private fun FurniturePreview(kind: FurnitureKind, modifier: Modifier) {
         val ratio = minOf(size.width / kind.widthMm, size.height / kind.depthMm) * .85f
         val w = kind.widthMm * ratio; val h = kind.depthMm * ratio
         val x = (size.width - w) / 2; val y = (size.height - h) / 2
-        drawIntoCanvas { drawFurnitureSymbol(it, listOf(Offset(x, y), Offset(x + w, y), Offset(x + w, y + h), Offset(x, y + h)),
+        drawIntoCanvas { drawFurniturePreviewSymbol(it, listOf(Offset(x, y), Offset(x + w, y), Offset(x + w, y + h), Offset(x, y + h)),
             kind.type, kind.subtype, dark, 1.dp.toPx()) }
     }
 }
