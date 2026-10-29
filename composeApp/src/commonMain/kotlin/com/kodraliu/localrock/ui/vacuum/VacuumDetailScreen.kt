@@ -1377,7 +1377,7 @@ private fun CleaningModeSheetContent(
 ) {
     val initialTab = when {
         (currentWaterMode ?: WaterBoxMode.OFF) == WaterBoxMode.OFF -> 2
-        currentFanPower == VacuumFanPower.QUIET -> 1
+        currentFanPower == VacuumFanPower.OFF -> 1
         else -> 0
     }
     var selectedTab by remember { mutableIntStateOf(initialTab) }
@@ -1429,10 +1429,12 @@ private fun CleaningModeSheetContent(
                         selected = selectedTab == i,
                         onClick = {
                             selectedTab = i
+                            val waterOff = (currentWaterMode ?: WaterBoxMode.OFF) == WaterBoxMode.OFF
+                            val fanOff = currentFanPower == VacuumFanPower.OFF
                             when (i) {
-                                0 -> { if ((currentWaterMode ?: WaterBoxMode.OFF) == WaterBoxMode.OFF) onWaterModeSelected(WaterBoxMode.LOW) }
-                                1 -> { onFanPowerSelected(VacuumFanPower.QUIET); if ((currentWaterMode ?: WaterBoxMode.OFF) == WaterBoxMode.OFF) onWaterModeSelected(WaterBoxMode.LOW) }
-                                2 -> { onWaterModeSelected(WaterBoxMode.OFF) }
+                                0 -> { if (waterOff) onWaterModeSelected(WaterBoxMode.LOW); if (fanOff) onFanPowerSelected(VacuumFanPower.BALANCED) }
+                                1 -> { if (waterOff) onWaterModeSelected(WaterBoxMode.LOW); onFanPowerSelected(VacuumFanPower.OFF) }
+                                2 -> { if (fanOff) onFanPowerSelected(VacuumFanPower.BALANCED); onWaterModeSelected(WaterBoxMode.OFF) }
                             }
                         },
                         text = { Text(title) },
