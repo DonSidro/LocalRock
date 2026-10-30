@@ -58,6 +58,32 @@ class LegacyMapTest {
     }
 
     @Test
+    fun reads_the_carpet_mask_and_the_flag_of_every_path_point() {
+        val map = parseLegacyMap(raw)
+        assertEquals(map.pathMm.size, map.pathFlags.size)
+        assertEquals(3281, map.pathFlags.count { it == 1 })
+        val mask = assertNotNull(map.carpetMask)
+        assertEquals(map.grid.size, mask.size)
+        assertEquals(3555, mask.count { it.toInt() == 1 })
+    }
+
+    @Test
+    fun every_room_label_sits_on_that_rooms_own_floor() {
+        val map = parseLegacyMap(raw)
+        assertTrue(map.rooms.isNotEmpty())
+        for (room in map.rooms) {
+            val under = map.roomAtNorm(room.labelNormX!!, room.labelNormY!!)
+            assertEquals(room.id, under?.id, "label of room ${room.id}")
+        }
+    }
+
+    @Test
+    fun every_room_knows_how_wide_it_is_at_its_label() {
+        val map = parseLegacyMap(raw)
+        for (room in map.rooms) assertTrue((room.labelSpanCells ?: 0) >= 1, "room ${room.id}")
+    }
+
+    @Test
     fun extracts_cleaning_path() {
         val map = parseLegacyMap(raw)
         assertEquals(5307, map.pathMm.size)
