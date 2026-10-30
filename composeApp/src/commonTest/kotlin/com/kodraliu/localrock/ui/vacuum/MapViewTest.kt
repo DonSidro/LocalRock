@@ -121,4 +121,15 @@ class MapViewTest {
             }
         }
     }
+
+    @Test
+    fun a_tap_is_tested_against_the_view_the_last_frame_was_drawn_with() {
+        // After a 2D to 3D switch a rebuilt view can still carry the flat squash; the drawn one never does.
+        val flat = view(yaw = 347f, squash = 1f)
+        val tilted = view(yaw = 347f, squash = 0.35f)
+        val drawn = DrawnView()
+        assertEquals(flat, drawn.forHitTest { flat })
+        drawn.view = tilted
+        assertEquals(tilted, drawn.forHitTest { flat })
+    }
 }

@@ -107,3 +107,13 @@ internal fun MapView.layerMatrix(height: Float): Matrix = Matrix().apply {
     rotateZ(yawDegrees)
     translate(-centerX, -centerY)
 }
+
+/**
+ * The view the last frame was drawn with. Taps and gestures hit-test against it, so they always land on what
+ * is on screen, including right after the 2D/3D switch, before a remembered builder could catch up.
+ */
+internal class DrawnView {
+    var view: MapView? = null
+
+    fun forHitTest(fallback: () -> MapView): MapView = view ?: fallback()
+}

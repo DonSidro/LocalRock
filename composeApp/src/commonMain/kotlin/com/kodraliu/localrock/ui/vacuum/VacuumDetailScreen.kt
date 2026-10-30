@@ -944,6 +944,7 @@ private fun VacuumMapImage(
         )
     }
     val currentViewFor by rememberUpdatedState(::viewFor)
+    val drawn = remember { DrawnView() }
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Canvas(
@@ -960,7 +961,7 @@ private fun VacuumMapImage(
                         val tilting = is3D && isTiltDrag(fingers, panChange, zoomChange, rotation)
                         val center = Offset(size.width / 2f, size.height / 2f)
                         // The pan is kept in units of the framed view; this works in pixels and converts back.
-                        val fit = currentViewFor(size.width.toFloat(), size.height.toFloat()).k / mapViewport.zoom
+                        val fit = drawn.forHitTest { currentViewFor(size.width.toFloat(), size.height.toFloat()) }.k / mapViewport.zoom
                         val panPx = mapViewport.pan * fit
                         val moved = (centroid - center) - ((centroid - center) - panPx) * (newZoom / mapViewport.zoom) +
                             (if (tilting) Offset.Zero else panChange)
@@ -981,7 +982,7 @@ private fun VacuumMapImage(
                         onDoubleTap = { mapViewport.reset() },
                         onTap = { tap ->
                             // An obstacle dot is small, so a tap near one opens it before any room.
-                            val tapView = currentViewFor(size.width.toFloat(), size.height.toFloat())
+                            val tapView = drawn.forHitTest { currentViewFor(size.width.toFloat(), size.height.toFloat()) }
                             currentMap.obstacleAt(tap, tapView, currentBitmap.width / currentMap.width.toFloat(), 20.dp.toPx())
                                 ?.let { currentOnObstacleTap(it); return@detectTapGestures }
                             // The same transform that drew the map, run backwards, so a tap lands on
@@ -994,6 +995,7 @@ private fun VacuumMapImage(
                 },
         ) {
             val view = viewFor(size.width, size.height)
+            drawn.view = view
             // Magnified past 2 screen pixels per layer pixel, nearest-neighbour keeps edges crisp
             // where smoothing would blur them; so does a flat quarter-turn, which maps pixels 1:1.
             // Zoomed out, where many pixels share one on screen, smoothing avoids shimmer.
