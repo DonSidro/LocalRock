@@ -24,6 +24,7 @@ private const val KEY_NOTIFY_FINISHED = "notify_finished"
 private const val KEY_NOTIFY_DOCK = "notify_dock"
 private const val KEY_NOTIFY_BACKGROUND = "notify_background"
 private const val KEY_NOTIFY_PROGRESS = "notify_progress"
+private const val KEY_LAST_OPENED_DUID = "last_opened_duid"
 
 class AppSettings(private val settings: Settings) {
 
@@ -97,6 +98,15 @@ class AppSettings(private val settings: Settings) {
             settings.putString(KEY_ADMIN_PASSWORD, password)
             _adminPassword.value = password
         }
+    }
+
+    /** The robot most recently opened, so a fresh launch can go straight back to it. */
+    private val _lastOpenedDuid = MutableStateFlow(settings.getStringOrNull(KEY_LAST_OPENED_DUID))
+    val lastOpenedDuid: StateFlow<String?> = _lastOpenedDuid.asStateFlow()
+
+    fun setLastOpenedDuid(duid: String) {
+        settings.putString(KEY_LAST_OPENED_DUID, duid)
+        _lastOpenedDuid.value = duid
     }
 
     /** Robot alerts as a whole. Off until asked for: turning them on needs the notification permission. */
