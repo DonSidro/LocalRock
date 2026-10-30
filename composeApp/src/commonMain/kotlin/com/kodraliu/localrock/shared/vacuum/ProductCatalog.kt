@@ -77,3 +77,7 @@ object ProductCatalog {
  */
 fun productDisplayName(product: Product?): String? =
     product?.name?.takeIf { it.isNotBlank() } ?: ProductCatalog.displayName(product?.model)
+
+/** The model name to show under the robot's name, or nothing when the robot is simply named after its model. */
+fun modelSubtitle(deviceName: String, modelDisplayName: String?): String? =
+    modelDisplayName?.takeUnless { it.isBlank() || it.trim().equals(deviceName.trim(), ignoreCase = true) }

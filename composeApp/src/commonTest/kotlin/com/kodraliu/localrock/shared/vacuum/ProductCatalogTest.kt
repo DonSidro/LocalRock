@@ -34,4 +34,12 @@ class ProductCatalogTest {
         assertEquals("roborock.vacuum.zzz", productDisplayName(Product(id = "p", model = "roborock.vacuum.zzz")))
         assertNull(productDisplayName(null))
     }
+
+    @Test
+    fun the_model_is_not_repeated_under_a_robot_named_after_it() {
+        assertEquals("Roborock Qrevo Pro", modelSubtitle("Quevo", "Roborock Qrevo Pro"))
+        assertNull(modelSubtitle("S8 Pro Ultra", "S8 Pro Ultra"))
+        assertNull(modelSubtitle(" s8 pro ultra ", "S8 Pro Ultra"))
+        assertNull(modelSubtitle("Quevo", null))
+    }
 }
