@@ -12,16 +12,19 @@ import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.RoomType
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
+import com.kodraliu.localrock.shared.vacuum.productDisplayName
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
-import com.kodraliu.localrock.shared.vacuum.supportedBetaFeatures
-import com.kodraliu.localrock.shared.vacuum.unlistedAdvertisedFeatures
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.kodraliu.localrock.shared.vacuum.supportedBetaFeatures
+import com.kodraliu.localrock.shared.vacuum.unlistedAdvertisedFeatures
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -39,6 +42,7 @@ class VacuumViewModel(
 
     val deviceName: String = device.name
     val modelName: String? = container.deviceRepository.productsByDuid.value[duid]?.model
+    val modelDisplayName: String? = productDisplayName(container.deviceRepository.productsByDuid.value[duid])
     val firmwareVersion: String? = device.fv
     private val serverFeatureSet = device.newFeatureSet
     val dockCapabilities = DockCapabilities(modelName, device.featureSet, device.newFeatureSet)
@@ -62,6 +66,58 @@ class VacuumViewModel(
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
     private val actionMutex = Mutex()
     private var pendingActions = 0
+
+    // The map's rotation and 2D/3D view are a purely local rendering choice: the robot has no
+    // concept of either, so these live in this device's app settings rather than any RPC.
+    private val _mapRotation = MutableStateFlow(container.appSettings.mapRotation(device.duid))
+    val mapRotation: StateFlow<Int> = _mapRotation.asStateFlow()
+
+    /** The flat 2D map's orientation. The 3D view has its own heading, [map3DYaw]. */
+    fun rotateMap90() {
+        val next = (_mapRotation.value + 90) % 360
+        container.appSettings.setMapRotation(device.duid, next)
+        _mapRotation.value = next
+    }
+
+    private val _map3DYaw = MutableStateFlow(container.appSettings.map3DYaw(device.duid))
+    val map3DYaw: StateFlow<Float> = _map3DYaw.asStateFlow()
+    private val _map3DTilt = MutableStateFlow(container.appSettings.map3DTilt(device.duid))
+    val map3DTilt: StateFlow<Float> = _map3DTilt.asStateFlow()
+    private var map3DSaveJob: Job? = null
+
+    /** Turning the 3D model fires on every frame of a twist; the view updates at once. */
+    fun setMap3DYaw(degrees: Float) {
+        _map3DYaw.value = ((degrees % 360f) + 360f) % 360f
+        saveMap3DViewSoon()
+    }
+
+    /** A twist or drag arrives as a change, so two events in one frame both count. */
+    fun turnMap3DBy(degrees: Float) = setMap3DYaw(_map3DYaw.value + degrees)
+
+    fun tiltMap3DBy(degrees: Float) = setMap3DTilt(_map3DTilt.value + degrees)
+
+    fun setMap3DTilt(degrees: Float) {
+        _map3DTilt.value = degrees.coerceIn(MAP_3D_MIN_TILT, MAP_3D_MAX_TILT)
+        saveMap3DViewSoon()
+    }
+
+    // Only where the model settles is written to storage, not every frame of getting there.
+    private fun saveMap3DViewSoon() {
+        map3DSaveJob?.cancel()
+        map3DSaveJob = viewModelScope.launch {
+            delay(500)
+            container.appSettings.setMap3DYaw(device.duid, _map3DYaw.value)
+            container.appSettings.setMap3DTilt(device.duid, _map3DTilt.value)
+        }
+    }
+
+    private val _map3D = MutableStateFlow(container.appSettings.map3D(device.duid))
+    val map3D: StateFlow<Boolean> = _map3D.asStateFlow()
+
+    fun setMap3D(value: Boolean) {
+        container.appSettings.setMap3D(device.duid, value)
+        _map3D.value = value
+    }
 
     private val _firmwareUpdate = MutableStateFlow<FirmwareUpdateState>(FirmwareUpdateState.Idle)
     val firmwareUpdate: StateFlow<FirmwareUpdateState> = _firmwareUpdate.asStateFlow()

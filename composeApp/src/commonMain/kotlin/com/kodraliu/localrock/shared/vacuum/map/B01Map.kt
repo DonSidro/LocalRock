@@ -116,6 +116,10 @@ data class ParsedMap(
     val obstacles: List<MapObstacle> = emptyList(),
 
     val originalGrid: ByteArray? = null,
+    /** Per path point: bit 1 is a trip to wash the mop. Empty if unknown. */
+    val pathFlags: List<Int> = emptyList(),
+    /** One byte per grid cell, 1 where the robot has seen carpet; null if the map has none. */
+    val carpetMask: ByteArray? = null,
 ) {
     val floorCells: Int by lazy { grid.count { (it.toInt() and 0xff) == 128 } }
     val wallCells: Int by lazy { grid.count { (it.toInt() and 0xff) == 127 } }
@@ -133,7 +137,9 @@ data class ParsedMap(
             other.format == format &&
             other.carpetAreas == carpetAreas &&
             other.thresholds == thresholds &&
-            other.obstacles == obstacles
+            other.pathFlags == pathFlags &&
+            other.obstacles == obstacles &&
+            (carpetMask?.contentEquals(other.carpetMask ?: ByteArray(0)) ?: (other.carpetMask == null))
 
     override fun hashCode(): Int {
         var r = width
@@ -152,7 +158,9 @@ data class ParsedMap(
         r = 31 * r + format.hashCode()
         r = 31 * r + carpetAreas.hashCode()
         r = 31 * r + thresholds.hashCode()
+        r = 31 * r + pathFlags.hashCode()
         r = 31 * r + obstacles.hashCode()
+        r = 31 * r + (carpetMask?.contentHashCode() ?: 0)
         return r
     }
 }
@@ -247,6 +255,11 @@ data class ParsedMapRoom(
     val name: String,
     val labelNormX: Float? = null,
     val labelNormY: Float? = null,
+    /** How many cells of the room run across the map at its label, so a name can be fitted inside it. */
+    val labelSpanCells: Int? = null,
+    val labelSpanCellsY: Int? = null,
+    /** The room type the robot keeps for this room (see RoomType); null for a room with no entry in its table. */
+    val tag: Int? = null,
 )
 
 data class ParsedMapPoint(
@@ -296,6 +309,24 @@ fun ParsedMap.roomAtNorm(normX: Float, normY: Float): ParsedMapRoom? {
             val dy = r.labelNormY!! - normY
             dx * dx + dy * dy
         }
+}
+
+/**
+ * The room id stored for one grid cell, or null where the cell belongs to no room's floor (outside,
+ * a wall, or floor the robot hasn't assigned to a room). It reads the cell the same way
+ * [roomAtNorm] does for each map format, minus that function's nearest-label fallback, so a room
+ * lit up on selection covers exactly the cells a tap on it would pick.
+ */
+fun ParsedMap.roomIdAtCell(idx: Int): Int? {
+    if (idx !in grid.indices) return null
+    if (originalGrid != null) {
+        val v = originalGrid[idx].toInt() and 0xff
+        if ((v and 0x07) != 7) return null
+        return ((v ushr 3) and 0x1f).takeIf { it > 0 }
+    }
+    val v = grid[idx].toInt() and 0xff
+    if (v == 0 || v == 127 || v == 128) return null
+    return v
 }
 
 
