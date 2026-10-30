@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.shared.device
 
-import com.kodraliu.localrock.shared.model.ApiResponse
+import com.kodraliu.localrock.shared.http.ProdJson
+import com.kodraliu.localrock.shared.http.serverErrorText
 import com.kodraliu.localrock.shared.model.FirmwareOtaResponse
 import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
@@ -15,11 +16,15 @@ import io.ktor.client.request.post
 import io.ktor.client.request.header
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.parameter
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.parameters
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeFromJsonElement
 
 class DeviceApi(private val client: HttpClient) {
 
@@ -28,17 +33,13 @@ class DeviceApi(private val client: HttpClient) {
 
 
     suspend fun getHomeDetail(token: String): HomeDetail {
-        val response: ApiResponse<HomeDetail> = client.get("/api/v1/getHomeDetail") {
+        return client.get("/api/v1/getHomeDetail") {
             header(HttpHeaders.Authorization, token)
-        }.body()
-        ensureOk(response)
-        return response.data
+        }.unwrapData()
     }
 
     suspend fun getHome(homeId: Long): Home {
-        val response: ApiResponse<Home> = client.get("/v3/user/homes/$homeId").body()
-        ensureOk(response)
-        return response.data
+        return client.get("/v3/user/homes/$homeId").unwrapData()
     }
 
     /**
@@ -47,12 +48,10 @@ class DeviceApi(private val client: HttpClient) {
      */
     suspend fun createRoom(homeId: Long, name: String): Room {
         // Only `data` is read: the server puts the bare room id in `result` for the official app.
-        val response: CreateRoomResponse = client.submitForm(
+        return client.submitForm(
             url = "/user/homes/$homeId/rooms",
             formParameters = parameters { append("name", name) },
-        ).body()
-        if (response.code != 200) throw DeviceApiException(response.code, response.msg)
-        return response.data
+        ).unwrapData()
     }
 
     /** The routines saved for one robot, in the order the server keeps them. */
@@ -89,8 +88,13 @@ class DeviceApi(private val client: HttpClient) {
     }
 }
 
+/** Only `code`/`msg` are guaranteed; `data` is absent or shaped differently on error replies. */
 @Serializable
-private data class CreateRoomResponse(val code: Int, val msg: String, val data: Room)
+private data class DataEnvelope(
+    val code: Int = 0,
+    val msg: String = "",
+    val data: JsonElement? = null,
+)
 
 @Serializable
 private data class SceneListResponse(
@@ -110,6 +114,23 @@ private data class SceneRunResponse(
 
 class DeviceApiException(val responseCode: Int, message: String) : RuntimeException(message)
 
-private fun <T> ensureOk(response: ApiResponse<T>) {
-    if (response.code != 200) throw DeviceApiException(response.code, response.msg)
+/**
+ * Reads the `{code, msg, data}` envelope before `data` is decoded as [T]: an error reply (e.g. 401
+ * authentication_required) carries a different `data`, and decoding it as [T] up front would hide
+ * the server's own message behind a "fields are required" serialization error.
+ */
+private suspend inline fun <reified T> HttpResponse.unwrapData(): T {
+    val httpStatus = status.value
+    val text = bodyAsText()
+    val envelope = try {
+        ProdJson.decodeFromString<DataEnvelope>(text)
+    } catch (e: SerializationException) {
+        throw DeviceApiException(httpStatus, "HTTP $httpStatus: ${text.replace(Regex("\\s+"), " ").trim().take(120)}")
+    }
+    if (envelope.code != 200 || !status.isSuccess()) {
+        throw DeviceApiException(envelope.code, "HTTP $httpStatus, code ${envelope.code}: ${serverErrorText(envelope.msg, envelope.data)}")
+    }
+    val data = envelope.data
+        ?: throw DeviceApiException(envelope.code, "HTTP $httpStatus, code ${envelope.code}: response contained no data")
+    return ProdJson.decodeFromJsonElement<T>(data)
 }

@@ -58,6 +58,7 @@ ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "kto
 ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 multiplatformSettings = { module = "com.russhwolf:multiplatform-settings", version.ref = "multiplatformSettings" }
 multiplatformSettings-coroutines = { module = "com.russhwolf:multiplatform-settings-coroutines", version.ref = "multiplatformSettings" }
+multiplatformSettings-test = { module = "com.russhwolf:multiplatform-settings-test", version.ref = "multiplatformSettings" }
 kotlincrypto-hash-md = { module = "org.kotlincrypto.hash:md", version.ref = "kotlincryptoHash" }
 kotlincrypto-macs-hmacSha2 = { module = "org.kotlincrypto.macs:hmac-sha2", version.ref = "kotlincryptoMacs" }
 paho-mqttv3 = { module = "org.eclipse.paho:org.eclipse.paho.client.mqttv3", version.ref = "paho" }
