@@ -14,6 +14,7 @@ import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
+import com.kodraliu.localrock.shared.vacuum.newFeatureBit
 import com.kodraliu.localrock.shared.vacuum.supportedBetaFeatures
 import com.kodraliu.localrock.shared.vacuum.unlistedAdvertisedFeatures
 import kotlinx.coroutines.TimeoutCancellationException
@@ -45,6 +46,11 @@ class VacuumViewModel(
     val betaFeatureDefs = supportedBetaFeatures(device.newFeatureSet)
     val unlistedFeatures = unlistedAdvertisedFeatures(device.newFeatureSet)
     val showsBetaFeatures = betaFeatureDefs.any { it.section == FeatureSection.BETA && it.bit != null } || unlistedFeatures.isNotEmpty()
+    val supportsVacuumThenMop: Boolean = newFeatureBit(device.newFeatureSet, 93)
+    // The stock app names bit 102 CtmWithRepeat and sends repeat only for sequence type 1.
+    val supportsVacuumThenMopRepeat: Boolean = newFeatureBit(device.newFeatureSet, 102)
+    // Stock CleanEfficiency allows deep routes outside mop-only mode.
+    val supportsCleanEfficiency: Boolean = newFeatureBit(device.newFeatureSet, 108)
     val repository: VacuumRepository = container.vacuumRepositoryFor(device)
 
     // The robot's own answer wins; the server's record is the fallback until it has replied.

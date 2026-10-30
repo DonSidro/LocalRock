@@ -414,6 +414,19 @@ class VacuumRepository(
         _mopMode.value = mopMode
     }
 
+    suspend fun setCleanSequenceType(
+        type: Int,
+        fanPower: Int,
+        waterBoxMode: Int,
+        mopMode: Int,
+        repeat: Int? = null,
+    ) {
+        session.setCleanSequenceType(type, fanPower, waterBoxMode, mopMode, repeat)
+            .requireOk("app_set_clean_sequence_type")
+        _status.update { it.copy(cleanSequenceType = type, fanPower = fanPower, waterBoxCustomMode = waterBoxMode) }
+        _mopMode.value = mopMode
+    }
+
     /** The per-room settings the robot holds for the loaded map. */
     suspend fun fetchRoomCleanModes() {
         _roomCleanModes.value = parseCustomizeCleanMode(session.getCustomizeCleanMode().result)
@@ -1343,6 +1356,7 @@ internal fun VacuumStatus.merge(fresh: VacuumStatus): VacuumStatus = fresh.copy(
     battery = fresh.battery ?: battery,
     state = fresh.state ?: state,
     fanPower = fresh.fanPower ?: fanPower,
+    cleanSequenceType = fresh.cleanSequenceType ?: cleanSequenceType,
     cleanArea = fresh.cleanArea ?: cleanArea,
     cleanTime = fresh.cleanTime ?: cleanTime,
     errorCode = fresh.errorCode ?: errorCode,
