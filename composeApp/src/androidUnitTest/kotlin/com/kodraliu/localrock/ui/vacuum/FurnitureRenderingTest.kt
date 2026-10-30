@@ -144,8 +144,12 @@ class FurnitureRenderingTest {
                 for ((line, text) in lines.withIndex()) native.drawText(text, left + 56, top + 88 + line * 12, label)
             }
             val theme = if (dark) "dark" else "light"
-            File(output, "catalog-$theme-$previewSize.png").outputStream().use {
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            // Keep each native preview small enough for the CI check output field.
+            for (row in 0 until 7) {
+                val preview = Bitmap.createBitmap(bitmap, 0, row * 120, 336, 120)
+                File(output, "catalog-$theme-$previewSize-row-$row.png").outputStream().use {
+                    preview.compress(Bitmap.CompressFormat.PNG, 100, it)
+                }
             }
         }
     }
