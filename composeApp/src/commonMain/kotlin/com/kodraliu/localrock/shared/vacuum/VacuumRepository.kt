@@ -112,9 +112,22 @@ class VacuumRepository(
     /** The feature flags the robot reports itself; null until it has answered. */
     val robotFeatureSet: StateFlow<String?> = _robotFeatureSet
 
+    private val _furnitureSupport = MutableStateFlow(FurnitureSupport.UNKNOWN)
+    val furnitureSupport: StateFlow<FurnitureSupport> = _furnitureSupport
+    private val featureReadMutex = Mutex()
+
     suspend fun fetchRobotFeatureSet() {
         if (_robotFeatureSet.value != null) return
-        _robotFeatureSet.value = featureSetFromInitStatus(session.getInitStatus().requireOk("app_get_init_status").result)
+        fetchFurnitureSupport()
+    }
+
+    /** Always read from the robot. A failed refresh must not leave a cached write permission. */
+    suspend fun fetchFurnitureSupport(): FurnitureSupport = featureReadMutex.withLock {
+        _furnitureSupport.value = FurnitureSupport.UNKNOWN
+        if (demo) return@withLock FurnitureSupport.UNKNOWN
+        val result = session.getInitStatus().requireOk("app_get_init_status").result
+        _robotFeatureSet.value = featureSetFromInitStatus(result)
+        furnitureSupportFromInitStatus(result).also { _furnitureSupport.value = it }
     }
 
     private val _dockSettings = MutableStateFlow(DockSettings())
@@ -500,6 +513,42 @@ class VacuumRepository(
     suspend fun cleanZones(zones: List<ZoneRect>) { session.appZonedClean(zones).requireOk("app_zoned_clean") }
 
     private val mapEditMutex = Mutex()
+
+    /** A furniture draft always starts from a successful fresh robot read, never a cached map. */
+    suspend fun loadFurnitureEditor(): FurnitureSnapshot = mapEditMutex.withLock { readFreshFurniture() }
+
+    suspend fun saveFurnitureEdits(baseline: FurnitureSnapshot, draft: List<FurniturePlacement>): FurnitureSnapshot =
+        mapEditMutex.withLock {
+            commitFurnitureEdits(baseline, draft, ::readFreshFurniture,
+                send = { method, params -> session.sendCommandRaw(method, params) })
+        }
+
+    private suspend fun readFreshFurniture(): FurnitureSnapshot {
+        if (demo) throw MapEditException("Furniture editing is not available in demo mode.")
+        val support = fetchFurnitureSupport()
+        support.blockedReason?.let { throw MapEditException(it) }
+        val statusResult = session.sendCommand("get_status").requireOk("get_status").result
+        val statusObject = (if (statusResult is JsonArray) statusResult.singleOrNull() else statusResult) as? JsonObject
+            ?: throw MapEditException("Couldn't read the robot's current status. Try refreshing.")
+        val fresh = ConsumableJson.decodeFromJsonElement(VacuumStatus.serializer(), statusObject)
+        _status.update { it.merge(fresh) }
+        if (fresh.state == null || fresh.inCleaning != 0 || fresh.state in ACTIVE_STATES)
+            throw MapEditException("Let the robot finish its current task before editing furniture.")
+        if (fresh.loadedMapFlag != 0)
+            throw MapEditException("Load the saved map before editing furniture.")
+        // Do not reuse a previously loaded map list if this request fails or has an unknown shape.
+        val response = session.getMultiMapsList().requireOk("get_multi_maps_list")
+        val result = response.result
+        val objectResult = (if (result is JsonArray) result.singleOrNull() else result) as? JsonObject
+        val maps = objectResult?.get("map_info") as? JsonArray
+        val onlyMap = maps?.singleOrNull() as? JsonObject
+        val mapIndex = (onlyMap?.get("mapFlag") as? JsonPrimitive)?.intOrNull
+        mapIndexBlocker(mapIndex)?.let { throw MapEditException(it) }
+        fetchMap()
+        val map = editableMap()
+        furnitureMapBlocker(map, mapIndex)?.let { throw MapEditException(it) }
+        return FurnitureSnapshot(map, support)
+    }
 
     /** Why the map can't be edited right now, or null when it can. */
     fun editBlockedReason(map: ParsedMap? = _parsedMap.value, state: Int? = _status.value.state): String? = when {
