@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
@@ -56,6 +57,7 @@ import com.kodraliu.localrock.shared.vacuum.*
 import com.kodraliu.localrock.shared.vacuum.map.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.imageResource
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
@@ -260,13 +262,10 @@ internal fun FurnitureEditScreen(viewModel: VacuumViewModel, onBack: () -> Unit,
 
 @Composable
 private fun FurniturePreview(kind: FurnitureKind, modifier: Modifier) {
-    val dark = MaterialTheme.colorScheme.surface.luminance() < .5f
+    val artwork = furniturePreviewArtwork(kind.type, kind.subtype) ?: return
+    val image = imageResource(artwork.resource)
     Canvas(modifier) {
-        val ratio = minOf(size.width / kind.widthMm, size.height / kind.depthMm) * .85f
-        val w = kind.widthMm * ratio; val h = kind.depthMm * ratio
-        val x = (size.width - w) / 2; val y = (size.height - h) / 2
-        drawIntoCanvas { drawFurniturePreviewSymbol(it, listOf(Offset(x, y), Offset(x + w, y), Offset(x + w, y + h), Offset(x, y + h)),
-            kind.type, kind.subtype, dark, 1.dp.toPx()) }
+        drawIntoCanvas { drawFurniturePreviewImage(it, image, Rect(Offset.Zero, size), 3.dp.toPx()) }
     }
 }
 

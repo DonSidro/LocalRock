@@ -1,8 +1,10 @@
 package com.kodraliu.localrock.ui.vacuum
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
@@ -16,6 +18,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
@@ -129,11 +132,12 @@ class FurnitureRenderingTest {
                 val left = (index % 3) * 112f
                 val top = (index / 3) * 120f
                 native.drawRoundRect(left + 4, top + 4, left + 108, top + 116, 16f, 16f, card)
-                val ratio = minOf(previewSize.toFloat() / kind.widthMm, previewSize.toFloat() / kind.depthMm) * .85f
-                val w = kind.widthMm * ratio; val h = kind.depthMm * ratio
-                val x = left + (112 - w) / 2; val y = top + 8 + (64 - h) / 2
-                drawFurniturePreviewSymbol(canvas, listOf(Offset(x,y),Offset(x+w,y),Offset(x+w,y+h),Offset(x,y+h)),
-                    kind.type, kind.subtype, dark, 1f)
+                val artwork = assertNotNull(furniturePreviewArtwork(kind.type, kind.subtype), kind.label)
+                val source = File("src/commonMain/composeResources/drawable", artwork.fileName)
+                val image = assertNotNull(BitmapFactory.decodeFile(source.path), source.path).asImageBitmap()
+                val x = left + (112 - previewSize) / 2f
+                val y = top + 8 + (64 - previewSize) / 2f
+                drawFurniturePreviewImage(canvas, image, Rect(x, y, x + previewSize, y + previewSize), 3f)
                 val words = kind.label.split(" ")
                 val lines = if (label.measureText(kind.label) <= 96f) listOf(kind.label)
                     else listOf(words.dropLast(1).joinToString(" "), words.last())
