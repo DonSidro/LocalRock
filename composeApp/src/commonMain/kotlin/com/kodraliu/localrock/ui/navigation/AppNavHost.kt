@@ -6,6 +6,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -47,7 +48,12 @@ fun AppNavHost() {
     val introSeen by container.appSettings.introSeen.collectAsState()
     val demoMode by container.appSettings.demoMode.collectAsState()
     val lastSeenVersion by container.appSettings.lastSeenVersion.collectAsState()
+    val lastOpenedDuid by container.appSettings.lastOpenedDuid.collectAsState()
     var splashDone by remember { mutableStateOf(false) }
+
+    // Whether the launch has already gone into a robot (notification tap, auto-open, or a manual
+    // pick). Survives rotation so this happens once per launch, not once per recomposition.
+    var launchedIntoRobot by rememberSaveable { mutableStateOf(false) }
 
 
     LaunchedEffect(splashDone, introSeen, userData, serverUrl, demoMode) {
@@ -73,7 +79,20 @@ fun AppNavHost() {
         if (!splashDone || userData == null) return@LaunchedEffect
         if (devices.none { it.duid == duid && it.localKey != null }) return@LaunchedEffect
         container.consumePendingOpen()
+        container.appSettings.setLastOpenedDuid(duid)
+        launchedIntoRobot = true
         navController.navigate(VacuumGraph(duid)) { popUpTo<DeviceList>() }
+    }
+
+    // On launch, go straight into a robot once: the only paired robot, or the last one opened.
+    // A notification tap wins — while one is pending this waits and the effect above handles it.
+    LaunchedEffect(splashDone, userData, pendingOpen, devices, lastOpenedDuid) {
+        if (launchedIntoRobot || !splashDone || userData == null || pendingOpen != null) return@LaunchedEffect
+        val pairedDuids = devices.filter { it.localKey != null }.map { it.duid }
+        val target = launchRobotTarget(pairedDuids, lastOpenedDuid) ?: return@LaunchedEffect
+        launchedIntoRobot = true
+        container.appSettings.setLastOpenedDuid(target)
+        navController.navigate(VacuumGraph(target)) { popUpTo<DeviceList>() }
     }
 
     NavHost(navController = navController, startDestination = Splash) {
@@ -108,7 +127,11 @@ fun AppNavHost() {
             DeviceListScreen(
                 viewModel = viewModel,
                 onSettings = { navController.navigate(AppSettings) },
-                onDeviceClick = { device -> navController.navigate(VacuumGraph(device.duid)) },
+                onDeviceClick = { device ->
+                    container.appSettings.setLastOpenedDuid(device.duid)
+                    launchedIntoRobot = true
+                    navController.navigate(VacuumGraph(device.duid))
+                },
                 onAddVacuum = { navController.navigate(AddVacuum) },
             )
             // Once after an update, over the first screen that is really the app.
@@ -230,4 +253,14 @@ fun AppNavHost() {
             }
         }
     }
+}
+
+/**
+ * The robot to open on launch, or null to stay on the device list: the only paired robot, or the
+ * last one opened when there are several. Never guesses among several without a last-opened value.
+ */
+internal fun launchRobotTarget(pairedDuids: List<String>, lastOpenedDuid: String?): String? = when {
+    pairedDuids.size == 1 -> pairedDuids.first()
+    lastOpenedDuid != null && lastOpenedDuid in pairedDuids -> lastOpenedDuid
+    else -> null
 }
