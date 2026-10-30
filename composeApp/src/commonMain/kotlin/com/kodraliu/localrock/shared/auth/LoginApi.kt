@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.shared.auth
 
 import com.kodraliu.localrock.shared.http.ProdJson
+import com.kodraliu.localrock.shared.http.serverErrorText
 import com.kodraliu.localrock.shared.model.UserData
 import io.ktor.client.HttpClient
 import io.ktor.client.request.post
@@ -12,8 +13,6 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 @Serializable
 private data class CodeLoginBody(val email: String, val code: String)
@@ -25,18 +24,6 @@ private data class LoginEnvelope(
     val msg: String = "",
     val data: JsonElement? = null,
 )
-
-/**
- * The reply's `msg`, plus `data.reason` when the server sent one that adds something (e.g.
- * `invalid_credentials (invalid_login_pin)`). `data` is optional and free-form, so anything else is ignored.
- */
-private fun withReason(msg: String, data: JsonElement?): String {
-    val reason = ((data as? JsonObject)?.get("reason") as? JsonPrimitive)
-        ?.takeIf { it.isString }?.content
-        ?.takeIf { it.isNotEmpty() && it != msg }
-        ?: return msg
-    return if (msg.isEmpty()) reason else "$msg ($reason)"
-}
 
 class LoginApi(private val client: HttpClient) {
 
@@ -57,7 +44,7 @@ class LoginApi(private val client: HttpClient) {
             throw LoginException(httpStatus, null, text.replace(Regex("\\s+"), " ").trim().take(120))
         }
         if (envelope.code != 200 || !response.status.isSuccess()) {
-            throw LoginException(httpStatus, envelope.code, withReason(envelope.msg, envelope.data))
+            throw LoginException(httpStatus, envelope.code, serverErrorText(envelope.msg, envelope.data))
         }
         val data = envelope.data
             ?: throw LoginException(httpStatus, envelope.code, "Login response contained no data")
