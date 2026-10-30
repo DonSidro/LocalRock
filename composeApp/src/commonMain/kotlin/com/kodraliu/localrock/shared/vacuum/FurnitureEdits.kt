@@ -93,7 +93,7 @@ fun MapFurniture.editablePlacement(): FurniturePlacement? =
     if (!isVisible || id !in 1..255) null
     else FurniturePlacement(id, type, subtype, cornersMm).takeIf(::validFurniturePlacement)
 
-data class FurnitureSnapshot(val map: ParsedMap) {
+data class FurnitureSnapshot(val map: ParsedMap, val support: FurnitureSupport = FurnitureSupport.UNKNOWN) {
     val placements: List<FurniturePlacement> get() = map.furniture.mapNotNull { it.editablePlacement() }
 }
 
@@ -131,6 +131,7 @@ internal data class FurnitureEditPlan(
 }
 
 internal fun furnitureEditPlan(baseline: FurnitureSnapshot, draft: List<FurniturePlacement>): FurnitureEditPlan {
+    baseline.support.blockedReason?.let { throw MapEditException(it) }
     furnitureMapBlocker(baseline.map, 0)?.let { throw MapEditException(it) }
     val original = baseline.placements.associateBy { it.key }
     if (draft.map { it.key }.distinct().size != draft.size || draft.any { !validFurniturePlacement(it) })
@@ -207,6 +208,7 @@ internal suspend fun commitFurnitureEdits(
 ): FurnitureSnapshot {
     val plan = furnitureEditPlan(baseline, draft)
     val current = readFresh()
+    current.support.blockedReason?.let { throw MapEditException(it) }
     if (!sameFurnitureBase(baseline.map, current.map))
         throw MapEditException("The robot's map changed while you were editing. Reload it to start from the latest furniture.")
     if (plan.isEmpty) return current

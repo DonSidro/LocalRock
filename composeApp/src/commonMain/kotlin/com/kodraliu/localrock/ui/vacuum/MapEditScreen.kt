@@ -115,6 +115,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
 import com.kodraliu.localrock.shared.vacuum.MAX_RESTRICTION_VERTICES
+import com.kodraliu.localrock.shared.vacuum.FurnitureSupport
 import com.kodraliu.localrock.shared.vacuum.mapIndexBlocker
 import com.kodraliu.localrock.shared.vacuum.restrictionSaveBlocker
 import com.kodraliu.localrock.shared.vacuum.restrictionsMatch
@@ -128,6 +129,7 @@ import com.kodraliu.localrock.shared.vacuum.map.VirtualWall
 import com.kodraliu.localrock.shared.vacuum.map.ZoneKind
 import com.kodraliu.localrock.shared.vacuum.map.roomAtNorm
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -201,6 +203,16 @@ fun MapEditScreen(
 ) {
     var furnitureOpen by remember { mutableStateOf(false) }
     val repository = viewModel.repository
+    val furnitureSupport by repository.furnitureSupport.collectAsState()
+    var furnitureChecking by remember { mutableStateOf(true) }
+    var furnitureCheckAttempt by remember { mutableStateOf(0) }
+    LaunchedEffect(repository, furnitureCheckAttempt) {
+        furnitureChecking = true
+        try { repository.fetchFurnitureSupport() }
+        catch (e: CancellationException) { throw e }
+        catch (_: Exception) { /* The repository leaves support unknown on a failed read. */ }
+        finally { furnitureChecking = false }
+    }
     val parsedMap by repository.parsedMap.collectAsState()
     val status by repository.status.collectAsState()
     val floorMaps by repository.floorMaps.collectAsState()
@@ -471,7 +483,14 @@ fun MapEditScreen(
                         val sel = selection
                         if (sel == null) {
                             ToolDock(toolEnabled = ::toolEnabled, onAdd = ::addShape, vertices = vertices,
-                                furnitureEnabled = editable && !dirty,
+                                furnitureVisible = furnitureSupport == FurnitureSupport.SUPPORTED,
+                                furnitureEnabled = editable && !dirty && !furnitureChecking &&
+                                    furnitureSupport == FurnitureSupport.SUPPORTED,
+                                furnitureSupportMessage = if (furnitureChecking) "Checking furniture support…"
+                                    else if (furnitureSupport == FurnitureSupport.UNKNOWN) furnitureSupport.blockedReason
+                                    else null,
+                                onRetryFurniture = if (!furnitureChecking && furnitureSupport == FurnitureSupport.UNKNOWN)
+                                    ({ furnitureCheckAttempt++ }) else null,
                                 onFurniture = { furnitureOpen = true })
                         } else {
                             val selectedZone = (sel as? Selection.Zone)?.let { zones.getOrNull(it.index) }
@@ -1044,7 +1063,9 @@ private val TOOL_SPECS = listOf(
  */
 @Composable
 private fun ToolDock(toolEnabled: (Tool) -> Boolean, onAdd: (Tool) -> Unit, vertices: Int,
-    furnitureEnabled: Boolean, onFurniture: () -> Unit) {
+    furnitureVisible: Boolean, furnitureEnabled: Boolean, furnitureSupportMessage: String?,
+    onRetryFurniture: (() -> Unit)?,
+    onFurniture: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Add to map", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -1060,11 +1081,15 @@ private fun ToolDock(toolEnabled: (Tool) -> Boolean, onAdd: (Tool) -> Unit, vert
                 ToolTile(spec, enabled = toolEnabled(spec.tool), onClick = { onAdd(spec.tool) })
             }
         }
-        Row(Modifier.fillMaxWidth()) {
+        if (furnitureVisible) Row(Modifier.fillMaxWidth()) {
             ToolTile(label = "Furniture", icon = Icons.Default.Chair, color = MaterialTheme.colorScheme.primary,
                 enabled = furnitureEnabled, onClickLabel = "Edit furniture", onClick = onFurniture)
         }
-        if (!furnitureEnabled && TOOL_SPECS.any { toolEnabled(it.tool) }) {
+        if (furnitureSupportMessage != null) {
+            Text(furnitureSupportMessage,
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (onRetryFurniture != null) TextButton(onClick = onRetryFurniture) { Text("Retry furniture check") }
+        } else if (furnitureVisible && !furnitureEnabled && TOOL_SPECS.any { toolEnabled(it.tool) }) {
             Text("Save or discard your map changes before editing furniture.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

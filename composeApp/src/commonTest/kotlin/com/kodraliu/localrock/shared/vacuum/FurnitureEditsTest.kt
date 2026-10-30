@@ -22,7 +22,7 @@ class FurnitureEditsTest {
         return ParsedMap(100, 100, ByteArray(10000) { 128.toByte() }, emptyList(), .05f,
             format = MapFormat.LEGACY, furnitureBlocks = listOf(MapFurnitureBlock(header, items.flatMap { it.rawBytes })))
     }
-    private fun snapshot(vararg items: MapFurniture) = FurnitureSnapshot(map(*items))
+    private fun snapshot(vararg items: MapFurniture) = FurnitureSnapshot(map(*items), FurnitureSupport.SUPPORTED)
     private fun ok() = V1Response(1, JsonArray(listOf(JsonPrimitive("ok"))), null)
 
     @Test fun catalog_has_all_21_distinct_observed_choices() {
@@ -131,6 +131,38 @@ class FurnitureEditsTest {
         assertEquals(0, writes)
         assertEquals(base, commitFurnitureEdits(base, base.placements, { base }, { _, _ -> writes++; ok() }))
         assertEquals(0, writes)
+    }
+
+    @Test fun unknown_or_unsupported_capability_never_starts_an_edit_session() = runTest {
+        val base = snapshot(record(placement(7)))
+        val edited = listOf(placement(7).moved(100, 0))
+        for (support in listOf(FurnitureSupport.UNKNOWN, FurnitureSupport.UNSUPPORTED)) {
+            var reads = 0
+            val calls = mutableListOf<String>()
+            assertFailsWith<MapEditException> {
+                commitFurnitureEdits(base.copy(support = support), edited,
+                    { reads++; base }, { method, _ -> calls += method; ok() })
+            }
+            assertEquals(0, reads)
+            assertTrue(calls.isEmpty())
+            // A supported draft cannot authorize a write after the fresh check loses support.
+            assertFailsWith<MapEditException> {
+                commitFurnitureEdits(base, edited,
+                    { reads++; base.copy(support = support) }, { method, _ -> calls += method; ok() })
+            }
+            assertEquals(1, reads)
+            assertTrue(calls.isEmpty())
+        }
+    }
+
+    @Test fun a_failed_capability_or_map_read_cannot_use_the_supported_draft_to_write() = runTest {
+        val base = snapshot(record(placement(7)))
+        val calls = mutableListOf<String>()
+        assertFailsWith<IllegalStateException> {
+            commitFurnitureEdits(base, listOf(placement(7).moved(100, 0)),
+                { throw IllegalStateException("robot unavailable") }, { method, _ -> calls += method; ok() })
+        }
+        assertTrue(calls.isEmpty())
     }
 
     @Test fun save_is_bracketed_once_and_waits_for_a_fresh_confirming_map() = runTest {

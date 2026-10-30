@@ -112,9 +112,22 @@ class VacuumRepository(
     /** The feature flags the robot reports itself; null until it has answered. */
     val robotFeatureSet: StateFlow<String?> = _robotFeatureSet
 
+    private val _furnitureSupport = MutableStateFlow(FurnitureSupport.UNKNOWN)
+    val furnitureSupport: StateFlow<FurnitureSupport> = _furnitureSupport
+    private val featureReadMutex = Mutex()
+
     suspend fun fetchRobotFeatureSet() {
         if (_robotFeatureSet.value != null) return
-        _robotFeatureSet.value = featureSetFromInitStatus(session.getInitStatus().requireOk("app_get_init_status").result)
+        fetchFurnitureSupport()
+    }
+
+    /** Always read from the robot. A failed refresh must not leave a cached write permission. */
+    suspend fun fetchFurnitureSupport(): FurnitureSupport = featureReadMutex.withLock {
+        _furnitureSupport.value = FurnitureSupport.UNKNOWN
+        if (demo) return@withLock FurnitureSupport.UNKNOWN
+        val result = session.getInitStatus().requireOk("app_get_init_status").result
+        _robotFeatureSet.value = featureSetFromInitStatus(result)
+        furnitureSupportFromInitStatus(result).also { _furnitureSupport.value = it }
     }
 
     private val _dockSettings = MutableStateFlow(DockSettings())
@@ -512,6 +525,8 @@ class VacuumRepository(
 
     private suspend fun readFreshFurniture(): FurnitureSnapshot {
         if (demo) throw MapEditException("Furniture editing is not available in demo mode.")
+        val support = fetchFurnitureSupport()
+        support.blockedReason?.let { throw MapEditException(it) }
         val statusResult = session.sendCommand("get_status").requireOk("get_status").result
         val statusObject = (if (statusResult is JsonArray) statusResult.singleOrNull() else statusResult) as? JsonObject
             ?: throw MapEditException("Couldn't read the robot's current status. Try refreshing.")
@@ -532,7 +547,7 @@ class VacuumRepository(
         fetchMap()
         val map = editableMap()
         furnitureMapBlocker(map, mapIndex)?.let { throw MapEditException(it) }
-        return FurnitureSnapshot(map)
+        return FurnitureSnapshot(map, support)
     }
 
     /** Why the map can't be edited right now, or null when it can. */

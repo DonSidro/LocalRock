@@ -28,7 +28,17 @@ Small-screen controls scroll without covering the whole map. Starting dimensions
 are convenient LocalRock sizes based on observed saved footprints; they are not
 verified OEM defaults or minimum/maximum limits.
 
-Furniture editing supports the legacy 23-byte furniture layout with
+Furniture editing requires the robot to advertise furniture support in a live
+`app_get_init_status` reply. Edit map shows the Furniture tile only after support
+is confirmed. Unsupported robots do not show a furniture editing entry. A failed
+check can be retried. Opening the furniture editor and saving both recheck the
+robot; neither server metadata nor a model name can grant editing permission.
+Existing furniture can still be displayed when editing is unavailable.
+
+The capability is bit 36 of the decimal `new_feature_info` field, matching
+python-roborock's `is_support_furniture`. It is separate from the hexadecimal
+`new_feature_info_str` field. A reported capability also needs a supported map:
+LocalRock edits the legacy 23-byte furniture layout with
 stable object IDs and one saved map (map flag 0). It requires a finished cleaning
 task and a loaded saved map. Unknown record layouts block editing. Hidden,
 unknown-type, or malformed furniture stays untouched and is never included in
