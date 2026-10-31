@@ -98,6 +98,12 @@ class BetaFeaturesTest {
     }
 
     @Test
+    fun bits_that_name_no_separate_setting_are_not_listed() {
+        // Bits 38 (cloud endpoint), 42 (clean by floor type) and 57 (no carpet pressure setting).
+        assertEquals(emptyList(), unlistedAdvertisedFeatures("200044000000000"))
+    }
+
+    @Test
     fun covered_and_handled_bits_are_not_listed() {
         // Bit 54 (FlexiArm side brush, has a switch) and bit 55 (SmartPlan, handled elsewhere).
         assertEquals(emptyList(), unlistedAdvertisedFeatures("C" + "0".repeat(13)))
