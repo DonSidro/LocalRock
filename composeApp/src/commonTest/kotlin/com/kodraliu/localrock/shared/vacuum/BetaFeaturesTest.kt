@@ -92,6 +92,12 @@ class BetaFeaturesTest {
     }
 
     @Test
+    fun bits_with_wash_empty_and_carpet_controls_are_not_listed() {
+        // Bits 41 (wash towel), 49 (carpet clean mode) and 53 (dust collection mode) have controls of their own.
+        assertEquals(emptyList(), unlistedAdvertisedFeatures("2202" + "0".repeat(10)))
+    }
+
+    @Test
     fun covered_and_handled_bits_are_not_listed() {
         // Bit 54 (FlexiArm side brush, has a switch) and bit 55 (SmartPlan, handled elsewhere).
         assertEquals(emptyList(), unlistedAdvertisedFeatures("C" + "0".repeat(13)))

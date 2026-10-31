@@ -237,8 +237,8 @@ private val AdvertisedFeatureNames = mapOf(
     128 to "Roller mop",
 )
 
-/** Bits that have their own place in the app (SmartPlan, water slide), so they are not listed as missing. */
-private val HandledElsewhereBits = setOf(55, 106)
+/** Bits that have their own place in the app (SmartPlan, water slide, wash, empty and carpet modes), so they are not listed as missing. */
+private val HandledElsewhereBits = setOf(35, 41, 47, 49, 51, 53, 55, 106)
 
 /** A `newFeatureSet` bit the robot advertises that has no switch here; [name] is null when python-roborock has none. */
 data class AdvertisedFeature(val bit: Int, val name: String?)
