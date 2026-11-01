@@ -237,8 +237,13 @@ private val AdvertisedFeatureNames = mapOf(
     128 to "Roller mop",
 )
 
-/** Bits that have their own place in the app (SmartPlan, water slide), so they are not listed as missing. */
-private val HandledElsewhereBits = setOf(55, 106)
+/**
+ * Bits that have their own place in the app (SmartPlan, water slide, wash, empty and carpet modes), or that
+ * name no setting: 42 is the get/set_clean_follow_ground_material_status pair listed above, 57 means the
+ * robot has no carpet pressure setting, 38 is the cloud endpoint a robot uses, 52 only changes how the app reads
+ * its AI recognition state from the camera, and 62 lowers the battery needed to start building a map from 20% to 15%.
+ */
+private val HandledElsewhereBits = setOf(35, 38, 41, 42, 47, 49, 51, 52, 53, 55, 57, 62, 106)
 
 /** A `newFeatureSet` bit the robot advertises that has no switch here; [name] is null when python-roborock has none. */
 data class AdvertisedFeature(val bit: Int, val name: String?)
