@@ -147,6 +147,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kodraliu.localrock.shared.vacuum.camera.experimentalCameraSupported
+import com.kodraliu.localrock.shared.webrtc.liveViewSupported
+import androidx.compose.material.icons.filled.Videocam
 import com.kodraliu.localrock.shared.model.Scene
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.DockErrorCodes
@@ -234,6 +237,7 @@ fun VacuumDetailScreen(
     val mopMode by viewModel.repository.mopMode.collectAsState()
     val roomCleanModes by viewModel.repository.roomCleanModes.collectAsState()
     val dockSettings by viewModel.repository.dockSettings.collectAsState()
+    val cameraAvailable = liveViewSupported && experimentalCameraSupported(viewModel.modelName)
     var selectedRoomIds by remember { mutableStateOf(emptyList<Int>()) }
 
     var sessionRoomIds by remember { mutableStateOf(emptyList<Int>()) }
@@ -333,7 +337,7 @@ fun VacuumDetailScreen(
 
     val PanelBody: @Composable (DetailPanel) -> Unit = { currentPanel ->
         when (currentPanel) {
-            DetailPanel.More -> MoreActionsSheetContent(onAction = onMoreAction)
+            DetailPanel.More -> MoreActionsSheetContent(cameraAvailable = cameraAvailable, onAction = onMoreAction)
 
             DetailPanel.Routines -> RoutinesSheetContent(
                 state = routines,
@@ -535,6 +539,11 @@ fun VacuumDetailScreen(
                     }
                 },
                 actions = {
+                    if (cameraAvailable) {
+                        IconButton(onClick = { onMoreAction(MoreAction.CAMERA) }) {
+                            Icon(Icons.Default.Videocam, contentDescription = "Video")
+                        }
+                    }
                     IconButton(onClick = onSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
@@ -596,7 +605,7 @@ fun VacuumDetailScreen(
                             }
                             PanelBody(headed)
                         } else {
-                            MoreActionsSheetContent(onAction = onMoreAction)
+                            MoreActionsSheetContent(cameraAvailable = cameraAvailable, onAction = onMoreAction)
                         }
                     }
 
@@ -1273,7 +1282,7 @@ private fun ControlBar(
 private enum class MoreAction { ROOMS, ZONES, PIN_GO, REMOTE, SCHEDULE, CAMERA, DOCK, HISTORY, MAPS, EDIT_MAP, ROUTINES }
 
 @Composable
-private fun MoreActionsSheetContent(onAction: (MoreAction) -> Unit) {
+private fun MoreActionsSheetContent(cameraAvailable: Boolean, onAction: (MoreAction) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1297,7 +1306,6 @@ private fun MoreActionsSheetContent(onAction: (MoreAction) -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MoreActionItem(Modifier.weight(1f), Icons.Default.Gamepad, "Remote", AppColors.AccentCyan) { onAction(MoreAction.REMOTE) }
             MoreActionItem(Modifier.weight(1f), Icons.Default.Schedule, "Schedule", AppColors.Water) { onAction(MoreAction.SCHEDULE) }
-            // Camera is hidden for now; MoreAction.CAMERA and the live view screen stay in place.
             MoreActionItem(Modifier.weight(1f), Icons.Default.Edit, "Edit map", AppColors.AccentRed) { onAction(MoreAction.EDIT_MAP) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1307,7 +1315,11 @@ private fun MoreActionsSheetContent(onAction: (MoreAction) -> Unit) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MoreActionItem(Modifier.weight(1f), Icons.AutoMirrored.Filled.PlaylistPlay, "Routines", MaterialTheme.colorScheme.secondary) { onAction(MoreAction.ROUTINES) }
-            Spacer(Modifier.weight(1f))
+            if (cameraAvailable) {
+                MoreActionItem(Modifier.weight(1f), Icons.Default.Videocam, "Video (experimental)", AppColors.AccentCyan) { onAction(MoreAction.CAMERA) }
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
             Spacer(Modifier.weight(1f))
         }
     }

@@ -283,7 +283,7 @@ class VacuumSession(
         val msgs = try {
             RoborockCodec(localKey, prefixed = false).decode(bytes)
         } catch (e: RoborockProtocolException) {
-            println("[VacLocal] decode FAILED (localKey mismatch?): ${e.message}")
+            println("[VacLocal] decode failed")
             return
         }
         println("[VacLocal] decoded ${msgs.size} msg(s)")
@@ -301,7 +301,8 @@ class VacuumSession(
                         request?.answer?.complete(resp)
                     }
                 }
-                println("[VacLocal] rpc response id=${resp.id} result=${resp.result} error=${resp.error}")
+                // Responses can contain camera credentials or SDP, including unsolicited/late replies.
+                println("[VacLocal] rpc response id=${resp.id} error=${resp.error != null}")
             }
             val dps = V1Envelope.decodeDpsPush(m.payload)
             if (dps != null) {
@@ -331,7 +332,7 @@ class VacuumSession(
     /** A photo frame, or null for anything else; a broken one is logged and dropped, so its request times out. */
     private fun decodePhotoFrame(m: RoborockMessage): BlobResponse? =
         runCatching { decodeBlobResponse(m) }
-            .onFailure { println("[VacLocal] photo frame FAILED: ${it.message}") }
+            .onFailure { println("[VacLocal] photo frame decode failed") }
             .getOrNull()
 
     private suspend fun nextRequestId(): Int = mutex.withLock {

@@ -12,7 +12,7 @@ import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 
 @Composable
-actual fun RtcVideoView(peer: RtcPeer, modifier: Modifier) {
+actual fun RtcVideoView(peer: RtcPeer, modifier: Modifier, fill: Boolean) {
     val androidPeer = peer as? AndroidRtcPeer ?: return
     val track by androidPeer.videoTrack.collectAsState()
     val rendererState = remember { mutableStateOf<SurfaceViewRenderer?>(null) }
@@ -26,6 +26,10 @@ actual fun RtcVideoView(peer: RtcPeer, modifier: Modifier) {
                 setEnableHardwareScaler(true)
                 rendererState.value = this
             }
+        },
+        update = { renderer ->
+            renderer.setScalingType(if (fill) RendererCommon.ScalingType.SCALE_ASPECT_FILL
+                else RendererCommon.ScalingType.SCALE_ASPECT_FIT)
         },
     )
 
@@ -42,3 +46,4 @@ actual fun RtcVideoView(peer: RtcPeer, modifier: Modifier) {
         onDispose { rendererState.value?.release() }
     }
 }
+

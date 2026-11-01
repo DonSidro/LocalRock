@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.UIKitView
+import androidx.compose.ui.viewinterop.UIKitInteropProperties
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.UIKit.UIView
 
@@ -16,7 +17,7 @@ import platform.UIKit.UIView
  */
 @OptIn(ExperimentalComposeUiApi::class, ExperimentalForeignApi::class)
 @Composable
-actual fun RtcVideoView(peer: RtcPeer, modifier: Modifier) {
+actual fun RtcVideoView(peer: RtcPeer, modifier: Modifier, fill: Boolean) {
     val iosPeer = peer as? IosRtcPeer ?: return
     @Suppress("UNUSED_VARIABLE")
     val state by iosPeer.connectionState.collectAsState()
@@ -24,5 +25,9 @@ actual fun RtcVideoView(peer: RtcPeer, modifier: Modifier) {
     UIKitView(
         factory = { view },
         modifier = modifier,
+        update = { iosPeer.setVideoFill(fill) },
+        // Video is display-only; Compose owns overlay buttons and taps that reveal controls.
+        properties = UIKitInteropProperties(interactionMode = null),
     )
 }
+
