@@ -14,9 +14,6 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.random.Random
 
-/** Deliberately narrow while model/firmware compatibility is being verified. */
-fun experimentalCameraSupported(model: String?): Boolean = model == "roborock.vacuum.a27"
-
 internal fun interface CameraRpc {
     suspend fun call(method: String, params: JsonElement): V1Response
 }
@@ -34,10 +31,12 @@ class CameraLiveSession internal constructor(
     },
     private val connectTimeoutMs: Long = 60_000,
     private val cleanupTimeoutMs: Long = 12_000,
+    private val accessAllowed: () -> Boolean = { true },
 ) {
-    constructor(session: VacuumSession) : this(
+    constructor(session: VacuumSession, accessAllowed: () -> Boolean = { true }) : this(
         CameraRpc { method, params -> session.sendCommandRaw(method, params) },
         ::createRtcPeer, CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        accessAllowed = accessAllowed,
     )
 
     sealed interface State {
@@ -67,7 +66,7 @@ class CameraLiveSession internal constructor(
     private var attemptJob: Job? = null
     private var disposed = false
     val voice = CameraVoiceCall(rpc, scope, { activeAttempt?.peer }, { activeAttempt?.id },
-        { !disposed && _state.value == State.Streaming })
+        { accessAllowed() && !disposed && _state.value == State.Streaming })
 
     private class Attempt(val id: String, val test: CameraVideoTest, val quality: CameraVideoQuality) {
         var previewRequested = false
@@ -77,7 +76,7 @@ class CameraLiveSession internal constructor(
     }
 
     fun start(pin: String, test: CameraVideoTest = CameraVideoTest.OEM_MATCH, quality: CameraVideoQuality = CameraVideoQuality.SD) {
-        if (disposed || attemptJob != null) return
+        if (disposed || attemptJob != null || !accessAllowed()) return
         if (pin.isBlank()) {
             _state.value = State.Failed("Enter your existing camera PIN or pattern.")
             return
@@ -181,6 +180,7 @@ class CameraLiveSession internal constructor(
     }
 
     private suspend fun checkedPinHash(pin: String): String {
+        if (!accessAllowed()) throw CameraFailure("Enable video and audio testing for this robot before connecting.")
         if (pin.isBlank()) throw CameraFailure("Enter your existing camera PIN or pattern.")
         val hash = md5Hex(pin)
         val result = command("check_homesec_password", obj("password", hash)).result
@@ -189,6 +189,7 @@ class CameraLiveSession internal constructor(
                 "The robot rejected this camera PIN or pattern. Enter the existing credential again."
             else "The robot returned an unrecognized PIN-check response. Camera access was not started.")
         }
+        if (!accessAllowed()) throw CameraFailure("Video and audio testing is no longer enabled for this robot.")
         return hash
     }
 

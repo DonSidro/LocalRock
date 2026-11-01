@@ -23,7 +23,8 @@ class CameraLiveSessionTest {
         var answerApplied = false
         override val supportsVoiceCall = true
         var audioActive = false
-        override suspend fun requestMicrophonePermission() = true
+        var microphoneRequests = 0
+        override suspend fun requestMicrophonePermission(): Boolean { microphoneRequests++; return true }
         override suspend fun startVoiceCall() { audioActive = true }
         override fun stopVoiceCall() { audioActive = false }
         val remoteCandidates = mutableListOf<RtcIceCandidate>()
@@ -55,6 +56,7 @@ class CameraLiveSessionTest {
         var qualityDelay = 0L
         var voiceStopDelay = 0L
         var pinResult: JsonElement? = JsonPrimitive(true)
+        var pinDelay = 0L
         var owner: String? = "none"
         var startDelay: Long = 0
         var waitForAnswer = false
@@ -70,7 +72,7 @@ class CameraLiveSessionTest {
                 put("code", failCode); put("message", "private-robot-payload")
             })
             val result = when (method) {
-                "check_homesec_password" -> pinResult
+                "check_homesec_password" -> { delay(pinDelay); pinResult }
                 "get_homesec_connect_status" -> {
                     if (cleanupUnavailable) error("private-network-error")
                     owner?.let { buildJsonObject { put("client_id", it) } } ?: JsonObject(emptyMap())
@@ -501,9 +503,87 @@ class CameraLiveSessionTest {
         live.dispose(); runCurrent()
     }
 
-    @Test fun onlyS7MaxVGetsExperimentalEntry() {
-        assertTrue(experimentalCameraSupported("roborock.vacuum.a27"))
-        for (model in listOf(null, "", "roborock.vacuum.a15", "roborock.vacuum.a70")) assertFalse(experimentalCameraSupported(model))
+    @Test fun opt_in_blocks_credential_checks_and_all_connection_tests_until_enabled() = runTest {
+        var allowed = false
+        var peers = 0
+        val rpc = FakeRpc()
+        val peer = FakePeer()
+        val live = CameraLiveSession(rpc, { peers++; peer }, backgroundScope,
+            accessAllowed = { allowed })
+        assertFailsWith<CameraFailure> { live.checkCredential("1234") }
+        CameraVideoTest.entries.forEach { live.start("1234", it) }
+        live.voice.start()
+        runCurrent()
+        assertTrue(rpc.calls.isEmpty())
+        assertEquals(0, peers)
+        assertEquals(0, peer.microphoneRequests)
+        assertIs<CameraLiveSession.State.Idle>(live.state.value)
+
+        allowed = true
+        live.checkCredential("1234")
+        live.start("1234"); runCurrent()
+        assertIs<CameraLiveSession.State.Streaming>(live.state.value)
+        assertEquals(1, peers)
+        live.voice.start(); runCurrent()
+        assertTrue(live.voice.active.value)
+        assertTrue(peer.audioActive)
+        assertEquals(1, peer.microphoneRequests)
+        assertContains(rpc.calls, "start_voice_chat")
+
+        // Background/revocation must still release the owned preview.
+        allowed = false
+        live.stop(); runCurrent()
+        assertFalse(peer.audioActive)
+        assertContains(rpc.calls, "stop_voice_chat")
+        assertEquals(1, rpc.stoppedIds.size)
+        val afterStop = rpc.calls.toList()
+        live.start("1234"); runCurrent()
+        assertEquals(afterStop, rpc.calls)
+        live.dispose(); runCurrent()
+    }
+
+    @Test fun revoked_opt_in_cannot_start_a_call_on_an_existing_video_peer() = runTest {
+        var allowed = true
+        val rpc = FakeRpc()
+        val peer = FakePeer()
+        val live = CameraLiveSession(rpc, { peer }, backgroundScope, accessAllowed = { allowed })
+        live.start("1234"); runCurrent()
+        assertIs<CameraLiveSession.State.Streaming>(live.state.value)
+        allowed = false
+        val beforeCall = rpc.calls.toList()
+        live.voice.start(); runCurrent()
+        assertFalse(live.voice.active.value)
+        assertEquals(0, peer.microphoneRequests)
+        assertEquals(beforeCall, rpc.calls)
+        live.dispose(); runCurrent()
+    }
+
+    @Test fun revoking_opt_in_during_a_credential_check_rejects_the_late_reply() = runTest {
+        var allowed = true
+        val rpc = FakeRpc().apply { pinDelay = 100 }
+        val live = CameraLiveSession(rpc, { FakePeer() }, backgroundScope, accessAllowed = { allowed })
+        var accepted = false
+        val check = launch {
+            assertFailsWith<CameraFailure> { live.checkCredential("1234"); accepted = true }
+        }
+        runCurrent()
+        allowed = false
+        advanceTimeBy(101); runCurrent(); check.join()
+        assertFalse(accepted)
+        assertEquals(listOf("check_homesec_password"), rpc.calls)
+        live.dispose(); runCurrent()
+    }
+
+    @Test fun revocation_before_dispatch_does_not_send_a_camera_command() = runTest {
+        var allowed = true
+        val rpc = FakeRpc()
+        val live = CameraLiveSession(rpc, { FakePeer() }, backgroundScope, accessAllowed = { allowed })
+        live.start("1234")
+        allowed = false
+        runCurrent()
+        assertTrue(rpc.calls.isEmpty())
+        assertIs<CameraLiveSession.State.Failed>(live.state.value)
+        live.dispose(); runCurrent()
     }
 
     @Test fun selectedPairMetadataIsSanitizedAndDoesNotGuess() {

@@ -1,8 +1,66 @@
 # Camera live view
 
-LocalRock displays the S7 MaxV camera (`roborock.vacuum.a27`) through its existing
-MQTT connection and the local server's camera and TURN support. Other models do
-not have an enabled video entry.
+LocalRock displays live camera video through its existing MQTT connection and
+the local server's camera and TURN support. S7 MaxV is the only model tested with
+LocalRock's video implementation. Other recognized models with official Roborock
+remote viewing support can opt in to video and audio-call testing.
+
+## Models and testing
+
+The map-page video icon and **More → Video (experimental)** use the same exact
+model list. Both entries also require a build with WebRTC enabled.
+
+| Model | Model ID | LocalRock access |
+| --- | --- | --- |
+| S7 MaxV (including + / Ultra dock bundles) | `roborock.vacuum.a27` | Tested; existing video, driving and iPhone call controls |
+| [S6 MaxV](https://support.roborock.com/hc/en-us/articles/900002181746-How-do-I-access-the-remote-viewing-feature-of-S6-MaxV-on-Roborock-APP) | `roborock.vacuum.a10` | Video testing opt-in |
+| [S8 MaxV Ultra](https://us.roborock.com/products/roborock-s8-maxv-ultra/) | `roborock.vacuum.a97` | Video testing opt-in |
+| [Qrevo MaxV](https://help.roborock.com/us/product/roborock-qrevo-maxv-message?category=faqs) | `roborock.vacuum.a87` | Video testing opt-in |
+| [Qrevo Master](https://support.roborock.com/hc/en-us/articles/33953902919705-What-s-the-key-features-of-Roborock-Qrevo-Master) | `roborock.vacuum.a117` | Video testing opt-in |
+| [Qrevo Slim](https://support.roborock.com/hc/en-us/articles/37614754458009-What-are-the-key-features-of-Qrevo-Slim) | `roborock.vacuum.a21` | Video testing opt-in |
+| [Qrevo Curv](https://ca.roborock.com/products/roborock-qrevo-curv) | `roborock.vacuum.a135` | Video testing opt-in |
+| [Qrevo Edge](https://us.roborock.com/pages/roborock-qrevo-edge-series) | `roborock.vacuum.a156` | Video testing opt-in |
+| [Saros 10](https://ca.roborock.com/pages/roborock-saros-10) | `roborock.vacuum.a147` | Video testing opt-in |
+| [Saros 10R](https://support.roborock.com/hc/en-us/articles/43407368729497-Does-Saros-10R-support-obstacle-avoidance-and-video-call-features) | `roborock.vacuum.a144` | Video testing opt-in |
+
+This is a conservative list of recognized IDs, not a complete catalog of every
+Roborock regional variant or newer model. Unknown IDs remain hidden. A camera or
+obstacle-avoidance sensor alone does not establish remote viewing support; even
+similarly named Qrevo variants can differ. Official remote viewing support does
+not establish compatibility with LocalRock or the local server.
+
+On an untested model, check **Enable video and audio testing for this robot** before entering
+the existing camera PIN or pattern. The checkbox starts unchecked and resets when
+leaving the screen or backgrounding the app. Unchecking it cancels a pending
+credential check and clears the entry. No credential check or video connection is
+started without opting in. Retries and connection tests use the same permission.
+
+Experimental models have video viewing, quality selection, fullscreen framing and
+audio calls on iPhone under the same opt-in. Opening video leaves audio off; tap
+the microphone icon to start a call explicitly. Microphone, robot-audio mute and
+speaker-volume controls are available during the call. Audio behavior can differ
+by model, so report video and audio results separately. Driving, Pin-and-Go,
+docking and cleaning controls are unavailable in their video screen. If a robot
+cannot stream while docked, move it off the dock using its normal controls before
+testing. S7 MaxV retains its existing controls and requires no additional checkbox.
+
+Use **Report your result** to open the video PR and share whether video and audio calls work,
+along with the model ID, firmware version, phone platform and any displayed error.
+The entry screen shows the model ID and firmware for reference. Do not include
+PINs, account credentials or private connection details.
+
+### Capability sources
+
+The model links above document Roborock's remote viewing/video-call features.
+Model IDs and video-capable product families are cross-checked against
+[python-roborock's product mappings](https://github.com/Python-roborock/python-roborock/blob/bc298d16687ec45dcf99ef14659b3f480027a880/roborock/data/code_mappings.py),
+[device records](https://github.com/Python-roborock/python-roborock/blob/bc298d16687ec45dcf99ef14659b3f480027a880/device_info.yaml),
+and [product video features](https://github.com/Python-roborock/python-roborock/blob/bc298d16687ec45dcf99ef14659b3f480027a880/roborock/device_features.py).
+The [camera protocol](https://github.com/Python-roborock/python-roborock/blob/bc298d16687ec45dcf99ef14659b3f480027a880/docs/CAMERA_PROTOCOL.md)
+also documents the video-monitor flag, but LocalRock uses this explicit model list
+rather than inferring compatibility from general feature bits or product names.
+To add a model, verify its exact ID and official remote viewing capability, add
+it to `CameraModelSupport.kt` and its tests, and keep it experimental until tested.
 
 ## Setup
 
@@ -11,10 +69,10 @@ servers, before switching to the local server. Keep your existing camera PIN or
 pattern. The robot, phone and server must be able to reach the configured TURN endpoint.
 
 Tap the **video icon beside Settings** (or **More → Video (experimental)**) and
-draw your existing pattern. Pattern entry is the default; an accepted pattern opens
+opt in if prompted, then draw your existing pattern. Pattern entry is the default; an accepted pattern opens
 the viewer automatically. Choose **Use a numeric PIN** for typed entry, then tap
 **Open video** or the keyboard's Done button. The shortcut appears only for supported
-vacuums. The viewer uses the OEM matching connection and requests HD by default. While docked, choose a
+vacuums. The viewer uses the OEM matching connection and requests HD by default. On S7 MaxV while docked, choose a
 destination on the map and tap **Go**. Video connects once the robot leaves the dock.
 
 The credential remains in memory only while the screen is in the foreground.
@@ -22,6 +80,8 @@ Leaving or backgrounding the app closes the viewer and clears the credential.
 Opening the map or returning to the app does not start video automatically.
 
 ## Video and cleaning controls
+
+The robot controls in this section are available on S7 MaxV only.
 
 - **Pause** and **Resume** control an existing cleaning task while off the dock.
   Room and zone tasks retain their scope. The viewer does not offer Start cleaning;
@@ -76,7 +136,8 @@ change that volume. Exiting or backgrounding video ends the call. An interruptio
 mutes the microphone; unmute it explicitly to resume speaking.
 
 Voice calls are experimental. They are currently
-available in the iPhone build; Android call controls remain unavailable.
+available in the iPhone build, including opted-in untested models; Android call
+controls remain unavailable. Video and audio calls have only been tested on S7 MaxV.
 
 **Activate Remote Viewing** and **Deactivate Remote Viewing** remain disabled and
 send no commands. Stopping a viewer does not deactivate remote viewing. LocalRock

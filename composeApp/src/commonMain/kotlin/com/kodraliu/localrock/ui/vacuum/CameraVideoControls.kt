@@ -53,6 +53,7 @@ import kotlinx.coroutines.launch
 internal fun CameraVideoControls(
     viewModel: VacuumViewModel, peer: RtcPeer?, motion: CameraMotionController,
     state: CameraLiveSession.State, ready: Boolean, expanded: Boolean,
+    controlsAllowed: Boolean,
     voice: CameraVoiceCall,
     onExpand: (Boolean) -> Unit, onStopVideo: () -> Unit, onDock: () -> Unit,
     onRetry: () -> Unit, quality: CameraVideoQuality, qualityEnabled: Boolean, qualityError: String?,
@@ -80,7 +81,7 @@ internal fun CameraVideoControls(
     var interaction by remember { mutableStateOf(0) }
     var target by remember(floor, map?.viewportIdentity(floor)) { mutableStateOf<Pair<Int,Int>?>(null) }
     // Navigation is independent of video: a docked robot must be able to leave through Go.
-    val enabled = !busy
+    val enabled = controlsAllowed && !busy
     val docked = status.state in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE)
     val headline = if (status.state == VacuumStateCodes.CHARGING_COMPLETE) "Charged"
         else status.state?.let { VacuumStateCodes.describe(it) } ?: "Robot status unavailable"
@@ -117,7 +118,7 @@ internal fun CameraVideoControls(
     }
     LaunchedEffect(expanded) { if (!expanded) mapExpanded = false }
     LaunchedEffect(viewModel, ready, status.state) {
-        if (ready && status.state == VacuumStateCodes.REMOTE_CONTROL_ACTIVE) {
+        if (controlsAllowed && ready && status.state == VacuumStateCodes.REMOTE_CONTROL_ACTIVE) {
             while (isActive) {
                 try { viewModel.repository.fetchMap() }
                 catch (e: CancellationException) { throw e }
@@ -127,6 +128,7 @@ internal fun CameraVideoControls(
         }
     }
     fun go() {
+        if (!controlsAllowed) return
         val point = target ?: return
         val current = map ?: return
         val cell = current.mmToCell(point.first,point.second)
@@ -166,11 +168,11 @@ internal fun CameraVideoControls(
         val wide = expanded && landscape
         val overlayInsets = if (expanded) WindowInsets.safeDrawing else WindowInsets(0, 0, 0, 0)
         val portraitVideoHeight = maxHeight * .43f
-        val videoModifier = if (expanded) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(portraitVideoHeight)
+        val videoModifier = if (expanded || !controlsAllowed) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(portraitVideoHeight)
         // Keep one native renderer composition site through expansion, rotation and map changes.
         Box(videoModifier.background(Color.Black).clipToBounds()) {
             peer?.let { currentPeer -> key(currentPeer) { RtcVideoView(currentPeer,Modifier.fillMaxSize(),fill=wide && fillVideo) } }
-            if (docked) {
+            if (docked && controlsAllowed) {
                 Text("Robot docked. Choose a spot on the map and tap Go to move it and start video.",
                     Modifier.align(Alignment.Center).padding(horizontal=32.dp,vertical=72.dp),
                     color=Color.White,textAlign=TextAlign.Center)
@@ -206,10 +208,21 @@ internal fun CameraVideoControls(
                     IconButton(onClick={motion.release();settings=true}) { Icon(Icons.Default.MoreVert,"Video settings",tint=Color.White) }
                 }
             }
-            if (!expanded) CameraCleaningButton(viewModel,motion,modifier=Modifier.align(Alignment.BottomEnd).padding(8.dp))
-            if (!expanded) callIconButton(Modifier.align(Alignment.BottomStart).padding(8.dp))
+            if (!expanded && controlsAllowed) CameraCleaningButton(viewModel,motion,modifier=Modifier.align(Alignment.BottomEnd).padding(8.dp))
+            if (!expanded && controlsAllowed) callIconButton(Modifier.align(Alignment.BottomStart).padding(8.dp))
         }
-        if (wide) {
+        if (!controlsAllowed) {
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .windowInsetsPadding(overlayInsets.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
+                .background(Color.Black.copy(alpha=.65f)).padding(12.dp),
+                horizontalAlignment=Alignment.CenterHorizontally) {
+                Text("Experimental video and audio · tested only on S7 MaxV", color=Color.White, textAlign=TextAlign.Center)
+                Row(verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(16.dp)) {
+                    callIconButton(Modifier)
+                    TextButton(onClick=onStopVideo) { Text("End video",color=Color.White) }
+                }
+            }
+        } else if (wide) {
             if (mapExpanded) {
                 targetPanel(Modifier.align(Alignment.CenterStart).fillMaxHeight().fillMaxWidth(.6f)
                     .windowInsetsPadding(overlayInsets.only(WindowInsetsSides.Vertical + WindowInsetsSides.Start)).padding(top=48.dp),true)
@@ -261,7 +274,7 @@ internal fun CameraVideoControls(
                 }
             }
         }
-        if (expanded && !wide) {
+        if (expanded && !wide && controlsAllowed) {
             callIconButton(Modifier.align(Alignment.BottomCenter)
                 .windowInsetsPadding(overlayInsets.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
                 .padding(bottom=12.dp))

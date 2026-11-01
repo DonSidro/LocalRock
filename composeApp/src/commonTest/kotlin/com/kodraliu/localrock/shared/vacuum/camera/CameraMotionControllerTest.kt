@@ -48,6 +48,21 @@ class CameraMotionControllerTest {
     private fun TestScope.controller(rpc: Rpc, ready: () -> Boolean = {true}) =
         CameraMotionController(rpc,ready,CoroutineScope(SupervisorJob()+StandardTestDispatcher(testScheduler)))
 
+    @Test fun video_only_mode_never_sends_motion_cleaning_or_docking_commands() = runTest {
+        val rpc = Rpc()
+        val c = CameraMotionController(rpc, { true }, backgroundScope, controlsAllowed = false)
+        CameraMotionController.Direction.entries.forEach { c.hold(it); runCurrent(); c.release() }
+        CameraCleaningAction.entries.forEach { c.cleaning(it); runCurrent() }
+        c.goTo(10_000, 10_000, 0); runCurrent()
+        c.stop(); c.background(); runCurrent()
+        var finished = false
+        c.endViewing(returnToDock = true) { finished = true }
+        assertTrue(finished)
+        c.dispose(); runCurrent()
+        assertTrue(rpc.calls.isEmpty())
+        assertFalse(c.viewerStartedActivity.value)
+    }
+
     @Test fun dockedPlayStartsCleaningBeforeVideoConnects() = runTest {
         val rpc=Rpc().apply {state=8};val c=controller(rpc){false}
         c.cleaning(CameraCleaningAction.START);advanceUntilIdle()

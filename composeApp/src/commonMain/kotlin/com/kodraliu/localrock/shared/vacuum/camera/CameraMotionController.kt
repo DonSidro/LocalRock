@@ -26,10 +26,12 @@ class CameraMotionController internal constructor(
     private val rpc: CameraRpc,
     private val ready: () -> Boolean,
     private val scope: CoroutineScope,
+    private val controlsAllowed: Boolean = true,
 ) {
-    constructor(session: VacuumSession, ready: () -> Boolean) : this(
+    constructor(session: VacuumSession, controlsAllowed: Boolean = true, ready: () -> Boolean) : this(
         CameraRpc { method, params -> session.sendCommandRaw(method, params, timeoutMs = cameraControlTimeoutMs(method)) },
         ready, CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        controlsAllowed,
     )
 
     enum class Direction(val velocity: Double, val omega: Double) {
@@ -53,7 +55,7 @@ class CameraMotionController internal constructor(
     private var disposed = false
 
     fun hold(direction: Direction) {
-        if (disposed || job != null || haltJob != null) return
+        if (disposed || job != null || haltJob != null || !controlsAllowed) return
         holding = true
         launchOperation {
             var entered = false
@@ -167,17 +169,20 @@ class CameraMotionController internal constructor(
     fun dock(onDocked: () -> Unit = {}) = endViewing(returnToDock = true, onFinished = onDocked)
 
     /** Finish robot commands before the caller releases the camera preview. */
-    fun endViewing(returnToDock: Boolean = false, onFinished: () -> Unit = {}) = transition {
-        if (returnToDock) {
-            val status = readStatus()
-            check(status["error_code"]?.jsonPrimitive?.intOrNull == 0)
-            check(status.state() in setOf(2, 3, 4, 5, 6, 7, 8, 10, 11, 15, 16, 17, 18, 24, 100))
-            if (status.state() !in setOf(6, 8, 15, 100)) ack("app_charge")
-            navigationRequested = false
-        } else if (!stopNavigation()) return@transition
-        if (!endManualMode()) return@transition
-        _viewerStartedActivity.value = false
-        onFinished()
+    fun endViewing(returnToDock: Boolean = false, onFinished: () -> Unit = {}) {
+        if (!controlsAllowed) { onFinished(); return }
+        transition {
+            if (returnToDock) {
+                val status = readStatus()
+                check(status["error_code"]?.jsonPrimitive?.intOrNull == 0)
+                check(status.state() in setOf(2, 3, 4, 5, 6, 7, 8, 10, 11, 15, 16, 17, 18, 24, 100))
+                if (status.state() !in setOf(6, 8, 15, 100)) ack("app_charge")
+                navigationRequested = false
+            } else if (!stopNavigation()) return@transition
+            if (!endManualMode()) return@transition
+            _viewerStartedActivity.value = false
+            onFinished()
+        }
     }
 
     /** Explicit Stop may halt docking; background cleanup lets a return to dock continue. */
@@ -206,7 +211,7 @@ class CameraMotionController internal constructor(
     }
 
     private fun transition(action: suspend () -> Unit) {
-        if (disposed || haltJob != null) return
+        if (disposed || haltJob != null || !controlsAllowed) return
         val previous = job
         previous?.cancel()
         val next = scope.launch(start = CoroutineStart.LAZY) {
@@ -222,7 +227,7 @@ class CameraMotionController internal constructor(
     }
 
     private fun launchOperation(action: suspend () -> Unit) {
-        if (disposed || job != null || haltJob != null) return
+        if (disposed || job != null || haltJob != null || !controlsAllowed) return
         _busy.value = true
         _error.value = null
         val next = scope.launch(start = CoroutineStart.LAZY) {

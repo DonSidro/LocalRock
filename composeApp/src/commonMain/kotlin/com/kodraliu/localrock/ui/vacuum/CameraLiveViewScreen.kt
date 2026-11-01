@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.ui.vacuum
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -31,12 +34,21 @@ import com.kodraliu.localrock.shared.vacuum.camera.CameraLiveSession
 import com.kodraliu.localrock.shared.vacuum.camera.CameraVideoTest
 import com.kodraliu.localrock.shared.vacuum.camera.CameraVideoQuality
 import com.kodraliu.localrock.shared.vacuum.camera.experimentalCameraSupported
+import com.kodraliu.localrock.shared.vacuum.camera.CameraModelSupport
+import com.kodraliu.localrock.shared.vacuum.camera.cameraModelSupport
 import com.kodraliu.localrock.shared.webrtc.liveViewSupported
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
-    val live = remember(viewModel) { CameraLiveSession(viewModel.repository.session) }
+    val modelSupport = remember(viewModel) { cameraModelSupport(viewModel.modelName) }
+    var testingEnabled by remember(viewModel) { mutableStateOf(false) }
+    val canConnect = liveViewSupported && modelSupport.canConnect(testingEnabled)
+    val canConnectNow by rememberUpdatedState(canConnect)
+    val controlsAllowed = liveViewSupported && modelSupport.allowsRobotControls
+    val live = remember(viewModel) {
+        CameraLiveSession(viewModel.repository.session, accessAllowed = { canConnectNow })
+    }
     val entryScope = rememberCoroutineScope()
     val entry = remember(live, entryScope) { CameraCredentialEntry(live::checkCredential, entryScope) }
     val checkingCredential by entry.checking.collectAsState()
@@ -47,7 +59,7 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     val ready = connection == RtcConnectionState.CONNECTED &&
         state == CameraLiveSession.State.Streaming
     val readyNow by rememberUpdatedState(ready)
-    val motion = remember(viewModel) { CameraMotionController(viewModel.repository.session) { readyNow } }
+    val motion = remember(viewModel) { CameraMotionController(viewModel.repository.session, controlsAllowed) { readyNow } }
     var expanded by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf(false) }
     var pendingCameraStart by remember { mutableStateOf(false) }
@@ -75,19 +87,21 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     val supported = liveViewSupported && experimentalCameraSupported(viewModel.modelName)
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val uriHandler = LocalUriHandler.current
     fun dismissKeyboard() { focus.clearFocus(); keyboard?.hide() }
     fun start(test: CameraVideoTest = selectedTest, quality: CameraVideoQuality = preferredQuality) {
+        if (!canConnectNow) return
         if (pin.isNotBlank() && (state == CameraLiveSession.State.Idle || state is CameraLiveSession.State.Failed)) {
             selectedTest = test
             preferredQuality = quality
             dismissKeyboard()
             viewing = true
-            pendingCameraStart = dockedNow
-            if (!dockedNow) live.start(pin, test, quality)
+            pendingCameraStart = dockedNow && controlsAllowed
+            if (!pendingCameraStart) live.start(pin, test, quality)
         }
     }
     fun submitEntry(test: CameraVideoTest = CameraVideoTest.OEM_MATCH, quality: CameraVideoQuality = preferredQuality) {
-        if (!supported || viewing) return
+        if (!canConnectNow || viewing) return
         val credential = pin
         dismissKeyboard()
         entry.submit(credential) {
@@ -100,7 +114,7 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
         if (state == CameraLiveSession.State.Streaming) preferredQuality = confirmedQuality
     }
     LaunchedEffect(viewing, docked, state) {
-        if (viewing && pendingCameraStart && !docked && pin.isNotBlank() && (state == CameraLiveSession.State.Idle || state is CameraLiveSession.State.Failed)) {
+        if (canConnectNow && viewing && pendingCameraStart && !docked && pin.isNotBlank() && (state == CameraLiveSession.State.Idle || state is CameraLiveSession.State.Failed)) {
             pendingCameraStart = false
             live.start(pin, selectedTest, preferredQuality)
         }
@@ -137,6 +151,7 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     // A microphone permission prompt can pause the app without backgrounding it.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         entry.cancel()
+        testingEnabled = false
         pin = ""
         viewing = false
         pendingCameraStart = false
@@ -164,7 +179,7 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
             )
         },
         bottomBar = {
-            if (supported && !viewing && state == CameraLiveSession.State.Idle) {
+            if (canConnect && !viewing && state == CameraLiveSession.State.Idle) {
                 Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {
                     if (typed) TextButton(onClick = { dismissKeyboard() }) { Text("Hide keyboard", color = Color.White) }
@@ -177,6 +192,7 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
             // Attach the renderer while connecting so a first video frame can be decoded.
             if (viewing) {
                 CameraVideoControls(viewModel, peer, motion, state, ready, expanded,
+                    controlsAllowed=controlsAllowed,
                     voice=live.voice,
                     onExpand={expanded=it}, onStopVideo={requestExit(false)},
                     onDock={motion.release();exitNavigates=false;dockDialog=true},onRetry={start()},
@@ -189,7 +205,7 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
                     },onRetrySd={start(quality=CameraVideoQuality.SD)})
             }
             if (!supported) {
-                Text("Experimental video is currently available for S7 MaxV only, in builds with WebRTC enabled.",
+                Text("Video is available only for recognized models with official remote viewing support, in builds with WebRTC enabled.",
                     Modifier.padding(24.dp), textAlign = TextAlign.Center)
             } else if (!viewing) when (val s = state) {
                 CameraLiveSession.State.Idle -> Column(
@@ -198,49 +214,76 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(viewModel.deviceName, style = MaterialTheme.typography.titleMedium)
-                    Text("While docked, open video, choose a spot on the map, and tap Go to move the robot.", textAlign = TextAlign.Center)
-                    CameraCleaningButton(viewModel, motion)
-                    motionError?.let { Text(it, color = Color.Yellow, textAlign = TextAlign.Center) }
-                    Text("Enter your existing camera PIN or pattern. Activate remote viewing in the official Roborock app before switching to the local server.",
-                        textAlign = TextAlign.Center)
-                    if (typed) {
-                        OutlinedTextField(
-                            value = pin, onValueChange = { pin = it.filter { c -> c in '0'..'9' } }, label = { Text("Existing camera PIN") },
-                            singleLine = true, enabled = !checkingCredential, visualTransformation = PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(onDone = { submitEntry() }),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White, unfocusedTextColor = Color.White,
-                                focusedLabelColor = Color.White, unfocusedLabelColor = Color.LightGray,
-                            ),
-                        )
-                    } else if (!checkingCredential) {
-                        PatternPinInput(onPattern = {
-                            pin = it
-                            if (it.isNotBlank() && !showConnectionTests) submitEntry()
-                        })
-                        Text(if (showConnectionTests) "Draw your pattern, then choose a connection test" else "Draw your existing pattern to open video")
-                    }
-                    if (checkingCredential) {
-                        CircularProgressIndicator(color = Color.White)
-                        Text("Checking camera credential…")
-                        TextButton(onClick = { entry.cancel(); pin = "" }) { Text("Cancel", color = Color.White) }
-                    }
-                    credentialError?.let { Text(it, color = Color.Yellow, textAlign = TextAlign.Center) }
-                    TextButton(onClick = { entry.cancel(); dismissKeyboard(); typed = !typed; pin = "" }) {
-                        Text(if (typed) "Use a pattern" else "Use a numeric PIN", color = Color.White)
-                    }
-                    Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                        CameraVideoQuality.entries.forEach {quality->
-                            FilterChip(selected=preferredQuality==quality,onClick={preferredQuality=quality},enabled=!checkingCredential,label={Text(quality.name)})
+                    if (modelSupport == CameraModelSupport.EXPERIMENTAL) {
+                        Text("Video and audio testing", style = MaterialTheme.typography.titleMedium)
+                        Text("LocalRock video and audio calls have only been tested on S7 MaxV. Enable testing to try them on your robot, and report whether video and audio work on your model.",
+                            textAlign = TextAlign.Center)
+                        Text(listOfNotNull(viewModel.modelName, viewModel.firmwareVersion?.let { "Firmware $it" }).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                        Row(Modifier.fillMaxWidth().toggleable(value = testingEnabled, role = Role.Checkbox,
+                            onValueChange = {
+                                entry.cancel()
+                                pin = ""
+                                testingEnabled = it
+                                dismissKeyboard()
+                            }).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = testingEnabled, onCheckedChange = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Enable video and audio testing for this robot")
                         }
+                        Text("Testing enables video viewing and audio calls on iPhone. Driving and cleaning controls are unavailable on this model.",
+                            style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                        TextButton(onClick = { uriHandler.openUri("https://github.com/DonSidro/LocalRock/pull/95") }) {
+                            Text("Report your result", color = Color.White)
+                        }
+                        if (!testingEnabled) Text("Check the box above to enter your camera PIN or pattern.", textAlign = TextAlign.Center)
                     }
-                    if (typed || showConnectionTests) Button(onClick={submitEntry()},enabled=pin.isNotBlank() && !checkingCredential) {Text("Open video")}
-                    TextButton(onClick={showConnectionTests=!showConnectionTests},enabled=!checkingCredential) {Text("Connection tests (SD)")}
-                    if(showConnectionTests) CameraTestTiles(enabled=pin.isNotBlank() && !checkingCredential,onStart={submitEntry(it,CameraVideoQuality.SD)})
-                    Text("Video does not use your phone's camera. Your microphone is used only during a voice call; audio is not saved.",
-                        style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
-                    cleanupWarning?.let { Text(it, color = Color.Yellow, textAlign = TextAlign.Center) }
+                    if (canConnect) {
+                        Text(if (controlsAllowed) "While docked, open video, choose a spot on the map, and tap Go to move the robot."
+                            else "If your robot cannot stream while docked, move it off the dock using its normal controls before testing.", textAlign = TextAlign.Center)
+                        if (controlsAllowed) CameraCleaningButton(viewModel, motion)
+                        motionError?.let { Text(it, color = Color.Yellow, textAlign = TextAlign.Center) }
+                        Text("Enter your existing camera PIN or pattern. Activate remote viewing in the official Roborock app before switching to the local server.",
+                            textAlign = TextAlign.Center)
+                        if (typed) {
+                            OutlinedTextField(
+                                value = pin, onValueChange = { pin = it.filter { c -> c in '0'..'9' } }, label = { Text("Existing camera PIN") },
+                                singleLine = true, enabled = !checkingCredential, visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { submitEntry() }),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                                    focusedLabelColor = Color.White, unfocusedLabelColor = Color.LightGray,
+                                ),
+                            )
+                        } else if (!checkingCredential) {
+                            PatternPinInput(onPattern = {
+                                pin = it
+                                if (it.isNotBlank() && !showConnectionTests) submitEntry()
+                            })
+                            Text(if (showConnectionTests) "Draw your pattern, then choose a connection test" else "Draw your existing pattern to open video")
+                        }
+                        if (checkingCredential) {
+                            CircularProgressIndicator(color = Color.White)
+                            Text("Checking camera credential…")
+                            TextButton(onClick = { entry.cancel(); pin = "" }) { Text("Cancel", color = Color.White) }
+                        }
+                        credentialError?.let { Text(it, color = Color.Yellow, textAlign = TextAlign.Center) }
+                        TextButton(onClick = { entry.cancel(); dismissKeyboard(); typed = !typed; pin = "" }) {
+                            Text(if (typed) "Use a pattern" else "Use a numeric PIN", color = Color.White)
+                        }
+                        Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                            CameraVideoQuality.entries.forEach {quality->
+                                FilterChip(selected=preferredQuality==quality,onClick={preferredQuality=quality},enabled=!checkingCredential,label={Text(quality.name)})
+                            }
+                        }
+                        if (typed || showConnectionTests) Button(onClick={submitEntry()},enabled=pin.isNotBlank() && !checkingCredential) {Text("Open video")}
+                        TextButton(onClick={showConnectionTests=!showConnectionTests},enabled=!checkingCredential) {Text("Connection tests (SD)")}
+                        if(showConnectionTests) CameraTestTiles(enabled=pin.isNotBlank() && !checkingCredential,onStart={submitEntry(it,CameraVideoQuality.SD)})
+                        Text("Video does not use your phone's camera. Your microphone is used only during a voice call; audio is not saved.",
+                            style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                        cleanupWarning?.let { Text(it, color = Color.Yellow, textAlign = TextAlign.Center) }
+                    }
                 }
                 is CameraLiveSession.State.Connecting -> if (!viewing) Column(
                     Modifier.background(Color.Black.copy(alpha = .8f)).padding(20.dp),
@@ -263,10 +306,10 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(s.message, textAlign = TextAlign.Center)
-                    CameraCleaningButton(viewModel, motion)
+                    if (controlsAllowed) CameraCleaningButton(viewModel, motion)
                     motionError?.let { Text(it, color = Color.Yellow, textAlign = TextAlign.Center) }
                     cleanupWarning?.let { Text(it, color = Color.Yellow, textAlign = TextAlign.Center) }
-                    Button(onClick = { start() }, enabled = pin.isNotBlank()) { Text("Retry Video ${selectedTest.code}") }
+                    Button(onClick = { start() }, enabled = canConnect && pin.isNotBlank()) { Text("Retry Video ${selectedTest.code}") }
                     TextButton(onClick = { live.stop() }) { Text("Choose another video test", color = Color.White) }
                     TextButton(onClick = { pin = ""; live.stop() }) { Text("Enter PIN again", color = Color.White) }
                 }
