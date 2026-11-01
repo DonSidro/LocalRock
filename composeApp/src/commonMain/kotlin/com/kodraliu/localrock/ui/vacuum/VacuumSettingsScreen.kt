@@ -721,73 +721,103 @@ private fun MaintenanceScreen(
             } else {
                 LazyColumn(contentPadding = padding) {
                     item {
+                        val used = consumables.mainBrushWorkTime ?: 0L
                         ConsumableItem(
                             icon = Icons.Default.Cached,
                             iconTint = AppColors.Good,
                             title = "Main Brush",
-                            usedSeconds = consumables.mainBrushWorkTime ?: 0L,
-                            maxSeconds = ConsumableStatus.MAIN_BRUSH_LIFETIME_S,
+                            percent = ConsumableStatus.percentLeft(used, ConsumableStatus.MAIN_BRUSH_LIFETIME_S),
+                            detail = hoursLeft(used, ConsumableStatus.MAIN_BRUSH_LIFETIME_S),
                             onReset = { onReset("main_brush_work_time") },
                         )
                     }
                     item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
                     item {
+                        val used = consumables.sideBrushWorkTime ?: 0L
                         ConsumableItem(
                             icon = Icons.Default.Autorenew,
                             iconTint = AppColors.Water,
                             title = "Side Brush",
-                            usedSeconds = consumables.sideBrushWorkTime ?: 0L,
-                            maxSeconds = ConsumableStatus.SIDE_BRUSH_LIFETIME_S,
+                            percent = ConsumableStatus.percentLeft(used, ConsumableStatus.SIDE_BRUSH_LIFETIME_S),
+                            detail = hoursLeft(used, ConsumableStatus.SIDE_BRUSH_LIFETIME_S),
                             onReset = { onReset("side_brush_work_time") },
                         )
                     }
                     item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
                     item {
+                        val used = consumables.filterWorkTime ?: 0L
                         ConsumableItem(
                             icon = Icons.Default.Air,
                             iconTint = AppColors.AccentPurple,
                             title = "Filter",
-                            usedSeconds = consumables.filterWorkTime ?: 0L,
-                            maxSeconds = ConsumableStatus.FILTER_LIFETIME_S,
+                            percent = ConsumableStatus.percentLeft(used, ConsumableStatus.FILTER_LIFETIME_S),
+                            detail = hoursLeft(used, ConsumableStatus.FILTER_LIFETIME_S),
                             onReset = { onReset("filter_work_time") },
                         )
                     }
                     item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
                     item {
+                        val percent = ConsumableStatus.percentLeft(
+                            consumables.sensorDirtyTime ?: 0L,
+                            ConsumableStatus.SENSOR_LIFETIME_S,
+                        )
                         ConsumableItem(
                             icon = Icons.Default.Sensors,
                             iconTint = AppColors.Warn,
-                            title = "Sensor",
-                            usedSeconds = consumables.sensorDirtyTime ?: 0L,
-                            maxSeconds = ConsumableStatus.SENSOR_LIFETIME_S,
+                            title = "Sensors",
+                            percent = percent,
+                            detail = cleanState(percent),
+                            showPercent = false,
                             onReset = { onReset("sensor_dirty_time") },
                         )
                     }
-                    consumables.cleaningBrushWorkTime?.let { used ->
-                        item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
-                        item {
-                            ConsumableItem(
-                                icon = Icons.Default.CleaningServices,
-                                iconTint = AppColors.AccentCyan,
-                                title = "Maintenance Brush",
-                                usedSeconds = used,
-                                maxSeconds = ConsumableStatus.CLEANING_BRUSH_LIFETIME_S,
-                                onReset = { onReset("cleaning_brush_work_times") },
-                            )
-                        }
+                    item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
+                    item {
+                        ConsumableItem(
+                            icon = Icons.Default.Build,
+                            iconTint = AppColors.AccentCyan,
+                            title = "Mop",
+                            detail = "Replace as needed.",
+                        )
                     }
                     consumables.strainerWorkTime?.let { used ->
                         item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
                         item {
+                            val percent = ConsumableStatus.percentLeft(used, ConsumableStatus.STRAINER_LIFETIME_RUNS)
                             ConsumableItem(
                                 icon = Icons.Default.FilterAlt,
                                 iconTint = AppColors.AccentIndigo,
-                                title = "Strainer",
-                                usedSeconds = used,
-                                maxSeconds = ConsumableStatus.STRAINER_LIFETIME_S,
+                                title = "Cleaning Tray",
+                                percent = percent,
+                                detail = cleanState(percent),
+                                showPercent = false,
                                 onReset = { onReset("strainer_work_times") },
                             )
                         }
+                    }
+                    consumables.cleaningBrushWorkTime?.let { used ->
+                        item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
+                        item {
+                            val percent = ConsumableStatus.percentLeft(used, ConsumableStatus.CLEANING_BRUSH_LIFETIME_RUNS)
+                            ConsumableItem(
+                                icon = Icons.Default.CleaningServices,
+                                iconTint = AppColors.AccentCyan,
+                                title = "Maintenance Brush",
+                                percent = percent,
+                                detail = cleanState(percent),
+                                showPercent = false,
+                                onReset = { onReset("cleaning_brush_work_times") },
+                            )
+                        }
+                    }
+                    item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
+                    item {
+                        ConsumableItem(
+                            icon = Icons.Default.Delete,
+                            iconTint = AppColors.AccentCyan,
+                            title = "Dust Bag",
+                            detail = "Replace as needed.",
+                        )
                     }
                 }
             }
@@ -795,23 +825,33 @@ private fun MaintenanceScreen(
     }
 }
 
+private fun hoursLeft(usedSeconds: Long, maxSeconds: Long): String {
+    val remaining = (maxSeconds - usedSeconds).coerceAtLeast(0L)
+    val hours = remaining / 3600L
+    val minutes = (remaining % 3600L) / 60L
+    return if (hours > 0) "${hours}h ${minutes}m remaining" else "${minutes}m remaining"
+}
+
+private fun cleanState(percent: Int): String = when {
+    percent <= 0 -> "Must clean"
+    percent <= 20 -> "Clean soon"
+    else -> "Normal"
+}
+
 @Composable
 private fun ConsumableItem(
     icon: ImageVector,
     iconTint: Color,
     title: String,
-    usedSeconds: Long,
-    maxSeconds: Long,
-    onReset: () -> Unit,
+    detail: String,
+    percent: Int? = null,
+    showPercent: Boolean = true,
+    onReset: (() -> Unit)? = null,
 ) {
-    val remaining = (maxSeconds - usedSeconds).coerceAtLeast(0L)
-    val fraction = (remaining.toFloat() / maxSeconds).coerceIn(0f, 1f)
-    val remainingHours = remaining / 3600L
-    val remainingMinutes = (remaining % 3600L) / 60L
-    val percent = (fraction * 100).toInt()
     val progressColor = when {
-        fraction > 0.5f -> AppColors.Good
-        fraction > 0.2f -> AppColors.Warn
+        percent == null -> MaterialTheme.colorScheme.onSurfaceVariant
+        percent > 20 -> AppColors.Good
+        percent > 5 -> AppColors.Warn
         else -> MaterialTheme.colorScheme.error
     }
     Row(
@@ -837,27 +877,31 @@ private fun ConsumableItem(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                Text("$percent%", style = MaterialTheme.typography.labelMedium, color = progressColor, fontWeight = FontWeight.Bold)
+                if (percent != null && showPercent) {
+                    Text("$percent%", style = MaterialTheme.typography.labelMedium, color = progressColor, fontWeight = FontWeight.Bold)
+                }
             }
-            LinearProgressIndicator(
-                progress = { fraction },
-                modifier = Modifier.fillMaxWidth(),
-                color = progressColor,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            )
+            if (percent != null) {
+                LinearProgressIndicator(
+                    progress = { percent / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = progressColor,
+                    trackColor = if (percent <= 0) progressColor else MaterialTheme.colorScheme.surfaceVariant,
+                )
+            }
             Text(
-                if (remainingHours > 0) "${remainingHours}h ${remainingMinutes}m remaining"
-                else "${remainingMinutes}m remaining",
+                detail,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (percent != null && percent <= 0 && !showPercent) progressColor else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = onReset, modifier = Modifier.padding(top = 4.dp)) {
-            Text("Reset", color = MaterialTheme.colorScheme.error)
+        if (onReset != null) {
+            TextButton(onClick = onReset, modifier = Modifier.padding(top = 4.dp)) {
+                Text("Reset", color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
