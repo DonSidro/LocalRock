@@ -24,6 +24,9 @@ import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapPoint
 import com.kodraliu.localrock.shared.vacuum.map.VirtualWall
 import com.kodraliu.localrock.shared.vacuum.map.roomIdAtCell
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 // Zone overlays are translucent, so one pair reads over both the light and dark palettes.
 private val NO_GO_FILL = Color(0x33f44336)    // translucent red
@@ -363,7 +366,7 @@ private fun drawOverlays(canvas: Canvas, map: ParsedMap, palette: MapPalette, dr
 // Square dock, round robot: the two markers stay distinguishable without relying on colour.
 private fun drawMarkers(canvas: Canvas, map: ParsedMap, palette: MapPalette, yaw: Float = 0f, squash: Float = 1f) {
     map.chargerMm?.let { p -> upright(canvas, map, p, yaw, squash) { drawMarker(canvas, map, p, palette.charger, palette.markerRing, square = true) } }
-    map.robotMm?.let { p -> upright(canvas, map, p, yaw, squash) { drawMarker(canvas, map, p, palette.robot, palette.markerRing, square = false) } }
+    map.robotMm?.let { p -> upright(canvas, map, p, yaw, squash) { drawMarker(canvas, map, p, palette.robot, palette.markerRing, square = false, headingDegrees = p.angle + 180f) } }
 }
 
 /** Draws a marker undoing the map's turn and tilt around its own spot, so it stays upright on screen. */
@@ -480,6 +483,7 @@ private fun drawMarker(
     ring: Color,
     square: Boolean,
     radius: Float = 5.5f,
+    headingDegrees: Float = 0f,
 ) {
 
     val cellX = (point.x / 50f) - map.pixelOffsetLeft
@@ -507,12 +511,35 @@ private fun drawMarker(
         canvas.drawPath(house, Paint().apply { this.color = Color.White })
     } else {
         canvas.drawCircle(Offset(cellX, cellY), radius + 1.5f, ringPaint)
-        canvas.drawCircle(Offset(cellX, cellY), radius, fillPaint)
-        // The robot seen from above: a white ring for its body and a dot for the lidar turret.
-        val white = Paint().apply { this.color = Color.White }
-        val hole = Paint().apply { this.color = color }
-        canvas.drawCircle(Offset(cellX, cellY), radius * 0.62f, white)
-        canvas.drawCircle(Offset(cellX, cellY), radius * 0.46f, hole)
-        canvas.drawCircle(Offset(cellX, cellY - radius * 0.12f), radius * 0.2f, white)
+        drawRobotBody(canvas, Offset(cellX, cellY), radius, headingDegrees)
     }
+}
+
+/**
+ * The robot seen from above, turned to its heading: a disc with an inner ring, the bin cover across its back,
+ * the lidar turret ahead of centre and the button ahead of that. Proportions are python-roborock's.
+ */
+private fun drawRobotBody(canvas: Canvas, c: Offset, r: Float, headingDegrees: Float) {
+    // A white shell with slate detail, as the robot looks from above, whatever the palette.
+    val ink = Color(0xFF455A64)
+    val unit = r / 16f
+    val line = r * 0.09f
+    fun stroke(color: Color) = Paint().apply { this.color = color; style = PaintingStyle.Stroke; strokeWidth = line }
+    fun fill(color: Color) = Paint().apply { this.color = color }
+    canvas.drawCircle(c, r, fill(Color.White))
+    canvas.drawCircle(c, r, stroke(ink))
+    canvas.drawCircle(c, unit * 14f, stroke(ink))
+    val rad = headingDegrees / 180f * PI.toFloat()
+    // The bin cover is a chord on the side away from the heading.
+    val back = unit * 13f
+    fun end(offsetDegrees: Float): Offset {
+        val a = (headingDegrees + offsetDegrees) / 180f * PI.toFloat()
+        return Offset(c.x - back * cos(a), c.y + back * sin(a))
+    }
+    canvas.drawLine(end(104f), end(-104f), stroke(ink))
+    val lidar = Offset(c.x + unit * 3f * cos(rad), c.y - unit * 3f * sin(rad))
+    canvas.drawCircle(lidar, unit * 4f, fill(Color.White))
+    canvas.drawCircle(lidar, unit * 4f, stroke(ink))
+    val button = Offset(c.x + unit * 10f * cos(rad), c.y - unit * 10f * sin(rad))
+    canvas.drawCircle(button, unit * 2f, fill(ink.copy(alpha = 0.6f)))
 }
