@@ -38,14 +38,19 @@ import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.decodeToImageBitmap
 
-/** Where an obstacle sits on screen, given the map's current zoom and pan. */
-internal fun ParsedMap.obstacleOnScreen(obstacle: MapObstacle, content: Size, offset: Offset, scale: Float): Offset =
-    offset + mmToCanvas(obstacle.x, obstacle.y, content.width, content.height) * scale
+/**
+ * Where an obstacle sits on screen: its cell, scaled to the bitmap the map view draws ([cellScale]
+ * bitmap pixels per cell), through the same [MapView] as the floor, so it follows any heading, zoom or tilt.
+ */
+internal fun ParsedMap.obstacleOnScreen(obstacle: MapObstacle, view: MapView, cellScale: Float): Offset {
+    val cell = mmToCell(obstacle.x, obstacle.y)
+    return view.toScreen(cell.x * cellScale, cell.y * cellScale)
+}
 
 /** The obstacle closest to [tap] within [reachPx], or null; drawn last means on top, so it wins a tie. */
-internal fun ParsedMap.obstacleAt(tap: Offset, content: Size, offset: Offset, scale: Float, reachPx: Float): MapObstacle? =
+internal fun ParsedMap.obstacleAt(tap: Offset, view: MapView, cellScale: Float, reachPx: Float): MapObstacle? =
     obstacles.withIndex()
-        .map { (i, o) -> Triple(i, o, (obstacleOnScreen(o, content, offset, scale) - tap).getDistance()) }
+        .map { (i, o) -> Triple(i, o, (obstacleOnScreen(o, view, cellScale) - tap).getDistance()) }
         .filter { it.third <= reachPx }
         .minWithOrNull(compareBy<Triple<Int, MapObstacle, Float>> { it.third }.thenByDescending { it.first })
         ?.second
@@ -55,9 +60,9 @@ internal fun ParsedMap.obstacleAt(tap: Offset, content: Size, offset: Offset, sc
  * like the room labels. A dark halo keeps one visible on light and dark maps; one with a photo is a
  * little larger with a white ring, so it reads as something to open.
  */
-internal fun DrawScope.drawObstacles(map: ParsedMap, content: Size, offset: Offset, scale: Float) {
+internal fun DrawScope.drawObstacles(map: ParsedMap, view: MapView, cellScale: Float) {
     for (o in map.obstacles) {
-        val c = map.obstacleOnScreen(o, content, offset, scale)
+        val c = map.obstacleOnScreen(o, view, cellScale)
         if (c.x < 0f || c.x > size.width || c.y < 0f || c.y > size.height) continue
         val hasPhoto = o.photoId != null
         val r = (if (hasPhoto) 7 else 6).dp.toPx()
