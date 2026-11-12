@@ -2,6 +2,7 @@ package com.kodraliu.localrock.shared.device
 
 import com.kodraliu.localrock.shared.model.ApiResponse
 import com.kodraliu.localrock.shared.model.FirmwareOtaResponse
+import com.kodraliu.localrock.shared.model.FirmwareStartResult
 import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
 import com.kodraliu.localrock.shared.model.HomeDetail
@@ -75,6 +76,20 @@ class DeviceApi(private val client: HttpClient) {
         val response: SceneRunResponse = resp.body()
         if (response.code != 200) throw DeviceApiException(response.code, response.msg)
         return response.result ?: response.data ?: SceneRunResult()
+    }
+
+    /** The Update button: asks the server to install the version the cloud offers. */
+    suspend fun startFirmwareUpdate(duid: String): FirmwareStartResult {
+        val resp = client.post("/ota/device/$duid/upgrade") { header(HttpHeaders.Accept, "application/json") }
+        if (!resp.status.isSuccess()) {
+            throw DeviceApiException(resp.status.value, "The server did not accept the update request (HTTP ${resp.status.value})")
+        }
+        val root = resp.body<kotlinx.serialization.json.JsonObject>()
+        val data = (root["data"] ?: root["result"]) as? kotlinx.serialization.json.JsonObject
+        fun text(key: String) = (data?.get(key) as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+        val started = (data?.get("started") as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
+        val message = text("reason") ?: text("error") ?: (root["msg"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+        return FirmwareStartResult(started, text("version"), if (started) null else message)
     }
 
     suspend fun checkFirmwareUpdate(duid: String): FirmwareUpdateInfo? {

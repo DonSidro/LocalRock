@@ -486,6 +486,11 @@ class VacuumRepository(
 
     suspend fun findMe() { session.findMe() }
 
+
+    suspend fun fetchOtaState(): String? = parseOtaState(session.getOtaState().requireOk("get_ota_state").result)
+
+    suspend fun fetchOtaProgress(): Int? = parseOtaProgress(session.getOtaProgress().requireOk("get_ota_progress").result)
+
     suspend fun startRemoteControl() { session.appRcStart() }
 
     suspend fun moveRemote(velocity: Double, omega: Double, durationMs: Int) {
