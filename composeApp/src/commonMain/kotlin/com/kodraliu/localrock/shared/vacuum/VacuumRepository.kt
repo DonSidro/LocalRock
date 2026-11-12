@@ -507,6 +507,11 @@ class VacuumRepository(
 
     suspend fun findMe() { session.findMe() }
 
+
+    suspend fun fetchOtaState(): String? = parseOtaState(session.getOtaState().requireOk("get_ota_state").result)
+
+    suspend fun fetchOtaProgress(): Int? = parseOtaProgress(session.getOtaProgress().requireOk("get_ota_progress").result)
+
     suspend fun startPetSearch() {
         val fresh = session.getStatus() ?: throw IllegalStateException("The robot's current status is unavailable")
         _status.update { it.merge(fresh) }
