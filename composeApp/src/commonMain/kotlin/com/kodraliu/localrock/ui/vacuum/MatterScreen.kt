@@ -2,6 +2,7 @@ package com.kodraliu.localrock.ui.vacuum
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -189,8 +190,10 @@ internal fun MatterScreen(
                         current.manualCode?.let { code ->
                             MatterCodeCard("Setup code", groupedManualCode(code)) { clipboard.setText(AnnotatedString(code)) }
                         }
+                        // Reading the tick here, always, is what makes the countdown redraw every second.
+                        val tick = now
                         val remaining = codeMadeAt?.let { (CODE_LIFETIME - it.elapsedNow()).inWholeSeconds }
-                        val expired = remaining != null && remaining <= 0 && now >= 0
+                        val expired = remaining != null && remaining <= 0 && tick >= 0
                         current.qrPayload?.let { qr ->
                             if (!expired) MatterQrImage(qr)
                             MatterCodeCard("QR code text", qr) { clipboard.setText(AnnotatedString(qr)) }
@@ -252,12 +255,14 @@ internal fun MatterScreen(
 private fun MatterQrImage(payload: String) {
     val matrix = remember(payload) { runCatching { QrEncoder.encode(payload) }.getOrNull() } ?: return
     val quiet = 4
-    Surface(shape = MaterialTheme.shapes.large, color = Color.White, modifier = Modifier.widthIn(max = 280.dp).fillMaxWidth().aspectRatio(1f)) {
-        Canvas(Modifier.fillMaxWidth().aspectRatio(1f).padding(8.dp)) {
-            val modules = matrix.size + 2 * quiet
-            val cell = size.width / modules
-            for (y in 0 until matrix.size) for (x in 0 until matrix.size) {
-                if (matrix[x, y]) drawRect(Color.Black, Offset((x + quiet) * cell, (y + quiet) * cell), Size(cell + 0.5f, cell + 0.5f))
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Surface(shape = MaterialTheme.shapes.large, color = Color.White, modifier = Modifier.widthIn(max = 280.dp).fillMaxWidth().aspectRatio(1f)) {
+            Canvas(Modifier.fillMaxWidth().aspectRatio(1f).padding(8.dp)) {
+                val modules = matrix.size + 2 * quiet
+                val cell = size.width / modules
+                for (y in 0 until matrix.size) for (x in 0 until matrix.size) {
+                    if (matrix[x, y]) drawRect(Color.Black, Offset((x + quiet) * cell, (y + quiet) * cell), Size(cell + 0.5f, cell + 0.5f))
+                }
             }
         }
     }
