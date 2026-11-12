@@ -145,6 +145,10 @@ private class AddVacuumModel(
                 // 1. Register a server-side onboarding session so the server recovers the
                 //    vacuum's public key while we provision it.
                 adminApi.login(adminPassword)
+                // Checked before the phone leaves the home network, where a broken stack is still easy to report.
+                val problems = adminApi.stackProblems()
+                if (problems.isNotEmpty()) error("The server is not ready for a vacuum: " + problems.joinToString("; "))
+                container.appSettings.setWifiCredentials(ssid, password)
                 val session = adminApi.startSession(duid)
                 val sessionId = session.sessionId
                     ?: error("Server did not return a session id")
@@ -269,8 +273,8 @@ fun AddVacuumScreen(onBack: () -> Unit) {
     val error by model.error.collectAsState()
 
     var adminPassword by remember { mutableStateOf(container.appSettings.adminPassword.value.orEmpty()) }
-    var ssid by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var ssid by remember { mutableStateOf(container.appSettings.wifiSsid.value.orEmpty()) }
+    var password by remember { mutableStateOf(container.appSettings.wifiPassword.value.orEmpty()) }
     var timezone by remember { mutableStateOf(DEFAULT_IANA_TZ) }
 
     val canStartPairing = !running && !loadingDevices &&

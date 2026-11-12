@@ -10,6 +10,10 @@ const val CFG_WIFI_PRE_KEY: String = "6433df70f5a3a42e"
 
 const val CFG_WIFI_UID: String = "1234567890"
 
+/** Some vacuums only answer a hello keyed with the last 16 characters of their hotspot name (`..._miap1A2B`). */
+fun ssidPreKey(hotspotSsid: String): String? =
+    hotspotSsid.trim('"').takeIf { it.length >= 16 && "_miap" in it }?.takeLast(16)
+
 private val Compact: Json = Json {
     encodeDefaults = false
     explicitNulls = false

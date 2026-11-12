@@ -6,6 +6,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.wifi.WifiInfo
 import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
 import android.os.PatternMatcher
@@ -45,19 +46,9 @@ actual class VacuumPairingTransport internal constructor(private val context: Co
             .build()
 
         val deferred = CompletableDeferred<Network>()
-        val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                deferred.complete(network)
-            }
-            override fun onUnavailable() {
-                deferred.completeExceptionally(
-                    VacuumPairingException("Wi-Fi join failed: no matching network or user denied"),
-                )
-            }
-            override fun onLost(network: Network) {
-
-            }
-        }
+        // Android 12+ only reveals the hotspot name to a callback that asks for location info.
+        val callback: ConnectivityManager.NetworkCallback =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) JoinCallbackS(deferred) else JoinCallback(deferred)
         callbackRef.set(callback)
         try {
             cm.requestNetwork(request, callback)
@@ -82,6 +73,13 @@ actual class VacuumPairingTransport internal constructor(private val context: Co
             )
         }
         socketRef.set(socket)
+    }
+
+    actual suspend fun joinedSsid(): String? {
+        val network = networkRef.get() ?: return null
+        val info = cm.getNetworkCapabilities(network)?.transportInfo as? WifiInfo ?: return null
+        val name = info.ssid?.trim('"')
+        return name?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
     }
 
     actual suspend fun sendUdp(host: String, port: Int, data: ByteArray) {
@@ -115,6 +113,28 @@ actual class VacuumPairingTransport internal constructor(private val context: Co
             try { cm.unregisterNetworkCallback(it) } catch (_: Throwable) { /* ignore */ }
         }
         networkRef.set(null)
+    }
+}
+
+private class JoinCallback(private val joined: CompletableDeferred<Network>) : ConnectivityManager.NetworkCallback() {
+    override fun onAvailable(network: Network) {
+        joined.complete(network)
+    }
+
+    override fun onUnavailable() {
+        joined.completeExceptionally(VacuumPairingException("Wi-Fi join failed: no matching network or user denied"))
+    }
+}
+
+@androidx.annotation.RequiresApi(Build.VERSION_CODES.S)
+private class JoinCallbackS(private val joined: CompletableDeferred<Network>) :
+    ConnectivityManager.NetworkCallback(FLAG_INCLUDE_LOCATION_INFO) {
+    override fun onAvailable(network: Network) {
+        joined.complete(network)
+    }
+
+    override fun onUnavailable() {
+        joined.completeExceptionally(VacuumPairingException("Wi-Fi join failed: no matching network or user denied"))
     }
 }
 
