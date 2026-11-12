@@ -63,6 +63,7 @@ import com.kodraliu.localrock.shared.onboarding.OnboardingSession
 import com.kodraliu.localrock.shared.onboarding.VacuumOnboarder
 import com.kodraliu.localrock.shared.onboarding.countryDomainFromIana
 import com.kodraliu.localrock.shared.onboarding.posixTzFromIana
+import com.kodraliu.localrock.shared.onboarding.sanitizeStackServer
 import com.kodraliu.localrock.shared.onboarding.supportedIanaTimezones
 import com.kodraliu.localrock.ui.LocalAppContainer
 import kotlinx.coroutines.CoroutineScope
@@ -252,6 +253,8 @@ private sealed interface PairOutcome {
     data class TimedOut(val samples: Int, val hasPublicKey: Boolean, val guidance: String?) : PairOutcome
 }
 
+private const val CAMERA_NAME_LIMIT = 15
+
 private fun String?.asSuffix(): String = this?.takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
 
 private fun describe(e: Throwable): String = "${e::class.simpleName}: ${e.message ?: "Unknown error"}"
@@ -338,6 +341,18 @@ fun AddVacuumScreen(onBack: () -> Unit) {
                         )
                     },
                 )
+
+                val serverUrl by container.appSettings.serverBaseUrl.collectAsState()
+                val robotName = remember(serverUrl) { runCatching { sanitizeStackServer(serverUrl.orEmpty()) }.getOrNull() }
+                if (robotName != null && robotName.length > CAMERA_NAME_LIMIT) {
+                    Text(
+                        "The robot will remember this server as \"$robotName\". Pairing works with that name, but the robot's camera " +
+                            "and Matter requests are limited to $CAMERA_NAME_LIMIT characters including the trailing slash, " +
+                            "with no port. A name like api-r.example.com on port 443 fits.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
                 SetupProgressCard(step = step, running = running, serverStatus = serverStatus)
 
