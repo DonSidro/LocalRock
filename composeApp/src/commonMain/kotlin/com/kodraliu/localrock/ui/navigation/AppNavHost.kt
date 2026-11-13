@@ -109,7 +109,8 @@ fun AppNavHost() {
                 viewModel = viewModel,
                 onSettings = { navController.navigate(AppSettings) },
                 onDeviceClick = { device -> navController.navigate(VacuumGraph(device.duid)) },
-                onAddVacuum = { navController.navigate(AddVacuum) },
+                onAddVacuum = { navController.navigate(AddVacuum()) },
+                onPairDevice = { duid -> navController.navigate(AddVacuum(duid)) },
             )
             // Once after an update, over the first screen that is really the app.
             val release = whatsNewFor(APP_VERSION)
@@ -125,8 +126,8 @@ fun AppNavHost() {
             )
         }
 
-        composable<AddVacuum> {
-            AddVacuumScreen(onBack = { navController.popBackStack() })
+        composable<AddVacuum> { entry ->
+            AddVacuumScreen(onBack = { navController.popBackStack() }, initialDuid = entry.toRoute<AddVacuum>().duid)
         }
 
         navigation<VacuumGraph>(startDestination = VacuumMain) {
