@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
 @Serializable data object Login
 @Serializable data object DeviceList
 @Serializable data object AppSettings
-@Serializable data object AddVacuum
+@Serializable data class AddVacuum(val duid: String? = null)
 
 @Serializable data class VacuumGraph(val duid: String)
 @Serializable data object VacuumMain

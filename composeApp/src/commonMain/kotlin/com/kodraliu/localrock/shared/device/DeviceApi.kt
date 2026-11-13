@@ -5,6 +5,7 @@ import com.kodraliu.localrock.shared.model.FirmwareOtaResponse
 import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
 import com.kodraliu.localrock.shared.model.HomeDetail
+import com.kodraliu.localrock.shared.model.LastKnown
 import com.kodraliu.localrock.shared.model.Room
 import com.kodraliu.localrock.shared.model.Scene
 import com.kodraliu.localrock.shared.model.SceneRunResult
@@ -75,6 +76,15 @@ class DeviceApi(private val client: HttpClient) {
         val response: SceneRunResponse = resp.body()
         if (response.code != 200) throw DeviceApiException(response.code, response.msg)
         return response.result ?: response.data ?: SceneRunResult()
+    }
+
+    /** The robot's last-known state from the server, with its last map when [includeMap]. */
+    suspend fun lastKnown(duid: String, includeMap: Boolean): LastKnown {
+        val response: ApiResponse<LastKnown> = client.get("/user/devices/$duid/last_known") {
+            if (includeMap) parameter("map", "1")
+        }.body()
+        ensureOk(response)
+        return response.data
     }
 
     suspend fun checkFirmwareUpdate(duid: String): FirmwareUpdateInfo? {

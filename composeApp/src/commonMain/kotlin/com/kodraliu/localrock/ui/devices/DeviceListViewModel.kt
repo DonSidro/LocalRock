@@ -15,6 +15,7 @@ class DeviceListViewModel(
     val devices = container.deviceRepository.devices
     val productsByDuid = container.deviceRepository.productsByDuid
     val reachability = container.deviceRepository.reachability
+    val unpaired = container.deviceRepository.unpaired
 
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
