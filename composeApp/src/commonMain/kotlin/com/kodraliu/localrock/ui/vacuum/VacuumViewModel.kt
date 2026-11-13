@@ -8,6 +8,10 @@ import com.kodraliu.localrock.shared.model.Scene
 import com.kodraliu.localrock.shared.model.SceneRunResult
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.FeatureSection
+import com.kodraliu.localrock.shared.vacuum.FirmwareProgress
+import com.kodraliu.localrock.shared.vacuum.firmwareInstallBlocker
+import com.kodraliu.localrock.shared.vacuum.nextFirmwareStep
+import kotlin.time.Duration.Companion.minutes
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.RoomType
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
@@ -65,6 +69,61 @@ class VacuumViewModel(
 
     private val _firmwareUpdate = MutableStateFlow<FirmwareUpdateState>(FirmwareUpdateState.Idle)
     val firmwareUpdate: StateFlow<FirmwareUpdateState> = _firmwareUpdate.asStateFlow()
+
+    private val _firmwareProgress = MutableStateFlow<FirmwareProgress>(FirmwareProgress.Idle)
+    val firmwareProgress: StateFlow<FirmwareProgress> = _firmwareProgress.asStateFlow()
+    private var firmwareJob: kotlinx.coroutines.Job? = null
+
+    /** Why an install cannot start right now (null when it can), from the robot's last status. */
+    fun firmwareBlocker(): String? {
+        val s = status.value
+        return firmwareInstallBlocker(s.state, s.battery, s.chargeStatus, s.inCleaning, s.errorCode)
+    }
+
+    /** Asks the server to install, then follows the robot through download, install and reboot. */
+    fun startFirmwareUpdate() {
+        if (firmwareJob?.isActive == true) return
+        firmwareJob = viewModelScope.launch {
+            firmwareBlocker()?.let { _firmwareProgress.value = FirmwareProgress.Failed(it); return@launch }
+            _firmwareProgress.value = FirmwareProgress.Starting
+            val started = try {
+                container.deviceRepository.startFirmwareUpdate(device.duid)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                _firmwareProgress.value = FirmwareProgress.Failed(describe(e)); return@launch
+            }
+            if (!started.started) {
+                _firmwareProgress.value = FirmwareProgress.Failed(started.reason ?: "The server did not start the update"); return@launch
+            }
+            followFirmwareUpdate(started.version)
+        }
+    }
+
+    private suspend fun followFirmwareUpdate(target: String?) {
+        val clock = kotlin.time.TimeSource.Monotonic.markNow()
+        var seenWorking = false
+        while (clock.elapsedNow() < FIRMWARE_WATCH_LIMIT) {
+            kotlinx.coroutines.delay(FIRMWARE_POLL_MS)
+            val ota = runCatching { repository.fetchOtaState() }
+            val percent = if (ota.isSuccess) runCatching { repository.fetchOtaProgress() }.getOrNull() else null
+            val step = nextFirmwareStep(_firmwareProgress.value, seenWorking, ota.isSuccess, ota.getOrNull(), percent)
+            seenWorking = step.seenWorking
+            _firmwareProgress.value = step.progress
+            if (step.finished) {
+                if (step.progress is FirmwareProgress.Failed) return
+                val info = runCatching { container.deviceRepository.checkFirmwareUpdate(device.duid) }.getOrNull()
+                _firmwareProgress.value = FirmwareProgress.Done(info?.currentVersion ?: target)
+                checkFirmwareUpdate()
+                return
+            }
+            if (!seenWorking && clock.elapsedNow() > FIRMWARE_START_LIMIT) {
+                _firmwareProgress.value = FirmwareProgress.Failed("The robot did not start the update.")
+                return
+            }
+        }
+        _firmwareProgress.value = FirmwareProgress.Failed("The update is taking longer than expected. Check the robot and try again.")
+    }
 
     private val _routines = MutableStateFlow<RoutinesState>(RoutinesState.Loading)
     val routines: StateFlow<RoutinesState> = _routines.asStateFlow()
@@ -273,6 +332,10 @@ class VacuumViewModel(
         }
     }
 }
+
+private val FIRMWARE_POLL_MS = 3_000L
+private val FIRMWARE_START_LIMIT = 2.minutes
+private val FIRMWARE_WATCH_LIMIT = 25.minutes
 
 sealed interface FirmwareUpdateState {
     data object Idle : FirmwareUpdateState

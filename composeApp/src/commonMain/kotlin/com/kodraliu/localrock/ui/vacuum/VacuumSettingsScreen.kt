@@ -139,6 +139,7 @@ private sealed interface SettingsRoute {
     data object Valley : SettingsRoute
     data object BetaFeatures : SettingsRoute
     data object History : SettingsRoute
+    data object Firmware : SettingsRoute
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -179,7 +180,7 @@ fun VacuumSettingsScreen(
             modelName = viewModel.modelName,
             firmwareVersion = viewModel.firmwareVersion,
             firmwareUpdate = firmwareUpdate,
-            onCheckUpdate = { viewModel.checkFirmwareUpdate() },
+            onCheckUpdate = { route = SettingsRoute.Firmware },
             onBack = onBack,
             onHistory = { route = SettingsRoute.History },
             onMaintenance = {
@@ -284,6 +285,7 @@ fun VacuumSettingsScreen(
             onDisable = { scope.launch { runCatching { repository.disableDnd() } } },
             onBack = { route = SettingsRoute.Root },
         )
+        SettingsRoute.Firmware -> FirmwareUpdateScreen(viewModel = viewModel, onBack = { route = SettingsRoute.Root })
         SettingsRoute.History -> {
 
             LaunchedEffect(Unit) {
@@ -529,7 +531,7 @@ private fun SettingsRootScreen(
 }
 
 
-private const val SHOW_FIRMWARE_UPDATE_CHECK = false
+private const val SHOW_FIRMWARE_UPDATE_CHECK = true
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

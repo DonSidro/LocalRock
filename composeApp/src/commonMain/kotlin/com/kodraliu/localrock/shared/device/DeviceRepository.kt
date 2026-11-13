@@ -3,6 +3,7 @@ package com.kodraliu.localrock.shared.device
 import com.kodraliu.localrock.shared.auth.AuthRepository
 import com.kodraliu.localrock.shared.demo.DemoData
 import com.kodraliu.localrock.shared.model.Device
+import com.kodraliu.localrock.shared.model.FirmwareStartResult
 import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
 import com.kodraliu.localrock.shared.model.Product
@@ -115,6 +116,11 @@ class DeviceRepository(
     suspend fun runScene(sceneId: Long): SceneRunResult {
         if (isDemo()) error("Routines can't be run in demo mode")
         return deviceApi.executeScene(sceneId)
+    }
+
+    suspend fun startFirmwareUpdate(duid: String): FirmwareStartResult {
+        if (isDemo()) return FirmwareStartResult(false, null, "Updates are not available in demo mode")
+        return deviceApi.startFirmwareUpdate(duid)
     }
 
     suspend fun checkFirmwareUpdate(duid: String): FirmwareUpdateInfo? {
