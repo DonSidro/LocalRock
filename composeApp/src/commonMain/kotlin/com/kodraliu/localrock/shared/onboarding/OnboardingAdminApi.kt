@@ -31,6 +31,21 @@ class OnboardingAdminApi(private val client: HttpClient) {
         }
     }
 
+    /** Names of the stack services that are not running, or empty when the stack can take a vacuum. */
+    suspend fun stackProblems(): List<String> {
+        val status = client.get("/admin/api/status").decode<StatusResponse>("Read server status")
+        val services = status.health?.services ?: return listOf("the server did not report its service health")
+        return REQUIRED_SERVICES.mapNotNull { name ->
+            val service = services.firstOrNull { it.name == name }
+            when {
+                service == null -> "$name is missing"
+                !service.enabled -> "$name is disabled"
+                !service.running -> "$name is not running" + (service.detail?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: "")
+                else -> null
+            }
+        }
+    }
+
     suspend fun listDevices(): List<OnboardingDevice> =
         client.get("/admin/api/onboarding/devices").decode<DevicesResponse>("List vacuums").devices
 
@@ -104,6 +119,22 @@ data class OnboardingTarget(
     val name: String? = null,
     val duid: String? = null,
     val did: String? = null,
+)
+
+private val REQUIRED_SERVICES = listOf("https_server", "mqtt_tls_proxy", "mqtt_backend_broker")
+
+@Serializable
+private data class StatusResponse(val health: StackHealth? = null)
+
+@Serializable
+private data class StackHealth(val services: List<StackService> = emptyList())
+
+@Serializable
+private data class StackService(
+    val name: String = "",
+    val enabled: Boolean = true,
+    val running: Boolean = false,
+    val detail: String? = null,
 )
 
 @Serializable

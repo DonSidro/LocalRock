@@ -12,6 +12,8 @@ private const val KEY_SERVER_BASE_URL = "server_base_url"
 private const val KEY_USER_DATA = "user_data_json"
 private const val KEY_THEME_MODE = "theme_mode"
 private const val KEY_ADMIN_PASSWORD = "admin_password"
+private const val KEY_WIFI_SSID = "onboarding_wifi_ssid"
+private const val KEY_WIFI_PASSWORD = "onboarding_wifi_password"
 private const val KEY_INSTALL_ID = "install_id"
 private const val KEY_INTRO_SEEN = "intro_seen"
 private const val KEY_LAST_SEEN_VERSION = "last_seen_version"
@@ -97,6 +99,19 @@ class AppSettings(private val settings: Settings) {
             settings.putString(KEY_ADMIN_PASSWORD, password)
             _adminPassword.value = password
         }
+    }
+
+    /** The home Wi-Fi last used to pair a vacuum, so a retry does not mean typing it again. */
+    private val _wifiSsid = MutableStateFlow(settings.getStringOrNull(KEY_WIFI_SSID))
+    val wifiSsid: StateFlow<String?> = _wifiSsid.asStateFlow()
+    private val _wifiPassword = MutableStateFlow(settings.getStringOrNull(KEY_WIFI_PASSWORD))
+    val wifiPassword: StateFlow<String?> = _wifiPassword.asStateFlow()
+
+    fun setWifiCredentials(ssid: String, password: String) {
+        settings.putString(KEY_WIFI_SSID, ssid)
+        settings.putString(KEY_WIFI_PASSWORD, password)
+        _wifiSsid.value = ssid
+        _wifiPassword.value = password
     }
 
     /** Robot alerts as a whole. Off until asked for: turning them on needs the notification permission. */

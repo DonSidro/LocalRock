@@ -63,6 +63,7 @@ import com.kodraliu.localrock.shared.onboarding.OnboardingSession
 import com.kodraliu.localrock.shared.onboarding.VacuumOnboarder
 import com.kodraliu.localrock.shared.onboarding.countryDomainFromIana
 import com.kodraliu.localrock.shared.onboarding.posixTzFromIana
+import com.kodraliu.localrock.shared.onboarding.sanitizeStackServer
 import com.kodraliu.localrock.shared.onboarding.supportedIanaTimezones
 import com.kodraliu.localrock.ui.LocalAppContainer
 import kotlinx.coroutines.CoroutineScope
@@ -145,6 +146,10 @@ private class AddVacuumModel(
                 // 1. Register a server-side onboarding session so the server recovers the
                 //    vacuum's public key while we provision it.
                 adminApi.login(adminPassword)
+                // Checked before the phone leaves the home network, where a broken stack is still easy to report.
+                val problems = adminApi.stackProblems()
+                if (problems.isNotEmpty()) error("The server is not ready for a vacuum: " + problems.joinToString("; "))
+                container.appSettings.setWifiCredentials(ssid, password)
                 val session = adminApi.startSession(duid)
                 val sessionId = session.sessionId
                     ?: error("Server did not return a session id")
@@ -248,6 +253,8 @@ private sealed interface PairOutcome {
     data class TimedOut(val samples: Int, val hasPublicKey: Boolean, val guidance: String?) : PairOutcome
 }
 
+private const val CAMERA_NAME_LIMIT = 15
+
 private fun String?.asSuffix(): String = this?.takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
 
 private fun describe(e: Throwable): String = "${e::class.simpleName}: ${e.message ?: "Unknown error"}"
@@ -269,8 +276,8 @@ fun AddVacuumScreen(onBack: () -> Unit) {
     val error by model.error.collectAsState()
 
     var adminPassword by remember { mutableStateOf(container.appSettings.adminPassword.value.orEmpty()) }
-    var ssid by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var ssid by remember { mutableStateOf(container.appSettings.wifiSsid.value.orEmpty()) }
+    var password by remember { mutableStateOf(container.appSettings.wifiPassword.value.orEmpty()) }
     var timezone by remember { mutableStateOf(DEFAULT_IANA_TZ) }
 
     val canStartPairing = !running && !loadingDevices &&
@@ -334,6 +341,18 @@ fun AddVacuumScreen(onBack: () -> Unit) {
                         )
                     },
                 )
+
+                val serverUrl by container.appSettings.serverBaseUrl.collectAsState()
+                val robotName = remember(serverUrl) { runCatching { sanitizeStackServer(serverUrl.orEmpty()) }.getOrNull() }
+                if (robotName != null && robotName.length > CAMERA_NAME_LIMIT) {
+                    Text(
+                        "The robot will remember this server as \"$robotName\". Pairing works with that name, but the robot's camera " +
+                            "and Matter requests are limited to $CAMERA_NAME_LIMIT characters including the trailing slash, " +
+                            "with no port. A name like api-r.example.com on port 443 fits.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
                 SetupProgressCard(step = step, running = running, serverStatus = serverStatus)
 

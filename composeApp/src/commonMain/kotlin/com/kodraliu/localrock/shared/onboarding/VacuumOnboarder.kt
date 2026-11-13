@@ -21,12 +21,17 @@ class VacuumOnboarder(
             _step.value = Step.JoiningWifi
             transport.joinVacuumWifi()
             _step.value = Step.SendingHello
-            val hello = buildHelloPacket(publicKeyPem = keyPair.publicKeyPem)
-            transport.sendUdp(VACUUM_PAIRING_HOST, VACUUM_PAIRING_PORT, hello)
             _step.value = Step.AwaitingHello
-            val resp = withTimeoutOrNull(HELLO_TIMEOUT_MS) {
-                transport.receiveUdp(HELLO_TIMEOUT_MS)
-            } ?: throw VacuumPairingException("Vacuum did not reply to hello within ${HELLO_TIMEOUT_MS}ms")
+            var resp = askHello(transport, CFG_WIFI_PRE_KEY)
+            if (resp == null) {
+                // Some vacuums only accept a pre-key taken from their hotspot name.
+                val key = transport.joinedSsid()?.let { ssidPreKey(it) }
+                if (key != null) resp = askHello(transport, key)
+            }
+            resp ?: throw VacuumPairingException(
+                "Vacuum did not reply to hello within ${HELLO_TIMEOUT_MS}ms (tried the default key" +
+                    (if (transport.joinedSsid()?.let { ssidPreKey(it) } != null) " and the hotspot-name key" else "") + ")",
+            )
             val sessionKey = parseHelloResponse(resp, keyPair)
             val body = WifiConfigBody(
                 ssid = input.homeSsid,
@@ -48,6 +53,13 @@ class VacuumOnboarder(
             transport.close()
 
         }
+    }
+
+    private suspend fun askHello(transport: VacuumPairingTransport, preKey: String): ByteArray? {
+        _step.value = Step.SendingHello
+        transport.sendUdp(VACUUM_PAIRING_HOST, VACUUM_PAIRING_PORT, buildHelloPacket(preKey, keyPair.publicKeyPem))
+        _step.value = Step.AwaitingHello
+        return withTimeoutOrNull(HELLO_TIMEOUT_MS) { transport.receiveUdp(HELLO_TIMEOUT_MS) }
     }
 
     private fun bytesToHex(b: ByteArray): String {
