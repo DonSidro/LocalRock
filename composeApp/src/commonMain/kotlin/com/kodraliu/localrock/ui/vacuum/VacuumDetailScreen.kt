@@ -149,6 +149,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.sin
+import kotlin.math.sqrt
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kodraliu.localrock.shared.model.Scene
@@ -941,6 +947,7 @@ private fun VacuumMapImage(
     // in the layers' own pixels (wall height, label lift) is in cells times this.
     val scale = remember(map) { supersampleFor(map) }
     val (bitmap, overlayBitmap) = rememberMapLayers(map, scale)
+    val darkMap = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val walls = rememberWallBitmaps(map, scale, enabled = is3D)
     val selectionBitmap = rememberSelectionBitmap(map, selectedRoomIds, scale)
     val wallHeight = WALL_HEIGHT_CELLS * scale
@@ -1059,6 +1066,7 @@ private fun VacuumMapImage(
             // choice reads at a glance without hiding where the robot has been.
             selectionBitmap?.let { drawMapLayer(it, view, 0f, quality) }
             drawMapLayer(overlayBitmap, view, 0f, quality)
+            drawRouteAndMarkers(map, view, scale, darkMap)
             if (is3D && walls != null) {
                 val (wallSide, wallTop) = walls
                 // Walls rise by stacking the wall layer at climbing heights, then capping it with the
