@@ -127,7 +127,7 @@ fun rememberMapLayers(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap
 internal fun ParsedMap.floorKey(): List<Any?> = listOf(
     width, height, resolution, pixelOffsetLeft, pixelOffsetTop, format,
     grid.contentHashCode(), originalGrid?.contentHashCode(), carpetMask?.contentHashCode(), rooms,
-    segmentMaterials, segmentMaterialDirections,
+    segmentMaterials, segmentMaterialDirections, zoneLines,
 )
 
 /** What the zones and virtual walls are drawn from. */
@@ -273,13 +273,18 @@ fun ParsedMap.contentBoundsNorm(): MapContentBounds {
             if (drawY > maxY) maxY = drawY
         }
     }
-    if (maxX < 0 || maxY < 0) return MapContentBounds(0f, 0f, 1f, 1f)
-    return MapContentBounds(
-        left = minX.toFloat() / width,
-        top = minY.toFloat() / height,
-        right = (maxX + 1).toFloat() / width,
-        bottom = (maxY + 1).toFloat() / height,
-    )
+    val cells = if (maxX < 0 || maxY < 0) {
+        null
+    } else {
+        MapContentBounds(
+            left = minX.toFloat() / width,
+            top = minY.toFloat() / height,
+            right = (maxX + 1).toFloat() / width,
+            bottom = (maxY + 1).toFloat() / height,
+        )
+    }
+    if (zoneLines.isEmpty()) return cells ?: MapContentBounds(0f, 0f, 1f, 1f)
+    return floorPlanBoundsNorm(cells, zoneLines, width, height, FLOOR_PLAN_OUTER_WIDTH_CELLS)
 }
 
 /** [drawRestrictions] is false for the editor, which draws the shapes it is editing itself. */
@@ -318,6 +323,40 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     val grid = map.grid
     val raw = map.originalGrid
     val carpet = map.carpetMask
+    // Rooms that have a floor-plan polygon are painted from it; the others, and every map without block 55, from the cells.
+    val shapes = if (raw != null) buildFloorPlan(map.zoneLines, FloorPlanFrame(h)) else emptyList()
+    val zoned = shapes.mapTo(HashSet()) { it.segment }
+    for (shape in shapes) {
+        val room = shape.segment
+        val base = palette.rooms[slots[room] ?: 0]
+        val outline = Path().apply {
+            moveTo(shape.fill[0].x, shape.fill[0].y)
+            for (i in 1 until shape.fill.size) lineTo(shape.fill[i].x, shape.fill[i].y)
+            close()
+        }
+        roomPaint.color = base
+        canvas.drawPath(outline, roomPaint)
+        val pattern = patterns.getOrPut(room) { floorPattern(map.segmentMaterials[room], map.segmentMaterialDirections[room]) }
+        if (pattern == FloorPattern.NONE && carpet == null) continue
+        // The texture and carpet hatching are laid cell by cell, clipped to the polygon so no ragged edge shows.
+        canvas.save()
+        canvas.clipPath(outline)
+        val x0 = shape.fill.minOf { it.x }.toInt().coerceIn(0, w)
+        val x1 = shape.fill.maxOf { it.x }.toInt().coerceIn(0, w)
+        val rowTop = (h - shape.fill.maxOf { it.y }.toInt()).coerceIn(0, h)
+        val rowBottom = (h - shape.fill.minOf { it.y }.toInt()).coerceIn(0, h)
+        for (y in rowTop until rowBottom) {
+            for (x in x0 until x1) {
+                val floor = if (pattern == FloorPattern.NONE) base else shaded(base, textureShade(pattern, x, y))
+                val onCarpet = carpet != null && carpet[y * w + x].toInt() == 1
+                if (pattern == FloorPattern.NONE && !onCarpet) continue
+                roomPaint.color = if (onCarpet) shaded(floor, carpetShade(x, y)) else floor
+                val drawY = (h - 1 - y).toFloat()
+                canvas.drawRect(Rect(left = x.toFloat(), top = drawY, right = (x + 1).toFloat(), bottom = drawY + 1f), roomPaint)
+            }
+        }
+        canvas.restore()
+    }
     for (y in 0 until h) {
         val rowOff = y * w
         // Flip Y so the map reads with origin at the top (matches the Roborock app).
@@ -329,6 +368,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
                     if (raw != null) {
                         // The flat map has no dark wall cells: a wall is painted as the room it belongs to.
                         val roomId = if (gv == 127) (flatWallRoom(grid, raw, w, h, x, y) ?: continue) else (raw[rowOff + x].toInt() ushr 3) and 0x1f
+                        if (roomId in zoned) continue
                         val base = palette.rooms[slots[roomId] ?: 0]
                         val pattern = patterns.getOrPut(roomId) {
                             floorPattern(map.segmentMaterials[roomId], map.segmentMaterialDirections[roomId])
@@ -346,6 +386,11 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
             )
         }
     }
+    if (shapes.isNotEmpty()) {
+        canvas.restore()
+        drawFloorPlanStrokes(canvas, shapes)
+        return
+    }
     val outline = mapOutlinePath(map)
     if (raw != null) {
         canvas.drawPath(roomBorderPath(roomBorderEdges(grid, raw, w, h)), Paint().apply {
@@ -362,6 +407,27 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
         strokeWidth = MAP_OUTLINE_WIDTH_CELLS
         strokeJoin = StrokeJoin.Round
     })
+}
+
+private fun drawFloorPlanStrokes(canvas: Canvas, shapes: List<FloorPlanShape>) {
+    fun stroke(runs: List<FloorPlanRun>, color: Color, width: Float) {
+        if (runs.isEmpty()) return
+        val path = Path()
+        for (r in runs) {
+            path.moveTo(r.from.x, r.from.y)
+            path.lineTo(r.to.x, r.to.y)
+        }
+        canvas.drawPath(path, Paint().apply {
+            this.color = color
+            style = PaintingStyle.Stroke
+            strokeWidth = width
+            strokeCap = StrokeCap.Round
+            strokeJoin = StrokeJoin.Round
+        })
+    }
+    stroke(shapes.flatMap { it.outer }, FLOOR_PLAN_OUTER_COLOR, FLOOR_PLAN_OUTER_WIDTH_CELLS)
+    stroke(shapes.flatMap { it.inner }, FLOOR_PLAN_INNER_COLOR, FLOOR_PLAN_INNER_WIDTH_CELLS)
+    stroke(shapes.flatMap { it.door }, FLOOR_PLAN_DOOR_COLOR, FLOOR_PLAN_DOOR_WIDTH_CELLS)
 }
 
 private fun drawOverlays(canvas: Canvas, map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean, includeRoute: Boolean = true) {

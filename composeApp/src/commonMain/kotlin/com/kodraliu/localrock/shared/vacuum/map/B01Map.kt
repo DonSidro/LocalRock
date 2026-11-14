@@ -120,6 +120,8 @@ data class ParsedMap(
     val pathFlags: List<Int> = emptyList(),
     /** One byte per grid cell, 1 where the robot has seen carpet; null if the map has none. */
     val carpetMask: ByteArray? = null,
+    /** Room polygons of the floor-plan look (legacy block 55), in the image's own cell frame; empty if the map has none. */
+    val zoneLines: List<FloorPlanZone> = emptyList(),
 ) {
     val floorCells: Int by lazy { grid.count { (it.toInt() and 0xff) == 128 } }
     val wallCells: Int by lazy { grid.count { (it.toInt() and 0xff) == 127 } }
@@ -139,6 +141,7 @@ data class ParsedMap(
             other.thresholds == thresholds &&
             other.pathFlags == pathFlags &&
             other.obstacles == obstacles &&
+            other.zoneLines == zoneLines &&
             (carpetMask?.contentEquals(other.carpetMask ?: ByteArray(0)) ?: (other.carpetMask == null))
 
     override fun hashCode(): Int {
@@ -160,6 +163,7 @@ data class ParsedMap(
         r = 31 * r + thresholds.hashCode()
         r = 31 * r + pathFlags.hashCode()
         r = 31 * r + obstacles.hashCode()
+        r = 31 * r + zoneLines.hashCode()
         r = 31 * r + (carpetMask?.contentHashCode() ?: 0)
         return r
     }
@@ -261,6 +265,12 @@ data class ParsedMapRoom(
     /** The room type the robot keeps for this room (see RoomType); null for a room with no entry in its table. */
     val tag: Int? = null,
 )
+
+/** One vertex of a floor-plan polygon in whole cells of the image frame (col = x/50 - left, row = y/50 - top); [type] 1 outer wall, 2 inner edge, 3 door. */
+data class FloorPlanPoint(val x: Int, val y: Int, val type: Int)
+
+/** One room's closed rectilinear outline (legacy block 55); [segment] is the room id, the last point joins the first. */
+data class FloorPlanZone(val segment: Int, val points: List<FloorPlanPoint>)
 
 data class ParsedMapPoint(
     val x: Int,

@@ -29,6 +29,7 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     var pathFlags: List<Int> = emptyList()
     var carpetMask: ByteArray? = null
     val obstacles = mutableListOf<MapObstacle>()
+    var zoneBlock: Triple<Int, Int, Int>? = null
 
     var off = headerLen
     while (off + 8 <= bytes.size) {
@@ -129,6 +130,7 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
                     }
                 }
             }
+            BLOCK_ZONE_LINES -> zoneBlock = Triple(off, blockHeaderLen, blockDataLen)
             in UNMODELED_RESTRICTION_BLOCKS ->
                 if (entryCount(bytes, off, blockHeaderLen, blockDataLen) > 0) unmodeledRestrictionBlocks += type
         }
@@ -145,6 +147,8 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     // agree on the count, so a map where they differ can never lose carpets.
     val carpetsFromFlags = flaggedCarpets?.takeIf { it.size == carpetAreas.size }
     if (carpetsFromFlags != null) carpetAreas = carpetsFromFlags
+
+    val zoneLines = zoneBlock?.let { (o, h, d) -> parseZoneLines(bytes, o, h, d, imageLeft, imageTop) } ?: emptyList()
 
     val pixels = imagePixels ?: throw MapParseException("Legacy map has no IMAGE block")
     val grid = ByteArray(pixels.size)
@@ -298,6 +302,7 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         originalGrid = pixels,
         pathFlags = pathFlags.takeIf { it.size == path.size } ?: emptyList(),
         carpetMask = carpetMask?.takeIf { it.size == grid.size },
+        zoneLines = zoneLines,
     )
 }
 
@@ -353,6 +358,46 @@ private fun parseWalls(bytes: ByteArray, off: Int, headerLen: Int, dataLen: Int)
         )
     }
 }
+
+/**
+ * Block 55: the header's u32 at `off+8` is the zone count and the payload starts directly with zone 1.
+ * Each zone is u16 segment, u16 point count, u16 point size (6), then points of u16 x, u16 y, i16 type
+ * (x and y in mm, whole cells of 50). A zone that overruns the payload ends the block; the zones before it are kept.
+ */
+private fun parseZoneLines(bytes: ByteArray, off: Int, headerLen: Int, dataLen: Int, left: Int, top: Int): List<FloorPlanZone> {
+    if (headerLen < 12) return emptyList()
+    val declared = u32(bytes, off + 8)
+    val zones = ArrayList<FloorPlanZone>()
+    var p = off + headerLen
+    val end = p + dataLen
+    while (zones.size < declared && p + ZONE_HEADER_BYTES <= end) {
+        val segment = u16(bytes, p)
+        val count = u16(bytes, p + 2)
+        val size = u16(bytes, p + 4)
+        p += ZONE_HEADER_BYTES
+        if (size < ZONE_POINT_MIN_BYTES || p + count.toLong() * size > end) break
+        if (count >= 3) {
+            zones += FloorPlanZone(
+                segment,
+                List(count) { i ->
+                    val q = p + i * size
+                    FloorPlanPoint(
+                        x = u16(bytes, q) / MM_PER_CELL - left,
+                        y = u16(bytes, q + 2) / MM_PER_CELL - top,
+                        type = u16(bytes, q + 4).toShort().toInt(),
+                    )
+                },
+            )
+        }
+        p += count * size
+    }
+    return zones
+}
+
+private const val BLOCK_ZONE_LINES = 55
+private const val ZONE_HEADER_BYTES = 6
+private const val ZONE_POINT_MIN_BYTES = 6
+private const val MM_PER_CELL = 50
 
 private const val MAGIC_0 = 0x72.toByte()
 private const val MAGIC_1 = 0x72.toByte()

@@ -293,6 +293,73 @@ class LegacyMapTest {
         assertEquals(2, map.carpetAreas.size)
     }
 
+    // ---- Block 55 (floor-plan zone lines), synthetic bytes in the layout seen on a real Curv 2 Flow ----
+
+    /** x, y in mm, type; zone record is segment, point count, point size 6, then the points. */
+    private fun zoneRecord(segment: Int, vararg points: Triple<Int, Int, Int>, size: Int = 6): String =
+        quadHex(segment, points.size, size) + points.joinToString("") { (x, y, t) -> quadHex(x, y, t) }
+
+    private fun zoneBlockHex(num: Int, payloadHex: String): String =
+        quadHex(55, 12) + quadHex(payloadHex.length / 2, 0) + quadHex(num, 0) + payloadHex
+
+    private fun mapWithOffsets(left: Int, top: Int, blockHex: String): ParsedMap {
+        val header = ByteArray(20).also { b -> b[0] = 0x72; b[1] = 0x72; putU16(b, 2, 20) }
+        val image = ByteArray(28 + 4).also { b ->
+            putU16(b, 0, 2); putU16(b, 2, 28); putU32(b, 4, 4)
+            putU32(b, 12, top); putU32(b, 16, left); putU32(b, 20, 2); putU32(b, 24, 2)
+        }
+        return parseLegacyMap(header + image + hexToBytes(blockHex))
+    }
+
+    private val square = arrayOf(Triple(500, 300, 1), Triple(700, 300, 2), Triple(700, 500, 3), Triple(500, 500, -1))
+
+    @Test
+    fun zone_lines_are_read_into_image_cells_without_repeating_the_first_point() {
+        val map = mapWithOffsets(left = 4, top = 2, blockHex = zoneBlockHex(1, zoneRecord(7, *square)))
+        val zone = map.zoneLines.single()
+        assertEquals(7, zone.segment)
+        assertEquals(
+            listOf(FloorPlanPoint(6, 4, 1), FloorPlanPoint(10, 4, 2), FloorPlanPoint(10, 8, 3), FloorPlanPoint(6, 8, -1)),
+            zone.points,
+        )
+    }
+
+    @Test
+    fun zone_lines_read_several_zones_back_to_back() {
+        val hex = zoneRecord(1, *square) + zoneRecord(3, *square, Triple(500, 700, 5))
+        val zones = mapWithBlocks(zoneBlockHex(2, hex)).zoneLines
+        assertEquals(listOf(1, 3), zones.map { it.segment })
+        assertEquals(listOf(4, 5), zones.map { it.points.size })
+    }
+
+    @Test
+    fun a_zone_that_overruns_the_block_is_dropped_and_the_ones_before_it_are_kept() {
+        val good = zoneRecord(1, *square)
+        val cut = zoneRecord(2, *square).dropLast(8)
+        val zones = mapWithBlocks(zoneBlockHex(2, good + cut)).zoneLines
+        assertEquals(listOf(1), zones.map { it.segment })
+    }
+
+    @Test
+    fun zone_lines_with_a_bad_point_size_or_too_few_points_are_dropped() {
+        assertTrue(mapWithBlocks(zoneBlockHex(1, zoneRecord(1, *square, size = 4))).zoneLines.isEmpty())
+        val line = zoneRecord(1, Triple(500, 300, 1), Triple(700, 300, 1))
+        assertEquals(listOf(2), mapWithBlocks(zoneBlockHex(2, line + zoneRecord(2, *square))).zoneLines.map { it.segment })
+    }
+
+    @Test
+    fun the_zone_count_in_the_header_caps_what_is_read_and_a_short_payload_ends_it() {
+        val two = zoneRecord(1, *square) + zoneRecord(2, *square)
+        assertEquals(1, mapWithBlocks(zoneBlockHex(1, two)).zoneLines.size)
+        assertEquals(2, mapWithBlocks(zoneBlockHex(9, two)).zoneLines.size)
+    }
+
+    @Test
+    fun a_zone_block_with_a_short_header_has_no_zones() {
+        val hex = quadHex(55, 8) + quadHex(0, 0)
+        assertTrue(mapWithBlocks(hex).zoneLines.isEmpty())
+    }
+
     private fun quadHex(vararg v: Int): String =
         v.joinToString("") { n -> hexByte(n and 0xff) + hexByte((n ushr 8) and 0xff) }
 
