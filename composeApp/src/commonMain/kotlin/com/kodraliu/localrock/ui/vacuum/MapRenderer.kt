@@ -309,7 +309,6 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     // The cells are masked by a rounded outline of the plan, so its edges are smooth rather than
     // stair steps. The mask is a path drawn over them, which anti-aliases where a clip would not.
     canvas.saveLayer(Rect(0f, 0f, map.width.toFloat(), map.height.toFloat()), Paint())
-    val wallPaint = Paint().apply { color = palette.wall }
     val floorPaint = Paint().apply { color = palette.floor }
     val roomPaint = Paint()
     val patterns = HashMap<Int, FloorPattern>()
@@ -326,10 +325,10 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
         for (x in 0 until w) {
             val gv = grid[rowOff + x].toInt() and 0xff
             val paint = when (gv) {
-                127 -> wallPaint
-                128 -> {
+                127, 128 -> {
                     if (raw != null) {
-                        val roomId = (raw[rowOff + x].toInt() ushr 3) and 0x1f
+                        // The flat map has no dark wall cells: a wall is painted as the room it belongs to.
+                        val roomId = if (gv == 127) (flatWallRoom(grid, raw, w, h, x, y) ?: continue) else (raw[rowOff + x].toInt() ushr 3) and 0x1f
                         val base = palette.rooms[slots[roomId] ?: 0]
                         val pattern = patterns.getOrPut(roomId) {
                             floorPattern(map.segmentMaterials[roomId], map.segmentMaterialDirections[roomId])
@@ -337,7 +336,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
                         val floor = if (pattern == FloorPattern.NONE) base else shaded(base, textureShade(pattern, x, y))
                         roomPaint.color = if (carpet != null && carpet[rowOff + x].toInt() == 1) shaded(floor, carpetShade(x, y)) else floor
                         roomPaint
-                    } else floorPaint
+                    } else if (gv == 127) continue else floorPaint
                 }
                 else -> continue
             }
@@ -347,8 +346,22 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
             )
         }
     }
-    canvas.drawPath(mapOutlinePath(map), Paint().apply { blendMode = BlendMode.DstIn })
+    val outline = mapOutlinePath(map)
+    if (raw != null) {
+        canvas.drawPath(roomBorderPath(roomBorderEdges(grid, raw, w, h)), Paint().apply {
+            color = MAP_ROOM_BORDER_COLOR
+            style = PaintingStyle.Stroke
+            strokeWidth = MAP_ROOM_BORDER_WIDTH_CELLS
+        })
+    }
+    canvas.drawPath(outline, Paint().apply { blendMode = BlendMode.DstIn })
     canvas.restore()
+    canvas.drawPath(outline, Paint().apply {
+        color = MAP_OUTLINE_COLOR
+        style = PaintingStyle.Stroke
+        strokeWidth = MAP_OUTLINE_WIDTH_CELLS
+        strokeJoin = StrokeJoin.Round
+    })
 }
 
 private fun drawOverlays(canvas: Canvas, map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean, includeRoute: Boolean = true) {
@@ -386,14 +399,14 @@ private inline fun upright(canvas: Canvas, map: ParsedMap, point: ParsedMapPoint
  * The route and the two markers, drawn straight to the screen through the map's transform instead of
  * into a bitmap, so they stay sharp at any zoom. [scale] is how many layer pixels make one cell.
  */
-internal fun DrawScope.drawRouteAndMarkers(map: ParsedMap, view: MapView, scale: Int, dark: Boolean) {
+internal fun DrawScope.drawRouteAndMarkers(map: ParsedMap, view: MapView, scale: Int, dark: Boolean, faintRoute: Boolean = false) {
     val palette = if (dark) DarkPalette else LightPalette
     withTransform({
         // The same matrix as the floor, so the route lies on the rooms it ran over at any heading and tilt.
         transform(view.layerMatrix(0f))
         scale(scale.toFloat(), scale.toFloat(), Offset.Zero)
     }) {
-        if (map.pathMm.size >= 2) drawPath(drawContext.canvas, map, palette)
+        if (map.pathMm.size >= 2) drawPath(drawContext.canvas, map, palette, faint = faintRoute)
         drawMarkers(drawContext.canvas, map, palette, view.yawDegrees, view.squash)
     }
 }
@@ -430,7 +443,7 @@ private fun drawWall(canvas: Canvas, map: ParsedMap, wall: VirtualWall) {
     })
 }
 
-private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
+private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette, faint: Boolean = false) {
     val main = Path()
     val wash = Path()
     var kind = -1
@@ -449,6 +462,16 @@ private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
         if (!started || now != kind) target.moveTo(cellX, cellY) else target.lineTo(cellX, cellY)
         started = true
         kind = now
+    }
+    if (faint) {
+        canvas.drawPath(main, Paint().apply {
+            color = MAP_IDLE_ROUTE_COLOR
+            style = PaintingStyle.Stroke
+            strokeWidth = MAP_IDLE_ROUTE_WIDTH_CELLS
+            strokeCap = StrokeCap.Round
+            strokeJoin = StrokeJoin.Round
+        })
+        return
     }
     // A wide faint band for the ground the robot has covered, under the thin line of its route.
     canvas.drawPath(main, Paint().apply {
