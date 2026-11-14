@@ -25,7 +25,9 @@ internal fun floorPattern(materialId: Int?, direction: Int?): FloorPattern = whe
  * tint, between -1 and 1. Seams between planks and tiles are the darkest cells, and each plank or
  * tile gets its own small shift so the surface reads as separate boards rather than flat stripes.
  */
-internal fun textureShade(pattern: FloorPattern, x: Int, y: Int): Float = when (pattern) {
+internal fun textureShade(pattern: FloorPattern, x: Int, y: Int): Float = FLOOR_TEXTURE_STRENGTH * rawTextureShade(pattern, x, y)
+
+private fun rawTextureShade(pattern: FloorPattern, x: Int, y: Int): Float = when (pattern) {
     FloorPattern.NONE -> 0f
     FloorPattern.WOOD_ALONG_Y -> plankShade(x)
     FloorPattern.WOOD_ALONG_X -> plankShade(y)
@@ -48,7 +50,7 @@ private fun plankShade(across: Int): Float {
 }
 
 /** Diagonal hatching for cells the robot has seen carpet on. */
-internal fun carpetShade(x: Int, y: Int): Float = if ((x + y) % 4 < 2) -0.14f else 0.04f
+internal fun carpetShade(x: Int, y: Int): Float = CARPET_HATCH_STRENGTH * if ((x + y) % 4 < 2) -0.14f else 0.04f
 
 internal fun shaded(base: Color, shade: Float): Color =
     if (shade < 0f) lerp(base, Color.Black, -shade) else lerp(base, Color.White, shade)

@@ -71,11 +71,11 @@ class FloorPlanTest {
     }
 
     @Test
-    fun type_4_edges_are_doors_too_and_types_5_and_6_are_not_drawn() {
+    fun type_4_edges_are_doors_too_type_6_is_an_inner_wall_and_type_5_is_not_drawn() {
         val shape = shapeOf(2, zone(7, Triple(0, 0, 4), Triple(4, 0, 5), Triple(4, 2, 6), Triple(0, 2, 1)))
         assertEquals(listOf(run(0, 2, 4, 2)), shape.door)
         assertEquals(listOf(run(0, 0, 0, 2)), shape.outer)
-        assertTrue(shape.inner.isEmpty())
+        assertEquals(listOf(run(4, 0, 0, 0)), shape.inner)
     }
 
     @Test
@@ -149,3 +149,49 @@ class ErasedBoundsTest {
         assertEquals(1f, m.contentBoundsNorm(floorPlan = false).right)
     }
 }
+
+class FloorPlanColoursTest {
+    private fun box(room: Int, x0: Int, y0: Int, x1: Int, y1: Int) =
+        FloorPlanZone(room, listOf(FloorPlanPoint(x0, y0, 1), FloorPlanPoint(x1, y0, 1), FloorPlanPoint(x1, y1, 1), FloorPlanPoint(x0, y1, 1)))
+
+    // Rooms never touch in the cells (a gap of zero cells between rows), so only the polygons can tell.
+    private fun colours(rooms: Int, touches: Set<Pair<Int, Int>>, hidden: Set<Int> = emptySet()): Map<Int, Int> {
+        val raw = ByteArray(rooms * 2) { i -> if (i % 2 == 0) (((i / 2 + 1) shl 3) or 7).toByte() else 0 }
+        return appRoomColours(raw, rooms * 2, 1, touches, hidden)
+    }
+
+    @Test
+    fun rooms_whose_polygons_share_a_wall_touch_and_corners_or_gaps_do_not() {
+        val zones = listOf(box(1, 0, 0, 10, 10), box(2, 10, 0, 20, 10), box(3, 20, 10, 30, 20), box(4, 0, 12, 10, 20))
+        assertEquals(setOf(1 to 2), floorPlanTouches(zones))
+    }
+
+    @Test
+    fun a_chain_alternates_colours() {
+        val c = colours(4, setOf(1 to 2, 2 to 3, 3 to 4))
+        assertTrue((1..3).all { c[it] != c[it + 1] })
+    }
+
+    @Test
+    fun a_hall_touching_everyone_gets_a_colour_none_of_its_neighbours_share() {
+        val c = colours(6, (2..6).map { 1 to it }.toSet())
+        assertTrue((2..6).all { c[it] != c[1] })
+    }
+
+    @Test
+    fun a_fifth_mutual_neighbour_has_no_colour_left_and_falls_back_to_grey() {
+        val all = (1..5).flatMap { a -> (a + 1..5).map { a to it } }.toSet()
+        val c = colours(5, all)
+        assertEquals(1, c.values.count { it == 0 })
+        assertEquals(NO_COLOUR_SLOT, roomSlot(c.values.first { it == 0 }))
+    }
+
+    @Test
+    fun an_erased_room_takes_no_colour() {
+        val c = colours(3, setOf(1 to 2, 2 to 3), hidden = setOf(2))
+        assertEquals(null, c[2])
+    }
+
+    private fun roomSlot(colour: Int) = if (colour in 1..4) colour - 1 else NO_COLOUR_SLOT
+}
+

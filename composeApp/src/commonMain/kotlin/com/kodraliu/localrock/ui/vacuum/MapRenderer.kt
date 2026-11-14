@@ -308,11 +308,15 @@ private fun renderLayer(map: ParsedMap, palette: MapPalette, scale: Int, overlay
     val bitmap = ImageBitmap(map.width * scale, map.height * scale)
     val canvas = Canvas(bitmap)
     canvas.scale(scale.toFloat(), scale.toFloat())
-    if (overlay) drawOverlays(canvas, map, palette, drawRestrictions = true, includeRoute = false) else drawFloor(canvas, map, palette)
+    if (overlay) drawOverlays(canvas, map, palette, drawRestrictions = true, includeRoute = false) else drawFloor(canvas, map, palette, strokes = false)
     return bitmap
 }
 
-private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, floorPlan: Boolean = true) {
+/** The room polygons' outlines and walls for the floor-plan look; empty when the map has none or [floorPlan] is off. */
+internal fun ParsedMap.floorPlanShapes(floorPlan: Boolean = true): List<FloorPlanShape> =
+    if (originalGrid != null && floorPlan) buildFloorPlan(zoneLines.filter { it.segment !in erasedRoomIds }, FloorPlanFrame(height)) else emptyList()
+
+private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, floorPlan: Boolean = true, strokes: Boolean = true) {
     // The cells are masked by a rounded outline of the plan, so its edges are smooth rather than
     // stair steps. The mask is a path drawn over them, which anti-aliases where a clip would not.
     canvas.saveLayer(Rect(0f, 0f, map.width.toFloat(), map.height.toFloat()), Paint())
@@ -327,7 +331,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, floor
     val carpet = map.carpetMask
     // Rooms that have a floor-plan polygon are painted from it; the others, and every map without block 55, from the cells.
     val erased = map.erasedCells
-    val shapes = if (raw != null && floorPlan) buildFloorPlan(map.zoneLines.filter { it.segment !in map.erasedRoomIds }, FloorPlanFrame(h)) else emptyList()
+    val shapes = map.floorPlanShapes(floorPlan)
     val zoned = shapes.mapTo(HashSet()) { it.segment }
     for (shape in shapes) {
         val room = shape.segment
@@ -351,7 +355,8 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, floor
         for (y in rowTop until rowBottom) {
             for (x in x0 until x1) {
                 val floor = if (pattern == FloorPattern.NONE) base else shaded(base, textureShade(pattern, x, y))
-                val onCarpet = carpet != null && carpet[y * w + x].toInt() == 1
+                // Bit 0 is carpet; the run map also sets dirt bits 1 and 2 in the same byte.
+                val onCarpet = carpet != null && (carpet[y * w + x].toInt() and 1) == 1
                 if (pattern == FloorPattern.NONE && !onCarpet) continue
                 if (erased?.get(y * w + x) == true) continue
                 roomPaint.color = if (onCarpet) shaded(floor, carpetShade(x, y)) else floor
@@ -379,7 +384,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, floor
                             floorPattern(map.segmentMaterials[roomId], map.segmentMaterialDirections[roomId])
                         }
                         val floor = if (pattern == FloorPattern.NONE) base else shaded(base, textureShade(pattern, x, y))
-                        roomPaint.color = if (carpet != null && carpet[rowOff + x].toInt() == 1) shaded(floor, carpetShade(x, y)) else floor
+                        roomPaint.color = if (carpet != null && (carpet[rowOff + x].toInt() and 1) == 1) shaded(floor, carpetShade(x, y)) else floor
                         roomPaint
                     } else if (gv == 127) continue else floorPaint
                 }
@@ -393,7 +398,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, floor
     }
     if (shapes.isNotEmpty()) {
         canvas.restore()
-        drawFloorPlanStrokes(canvas, shapes)
+        if (strokes) drawFloorPlanStrokes(canvas, shapes, 1f / FLOOR_PLAN_BITMAP_PX_PER_CELL)
         return
     }
     val outline = mapOutlinePath(map)
@@ -414,7 +419,8 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, floor
     })
 }
 
-private fun drawFloorPlanStrokes(canvas: Canvas, shapes: List<FloorPlanShape>) {
+/** [cellsPerPx] converts the pixel widths of the look into cells: 1 / (screen pixels per cell). */
+private fun drawFloorPlanStrokes(canvas: Canvas, shapes: List<FloorPlanShape>, cellsPerPx: Float) {
     fun stroke(runs: List<FloorPlanRun>, color: Color, width: Float) {
         if (runs.isEmpty()) return
         val path = Path()
@@ -425,14 +431,25 @@ private fun drawFloorPlanStrokes(canvas: Canvas, shapes: List<FloorPlanShape>) {
         canvas.drawPath(path, Paint().apply {
             this.color = color
             style = PaintingStyle.Stroke
-            strokeWidth = width
+            strokeWidth = width * cellsPerPx
             strokeCap = StrokeCap.Round
             strokeJoin = StrokeJoin.Round
         })
     }
-    stroke(shapes.flatMap { it.outer }, FLOOR_PLAN_OUTER_COLOR, FLOOR_PLAN_OUTER_WIDTH_CELLS)
-    stroke(shapes.flatMap { it.inner }, FLOOR_PLAN_INNER_COLOR, FLOOR_PLAN_INNER_WIDTH_CELLS)
-    stroke(shapes.flatMap { it.door }, FLOOR_PLAN_DOOR_COLOR, FLOOR_PLAN_DOOR_WIDTH_CELLS)
+    stroke(shapes.flatMap { it.outer }, FLOOR_PLAN_OUTER_COLOR, FLOOR_PLAN_OUTER_WIDTH_PX)
+    stroke(shapes.flatMap { it.inner }, FLOOR_PLAN_INNER_COLOR, FLOOR_PLAN_INNER_WIDTH_PX)
+    stroke(shapes.flatMap { it.door }, FLOOR_PLAN_DOOR_COLOR, FLOOR_PLAN_DOOR_WIDTH_PX)
+}
+
+/** The floor-plan walls and doors at a constant width in screen pixels, through the map's transform, over the floor and tint. */
+internal fun DrawScope.drawFloorPlanStrokes(shapes: List<FloorPlanShape>, view: MapView, scale: Int) {
+    if (shapes.isEmpty()) return
+    withTransform({
+        transform(view.layerMatrix(0f))
+        scale(scale.toFloat(), scale.toFloat(), Offset.Zero)
+    }) {
+        drawFloorPlanStrokes(drawContext.canvas, shapes, 1f / (view.k * scale))
+    }
 }
 
 private fun drawOverlays(canvas: Canvas, map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean, includeRoute: Boolean = true) {
