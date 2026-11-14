@@ -948,7 +948,7 @@ private fun VacuumMapImage(
     // in the layers' own pixels (wall height, label lift) is in cells times this.
     val scale = remember(map) { supersampleFor(map) }
     val (bitmap, overlayBitmap) = rememberMapLayers(map, scale)
-    val (wallSide, wallTop) = rememberWallBitmaps(map, scale)
+    val walls = rememberWallBitmaps(map, scale, enabled = is3D)
     val selectionBitmap = rememberSelectionBitmap(map, selectedRoomIds, scale)
     val wallHeight = WALL_HEIGHT_CELLS * scale
     val labelRooms = remember(map.rooms) { map.rooms.filter { it.labelNormX != null && it.labelNormY != null } }
@@ -1004,6 +1004,7 @@ private fun VacuumMapImage(
         )
     }
     val currentViewFor by rememberUpdatedState(::viewFor)
+    val drawn = remember { DrawnView() }
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Canvas(
@@ -1017,10 +1018,10 @@ private fun VacuumMapImage(
                     // heading chosen with the rotate button, and two fingers pan it.
                     detectMapGestures { centroid, panChange, zoomChange, rotation, fingers ->
                         val newZoom = (mapViewport.zoom * zoomChange).coerceIn(MIN_ZOOM, MAX_ZOOM)
-                        val tilting = is3D && fingers >= 2
+                        val tilting = is3D && isTiltDrag(fingers, panChange, zoomChange, rotation)
                         val center = Offset(size.width / 2f, size.height / 2f)
                         // The pan is kept in units of the framed view; this works in pixels and converts back.
-                        val fit = currentViewFor(size.width.toFloat(), size.height.toFloat()).k / mapViewport.zoom
+                        val fit = drawn.forHitTest { currentViewFor(size.width.toFloat(), size.height.toFloat()) }.k / mapViewport.zoom
                         val panPx = mapViewport.pan * fit
                         val moved = (centroid - center) - ((centroid - center) - panPx) * (newZoom / mapViewport.zoom) +
                             (if (tilting) Offset.Zero else panChange)
@@ -1041,7 +1042,7 @@ private fun VacuumMapImage(
                         onDoubleTap = { mapViewport.reset() },
                         onTap = { tap ->
                             // An obstacle dot is small, so a tap near one opens it before any room.
-                            val tapView = currentViewFor(size.width.toFloat(), size.height.toFloat())
+                            val tapView = drawn.forHitTest { currentViewFor(size.width.toFloat(), size.height.toFloat()) }
                             currentMap.obstacleAt(tap, tapView, currentBitmap.width / currentMap.width.toFloat(), 20.dp.toPx())
                                 ?.let { currentOnObstacleTap(it); return@detectTapGestures }
                             // The same transform that drew the map, run backwards, so a tap lands on
@@ -1059,6 +1060,7 @@ private fun VacuumMapImage(
                 },
         ) {
             val view = viewFor(size.width, size.height)
+            drawn.view = view
             // Magnified past 2 screen pixels per layer pixel, nearest-neighbour keeps edges crisp
             // where smoothing would blur them; so does a flat quarter-turn, which maps pixels 1:1.
             // Zoomed out, where many pixels share one on screen, smoothing avoids shimmer.
@@ -1069,7 +1071,8 @@ private fun VacuumMapImage(
             // choice reads at a glance without hiding where the robot has been.
             selectionBitmap?.let { drawMapLayer(it, view, 0f, quality) }
             drawMapLayer(overlayBitmap, view, 0f, quality)
-            if (is3D) {
+            if (is3D && walls != null) {
+                val (wallSide, wallTop) = walls
                 // Walls rise by stacking the wall layer at climbing heights, then capping it with the
                 // lighter top. Each layer goes through the same transform as the floor, so the
                 // extrusion lines up at every heading.
