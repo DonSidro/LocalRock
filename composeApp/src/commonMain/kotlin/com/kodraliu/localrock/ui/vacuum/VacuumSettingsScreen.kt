@@ -1068,6 +1068,7 @@ private fun DockSettingsScreen(
     var confirmEmptyTank by remember { mutableStateOf(false) }
 
     val washFrequencyOptions = dockCapabilities.washFrequencyOptions
+    val dryTimeOptions = dockCapabilities.dryTimeOptions(dockSettings.dryTimeSeconds)
     val smartWash = dockSettings.smartWash
     val washFrequencyIndex = washFrequencyOptions.indexOfFirst {
         smartWash != null && it.mode == smartWash.mode && (it.mode != 0 || it.intervalMinutes?.times(60) == smartWash.intervalSeconds)
@@ -1239,9 +1240,9 @@ private fun DockSettingsScreen(
         )
         "dry_time" -> SimplePickerDialog(
             title = "Drying time",
-            options = DockOptions.dryTime.map { it.label },
-            selected = DockOptions.dryTime.indexOfFirst { it.code == dockSettings.dryTimeSeconds },
-            onSelect = { onDryTimeChange(DockOptions.dryTime[it].code); dialogTarget = null },
+            options = dryTimeOptions.map { it.label },
+            selected = dryTimeOptions.indexOfFirst { it.code == dockSettings.dryTimeSeconds },
+            onSelect = { onDryTimeChange(dryTimeOptions[it].code); dialogTarget = null },
             enabled = !busy,
             onDismiss = { dialogTarget = null },
         )
