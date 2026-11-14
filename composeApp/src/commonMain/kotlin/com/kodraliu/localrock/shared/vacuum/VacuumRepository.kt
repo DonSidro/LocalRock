@@ -477,6 +477,12 @@ class VacuumRepository(
                 areaMm2 = element["area"]?.jsonPrimitive?.longOrNull ?: 0L,
                 errorCode = element["error"]?.jsonPrimitive?.intOrNull ?: 0,
                 complete = element["complete"]?.jsonPrimitive?.intOrNull ?: 0,
+                startType = element["start_type"]?.jsonPrimitive?.intOrNull ?: 0,
+                cleanType = element["clean_type"]?.jsonPrimitive?.intOrNull ?: 0,
+                finishReason = element["finish_reason"]?.jsonPrimitive?.intOrNull ?: 0,
+                dustCollected = element["dust_collection_status"]?.jsonPrimitive?.intOrNull == 1,
+                washCount = element["wash_count"]?.jsonPrimitive?.intOrNull ?: 0,
+                cleanedAreaMm2 = element["cleaned_area"]?.jsonPrimitive?.longOrNull,
             )
             else -> null
         }
