@@ -70,6 +70,8 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -110,6 +112,10 @@ import com.kodraliu.localrock.shared.vacuum.ConsumableStatus
 import com.kodraliu.localrock.shared.vacuum.totalAreaLabel
 import com.kodraliu.localrock.shared.vacuum.finishReasonLabel
 import com.kodraliu.localrock.shared.vacuum.cleanTypeLabel
+import com.kodraliu.localrock.shared.vacuum.cleaningRecords
+import com.kodraliu.localrock.shared.vacuum.cruiseRecords
+import com.kodraliu.localrock.shared.vacuum.cruiseTitle
+import com.kodraliu.localrock.shared.vacuum.isCruise
 import com.kodraliu.localrock.shared.vacuum.cleanRecordTags
 import com.kodraliu.localrock.shared.vacuum.cleanDurationLabel
 import com.kodraliu.localrock.shared.vacuum.cleanAreaLabel
@@ -885,7 +891,15 @@ private fun HistoryScreen(
     onBack: () -> Unit,
 ) {
     var selected by remember { mutableStateOf<CleanRecord?>(null) }
+    var cruiseTab by remember { mutableStateOf(false) }
     val open = selected
+    val hasCruise = (summary?.patrolCount ?: 0) > 0 || records.any { it.isCruise }
+    val showCruise = hasCruise && cruiseTab
+    val shown = when {
+        !hasCruise -> records.sortedByDescending { it.beginEpoch }
+        showCruise -> records.cruiseRecords()
+        else -> records.cleaningRecords().sortedByDescending { it.beginEpoch }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -928,8 +942,30 @@ private fun HistoryScreen(
                     if (summary != null) {
                         item { CleanSummaryCard(summary) }
                     }
-                    items(records.sortedByDescending { it.beginEpoch }, key = { it.beginEpoch }) { record ->
-                        CleanRecordRow(record, onClick = { selected = record })
+                    if (hasCruise) {
+                        item {
+                            TabRow(selectedTabIndex = if (showCruise) 1 else 0) {
+                                Tab(selected = !showCruise, onClick = { cruiseTab = false }, text = { Text("Cleaning") })
+                                Tab(selected = showCruise, onClick = { cruiseTab = true }, text = { Text("Cruise") })
+                            }
+                        }
+                    }
+                    if (showCruise && shown.isEmpty()) {
+                        item {
+                            Text(
+                                "No cruise runs on the robot",
+                                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    items(shown, key = { it.beginEpoch }) { record ->
+                        if (record.isCruise) {
+                            CruiseRecordRow(record)
+                        } else {
+                            CleanRecordRow(record, onClick = { selected = record })
+                        }
                         HorizontalDivider(Modifier.padding(start = 72.dp))
                     }
                 }
@@ -1001,6 +1037,43 @@ private fun CleanRecordRow(record: CleanRecord, onClick: () -> Unit) {
                     cleanDurationLabel(record.durationSeconds),
                     cleanAreaLabel(record.shownAreaMm2),
                 ).joinToString("  |  "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CruiseRecordRow(record: CleanRecord) {
+    val done = record.complete == 1
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = if (done) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+            modifier = Modifier.size(44.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    if (done) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    null,
+                    Modifier.size(22.dp),
+                    if (done) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                "${record.cruiseTitle}, ${cleanDurationLabel(record.durationSeconds)}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                formatCleanRecordTime(record.beginEpoch),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
