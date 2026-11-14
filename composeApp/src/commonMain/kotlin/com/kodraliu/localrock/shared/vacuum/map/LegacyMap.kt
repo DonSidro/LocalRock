@@ -32,6 +32,7 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     var patrolPoints: List<PatrolPoint> = emptyList()
     var patrolTaskId: Long? = null
     var zoneBlock: Triple<Int, Int, Int>? = null
+    var eraserZones: List<MapZone> = emptyList()
 
     var off = headerLen
     while (off + 8 <= bytes.size) {
@@ -137,6 +138,7 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
                 patrolPoints = parsePatrolPoints(bytes, off + blockHeaderLen, u32(bytes, off + 12), blockDataLen)
             }
             BLOCK_ZONE_LINES -> zoneBlock = Triple(off, blockHeaderLen, blockDataLen)
+            BLOCK_ERASER_ZONES -> eraserZones = parseEraserZones(bytes, off, blockHeaderLen, blockDataLen)
             in UNMODELED_RESTRICTION_BLOCKS ->
                 if (entryCount(bytes, off, blockHeaderLen, blockDataLen) > 0) unmodeledRestrictionBlocks += type
         }
@@ -236,6 +238,7 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         pathFlags = pathFlags.takeIf { it.size == path.size } ?: emptyList(),
         carpetMask = carpetMask?.takeIf { it.size == grid.size },
         zoneLines = zoneLines,
+        eraserZones = eraserZones,
     )
 }
 
@@ -263,6 +266,22 @@ private fun parseQuadZones(bytes: ByteArray, off: Int, headerLen: Int, dataLen: 
             x2 = u16(bytes, p + 8), y2 = u16(bytes, p + 10),
             x3 = u16(bytes, p + 12), y3 = u16(bytes, p + 14),
             kind = kind,
+        )
+    }
+}
+
+/** Block 47: [entryCount] records of a u32 id and four corners of two `u16` values each, in robot millimetres. */
+private fun parseEraserZones(bytes: ByteArray, off: Int, headerLen: Int, dataLen: Int): List<MapZone> {
+    val count = minOf(entryCount(bytes, off, headerLen, dataLen), dataLen / 20)
+    val body = off + headerLen
+    return List(count) { i ->
+        val p = body + i * 20 + 4
+        MapZone(
+            x0 = u16(bytes, p), y0 = u16(bytes, p + 2),
+            x1 = u16(bytes, p + 4), y1 = u16(bytes, p + 6),
+            x2 = u16(bytes, p + 8), y2 = u16(bytes, p + 10),
+            x3 = u16(bytes, p + 12), y3 = u16(bytes, p + 14),
+            kind = ZoneKind.ERASER,
         )
     }
 }
@@ -353,6 +372,7 @@ private fun parseZoneLines(bytes: ByteArray, off: Int, headerLen: Int, dataLen: 
 }
 
 private const val BLOCK_ZONE_LINES = 55
+private const val BLOCK_ERASER_ZONES = 47
 private const val ZONE_HEADER_BYTES = 6
 private const val ZONE_POINT_MIN_BYTES = 6
 private const val MM_PER_CELL = 50
