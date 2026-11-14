@@ -595,6 +595,7 @@ fun VacuumDetailScreen(
                 onRotate = { if (map3D) viewModel.turnMap3DBy(90f) else viewModel.rotateMap90() },
                 onToggle3D = { viewModel.setMap3D(!map3D) },
                 mapViewport = mapViewport,
+                faintRoute = status.state !in ACTIVE_CLEANING_STATES && status.state != VacuumStateCodes.PAUSED,
                 modifier = modifier,
             )
         }
@@ -746,12 +747,13 @@ private fun MapHeroSection(
     onRotate: () -> Unit,
     onToggle3D: () -> Unit,
     mapViewport: LiveMapViewport,
+    faintRoute: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     // Black in both themes, as in the Roborock app: the bright room colours need it, and the gaps in
     // the plan then read as unscanned instead of grey floor.
-    val heroBackground = Color(0xFF0B0F10)
+    val heroBackground = MAP_HERO_BACKGROUND
     Box(
         modifier = modifier
             .clipToBounds()
@@ -771,6 +773,7 @@ private fun MapHeroSection(
                 tiltDegrees = tilt3D,
                 onTiltBy = onTiltBy,
                 providedMapViewport = mapViewport,
+                faintRoute = faintRoute,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -948,6 +951,7 @@ private fun VacuumMapImage(
     modifier: Modifier = Modifier,
     viewportScope: Any? = null,
     providedMapViewport: LiveMapViewport? = null,
+    faintRoute: Boolean = false,
 ) {
     // Drawn larger than the grid so a zoomed-in view stays crisp; every length below that is measured
     // in the layers' own pixels (wall height, label lift) is in cells times this.
@@ -1072,7 +1076,7 @@ private fun VacuumMapImage(
             // choice reads at a glance without hiding where the robot has been.
             selectionBitmap?.let { drawMapLayer(it, view, 0f, quality) }
             drawMapLayer(overlayBitmap, view, 0f, quality)
-            drawRouteAndMarkers(map, view, scale, darkMap)
+            drawRouteAndMarkers(map, view, scale, darkMap, faintRoute)
             if (is3D && walls != null) {
                 val (wallSide, wallTop) = walls
                 // Walls rise by stacking the wall layer at climbing heights, then capping it with the
