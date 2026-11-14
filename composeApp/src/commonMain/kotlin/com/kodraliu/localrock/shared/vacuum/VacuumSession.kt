@@ -125,25 +125,51 @@ class VacuumSession(
      * `["ok"]` and sends the photo afterwards as a frame of its own carrying the request id, so the
      * photo is waited for under that id from before the request goes out.
      */
-    suspend fun fetchPhoto(security: SecurityData, photoId: String, timeoutMs: Long = 15_000L): ByteArray {
-        check(!demo && collectorJob != null) { "Session must be started before fetchPhoto" }
+    suspend fun fetchPhoto(security: SecurityData, photoId: String, timeoutMs: Long = 15_000L): ByteArray =
+        imageFromPhotoData(
+            requestBlob("get_photo", security, timeoutMs) { publicKey -> getPhotoParams(publicKey, security, photoId) },
+        )
+
+    /**
+     * The unzipped photo data of get_patrol_photo for one cruise point (see [parsePatrolThumbnails]), asked
+     * the way [fetchPhoto] asks for an obstacle photo.
+     */
+    suspend fun fetchPatrolPhotoData(
+        security: SecurityData,
+        taskId: Long,
+        x: Int,
+        y: Int,
+        photoId: String? = null,
+        type: Int = PATROL_TYPE_THUMBNAILS,
+        timeoutMs: Long = 20_000L,
+    ): ByteArray = requestBlob("get_patrol_photo", security, timeoutMs) { publicKey ->
+        getPatrolPhotoParams(publicKey, security, taskId, x, y, photoId, type)
+    }
+
+    private suspend fun requestBlob(
+        method: String,
+        security: SecurityData,
+        timeoutMs: Long,
+        params: (publicKey: JsonElement) -> JsonElement,
+    ): ByteArray {
+        check(!demo && collectorJob != null) { "Session must be started before $method" }
         val keyAnswer = sendCommand("get_random_pkey").requireOk("get_random_pkey").result
         val publicKey = ((keyAnswer as? JsonArray)?.firstOrNull() ?: keyAnswer)
             .let { (it as? JsonObject)?.get("pub_key") as? JsonObject }
             ?: throw RoborockProtocolException("get_random_pkey did not return a public key")
         val requestId = nextRequestId()
-        val photo = CompletableDeferred<ByteArray>()
-        mutex.withLock { pendingBlobs[requestId] = photo }
+        val blob = CompletableDeferred<ByteArray>()
+        mutex.withLock { pendingBlobs[requestId] = blob }
         try {
             val securityJson = buildJsonObject {
                 put("endpoint", security.endpoint)
                 put("nonce", security.nonceHex)
             }
             sendRequest(
-                requestId, "get_photo", getPhotoParams(publicKey, security, photoId), timeoutMs,
+                requestId, method, params(publicKey), timeoutMs,
                 extraInner = mapOf("security" to securityJson),
-            ).requireOk("get_photo")
-            return imageFromPhotoData(withTimeout(timeoutMs) { photo.await() })
+            ).requireOk(method)
+            return withTimeout(timeoutMs) { blob.await() }
         } finally {
             mutex.withLock { pendingBlobs.remove(requestId) }
         }

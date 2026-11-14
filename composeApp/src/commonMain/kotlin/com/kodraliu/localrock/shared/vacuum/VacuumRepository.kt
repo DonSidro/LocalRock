@@ -1198,6 +1198,15 @@ class VacuumRepository(
             ?: session.fetchPhoto(createSecurityData(rriotKeyProvider()), photoId).also { obstaclePhotos[photoId] = it }
     }
 
+    private val patrolThumbnails = mutableMapOf<Triple<Long, Int, Int>, List<PatrolThumbnail>>()
+
+    /** The thumbnails the robot took at one cruise point of a run, fetched once per point. */
+    suspend fun fetchPatrolThumbnails(taskId: Long, x: Int, y: Int): List<PatrolThumbnail> = photoMutex.withLock {
+        patrolThumbnails.getOrPut(Triple(taskId, x, y)) {
+            parsePatrolThumbnails(session.fetchPatrolPhotoData(createSecurityData(rriotKeyProvider()), taskId, x, y))
+        }
+    }
+
     private suspend fun fetchMapLocked(): MapResponse {
         if (demo) {
             _mapStatus.value = "Demo mode — live map unavailable"
