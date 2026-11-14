@@ -57,7 +57,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.device.Reachability
 import com.kodraliu.localrock.shared.model.Device
-import com.kodraliu.localrock.shared.vacuum.ProductCatalog
+import com.kodraliu.localrock.shared.vacuum.productDisplayName
 import com.kodraliu.localrock.shared.onboarding.vacuumPairingSupported
 import com.kodraliu.localrock.ui.AppColors
 import com.kodraliu.localrock.ui.icons.RobotVacuum
@@ -158,7 +158,7 @@ fun DeviceListScreen(
                         items(devices, key = { it.duid }) { device ->
                             DeviceCard(
                                 device = device,
-                                model = ProductCatalog.displayName(products[device.duid]?.model).orEmpty(),
+                                model = productDisplayName(products[device.duid]).orEmpty(),
                                 reachability = reachability[device.duid],
                                 onClick = { onDeviceClick(device) },
                             )

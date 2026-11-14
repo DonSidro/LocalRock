@@ -177,6 +177,7 @@ import com.kodraliu.localrock.shared.vacuum.washFrequencyLabel
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
 import com.kodraliu.localrock.shared.vacuum.map.MapObstacle
+import com.kodraliu.localrock.shared.vacuum.modelSubtitle
 import com.kodraliu.localrock.shared.vacuum.map.roomAtNorm
 import com.kodraliu.localrock.ui.AppColors
 import com.kodraliu.localrock.ui.adaptive.LocalWindowLayout
@@ -541,7 +542,14 @@ fun VacuumDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(viewModel.deviceName, style = MaterialTheme.typography.titleLarge) },
+                title = {
+                    Column {
+                        Text(viewModel.deviceName, style = MaterialTheme.typography.titleLarge)
+                        modelSubtitle(viewModel.deviceName, viewModel.modelDisplayName)?.let {
+                            Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Go back")
