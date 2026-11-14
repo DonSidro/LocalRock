@@ -18,7 +18,7 @@ class BetaFeaturesTest {
                 "avoid_collision", "corner_mop_stretch", "dirty_object_detect", "gap_deep_clean", "optimize_battery",
                 "pet_supplies_deep_clean", "right_brush_stretch", "water_leak_check",
             ),
-            supportedBetaFeatures(set).filter { it.bit != null && it.bit != 3 && it.bit != 112 }.map { it.id }.sorted(),
+            supportedBetaFeatures(set).filter { it.bit != null && it.bit != 3 && it.bit != 104 && it.bit != 105 && it.bit != 112 }.map { it.id }.sorted(),
         )
         assertEquals(emptyList(), supportedBetaFeatures("0").filter { it.bit != null })
     }
@@ -66,6 +66,30 @@ class BetaFeaturesTest {
             betaSetParamCandidates("status", true).map { it.toString() },
         )
         assertEquals(listOf("[0]"), betaSetParamCandidates(null, false).map { it.toString() })
+    }
+
+    @Test
+    fun carpet_wire_avoidance_is_bit_105() {
+        val on = "2" + "0".repeat(26)
+        assertEquals(listOf("avoid_carpet_wires"), supportedBetaFeatures(on).filter { it.bit != null }.map { it.id })
+        assertEquals(emptyList(), supportedBetaFeatures("0").filter { it.bit != null })
+    }
+
+    @Test
+    fun wire_avoidance_is_a_named_robot_setting() {
+        val def = BetaFeatureDefs.first { it.id == "avoid_carpet_wires" }
+        assertEquals("nearbycarpet_detecting_wire_status", def.settingName)
+        assertEquals("status" to 0, parseBetaReply(Json.parseToJsonElement("""{"status":0}""")))
+    }
+
+    @Test
+    fun side_brush_lift_is_bit_104_and_one_means_on() {
+        val on = "1" + "0".repeat(26)
+        assertEquals(listOf("carpet_side_brush_lift"), supportedBetaFeatures(on).filter { it.bit != null }.map { it.id })
+        val def = BetaFeatureDefs.first { it.id == "carpet_side_brush_lift" }
+        assertEquals("disable_sidebrush_lift_status", def.settingName)
+        // The name says disable but the plugin treats 1 as the switch being on.
+        assertTrue(BetaFeatureState(def, value = 1, key = "status").enabled)
     }
 
     @Test
