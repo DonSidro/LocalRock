@@ -290,8 +290,14 @@ private const val BLOCK_PATROL = 37
 private const val PATROL_FIXED_BYTES = 6
 private const val PATROL_ID_BYTES = 32
 
+/** Rows either side of a room's label that its width is read over. */
+private const val LABEL_SPAN_ROWS = 8
+
 private const val MAGIC_0 = 0x72.toByte()
 private const val MAGIC_1 = 0x72.toByte()
+
+/** Rows either side of a room's label that its width is read over. */
+private const val LABEL_SPAN_ROWS = 8
 
 private const val BLOCK_CHARGER = 1
 private const val BLOCK_IMAGE = 2

@@ -931,7 +931,7 @@ private fun DrawScope.drawMapLayer(image: ImageBitmap, view: MapView, height: Fl
     }
 }
 
-private const val MIN_LABEL_WIDTH_PX = 60
+private const val MIN_LABEL_WIDTH_PX = 100
 
 @Composable
 private fun VacuumMapImage(
@@ -1137,16 +1137,14 @@ private fun VacuumMapImage(
                 }
                 labelHits += RoomLabelHit(room.id, Rect(labelTopLeft, labelSize))
                 val topLeft = Offset(cx - tw / 2, cy - th / 2)
-                if (is3D && !selected) {
+                if (!selected) {
                     val outline = textMeasurer.measure(
                         text,
                         style.copy(
-                            color = Color(0xE6000000),
+                            color = if (is3D) Color(0xE6000000) else Color(0xCCFFFFFF),
                             shadow = null,
                             drawStyle = Stroke(width = 0.8.dp.toPx(), join = StrokeJoin.Round),
                         ),
-                        overflow = TextOverflow.Ellipsis, softWrap = false, maxLines = 1,
-                        constraints = Constraints(maxWidth = measured.size.width.coerceAtLeast(1)),
                     )
                     drawText(outline, topLeft = topLeft)
                 }
