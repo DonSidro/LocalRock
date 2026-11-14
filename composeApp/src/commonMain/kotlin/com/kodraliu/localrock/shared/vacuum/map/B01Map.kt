@@ -120,7 +120,7 @@ data class ParsedMap(
     val patrolPoints: List<PatrolPoint> = emptyList(),
     /** The `task_id` that `get_patrol_photo` takes for [patrolPoints], from the same block. */
     val patrolTaskId: Long? = null,
-    /** Per path point: bit 0 mopping, bit 2 vacuum only, bit 1 or 3 on a trip to wash the mop. Empty if unknown. */
+    /** Per path point: bit 1 is a trip to wash the mop. Empty if unknown. */
     val pathFlags: List<Int> = emptyList(),
     /** One byte per grid cell, 1 where the robot has seen carpet; null if the map has none. */
     val carpetMask: ByteArray? = null,
@@ -260,6 +260,8 @@ data class ParsedMapRoom(
     val name: String,
     val labelNormX: Float? = null,
     val labelNormY: Float? = null,
+    /** How many cells of the room run across the map at its label, so a name can be fitted inside it. */
+    val labelSpanCells: Int? = null,
 )
 
 /** One cruise point: where the robot stopped (robot mm), its result code and the ids of the photos it took there. */

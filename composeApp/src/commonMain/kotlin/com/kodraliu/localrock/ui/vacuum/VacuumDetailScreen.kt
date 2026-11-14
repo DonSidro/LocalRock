@@ -132,11 +132,13 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -147,6 +149,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import kotlin.math.PI
@@ -928,6 +931,8 @@ private fun DrawScope.drawMapLayer(image: ImageBitmap, view: MapView, height: Fl
     }
 }
 
+private const val MIN_LABEL_WIDTH_PX = 60
+
 @Composable
 private fun VacuumMapImage(
     map: ParsedMap,
@@ -958,12 +963,11 @@ private fun VacuumMapImage(
     val labelStyle = TextStyle(
         fontSize = 11.sp,
         fontWeight = FontWeight.SemiBold,
-        color = Color.White,
-        shadow = Shadow(color = Color(0xE6000000), offset = Offset(0f, 1f), blurRadius = 5f),
+        color = Color(0xFF0E1A26),
     )
     val selectedBgColor = MaterialTheme.colorScheme.primary
     // In dark mode `primary` is a bright cyan, so white-on-primary would be unreadable.
-    val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary, shadow = null)
+    val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary)
     val currentOnRoomTap by rememberUpdatedState(onRoomTap)
     val currentOnObstacleTap by rememberUpdatedState(onObstacleTap)
     // Where the names were last drawn; filled while drawing, read by the tap handler.
@@ -1098,8 +1102,25 @@ private fun VacuumMapImage(
                 val order = selectedRoomIds.indexOf(room.id)
                 val selected = order >= 0
                 val text = if (selected) "${order + 1} · ${room.name}" else room.name
-                val style = if (selected) selectedLabelStyle else labelStyle
-                val measured = textMeasurer.measure(text, style)
+                // Dark names sit well on the coloured floor of the flat map; the 3D walls are black, so
+                // there the names are white with a thin edge.
+                val style = when {
+                    selected -> selectedLabelStyle
+                    is3D -> labelStyle.copy(color = Color.White, shadow = Shadow(Color(0xE6000000), Offset(0f, 1f), 3f))
+                    else -> labelStyle
+                }
+                // A name is shortened to fit inside its room, as the Roborock app does, so it never runs out
+                // over the black between rooms.
+                val roomWidthPx = (room.labelSpanCells ?: 0) * view.k * scale
+                val measured = if (roomWidthPx > 0f) {
+                    textMeasurer.measure(
+                        text, style,
+                        overflow = TextOverflow.Ellipsis, softWrap = false, maxLines = 1,
+                        constraints = Constraints(maxWidth = roomWidthPx.toInt().coerceAtLeast(MIN_LABEL_WIDTH_PX)),
+                    )
+                } else {
+                    textMeasurer.measure(text, style)
+                }
                 val tw = measured.size.width.toFloat()
                 val th = measured.size.height.toFloat()
                 val padX = 6.dp.toPx()
@@ -1115,11 +1136,37 @@ private fun VacuumMapImage(
                     )
                 }
                 labelHits += RoomLabelHit(room.id, Rect(labelTopLeft, labelSize))
-                drawText(
-                    textMeasurer = textMeasurer,
-                    text = text,
-                    style = style,
-                    topLeft = Offset(cx - tw / 2, cy - th / 2),
+                val topLeft = Offset(cx - tw / 2, cy - th / 2)
+                if (is3D && !selected) {
+                    val outline = textMeasurer.measure(
+                        text,
+                        style.copy(
+                            color = Color(0xE6000000),
+                            shadow = null,
+                            drawStyle = Stroke(width = 0.8.dp.toPx(), join = StrokeJoin.Round),
+                        ),
+                        overflow = TextOverflow.Ellipsis, softWrap = false, maxLines = 1,
+                        constraints = Constraints(maxWidth = measured.size.width.coerceAtLeast(1)),
+                    )
+                    drawText(outline, topLeft = topLeft)
+                }
+                // Drawn from the measured layout, so a name near the screen edge is not re-wrapped to fit.
+                drawText(measured, topLeft = topLeft)
+            }
+        }
+
+        // Zoom is shown relative to the framed view, which is the resting state.
+        if (zoom > 1.05f) {
+            Surface(
+                modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
+                color = Color.Black.copy(alpha = 0.6f),
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Text(
+                    "${(zoom * 100).toInt()}%",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
                 )
             }
         }

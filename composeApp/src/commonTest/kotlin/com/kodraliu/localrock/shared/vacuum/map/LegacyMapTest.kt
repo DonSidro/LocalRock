@@ -68,6 +68,22 @@ class LegacyMapTest {
     }
 
     @Test
+    fun every_room_label_sits_on_that_rooms_own_floor() {
+        val map = parseLegacyMap(raw)
+        assertTrue(map.rooms.isNotEmpty())
+        for (room in map.rooms) {
+            val under = map.roomAtNorm(room.labelNormX!!, room.labelNormY!!)
+            assertEquals(room.id, under?.id, "label of room ${room.id}")
+        }
+    }
+
+    @Test
+    fun every_room_knows_how_wide_it_is_at_its_label() {
+        val map = parseLegacyMap(raw)
+        for (room in map.rooms) assertTrue((room.labelSpanCells ?: 0) >= 1, "room ${room.id}")
+    }
+
+    @Test
     fun extracts_cleaning_path() {
         val map = parseLegacyMap(raw)
         assertEquals(5307, map.pathMm.size)

@@ -54,9 +54,9 @@ private class MapPalette(
 
 // Light is NOT the dark palette inverted: the rooms have to sit *above* their container, so the
 // hero behind them is near-white and these tints carry enough weight to advance against it.
-// Blue, teal, salmon and yellow, as in the Roborock app; touching rooms get different ones.
+// Blue, salmon, teal and yellow in the order the Roborock app numbers them, then grey for a room it has no colour for.
 private val OfficialRoomColors = listOf(
-    Color(0xFF6EA8EB), Color(0xFF26CFC8), Color(0xFFDB7F66), Color(0xFFE8BA5C),
+    Color(0xFF6EA8EB), Color(0xFFDB7F66), Color(0xFF26CFC8), Color(0xFFE8BA5C), Color(0xFFB8B8B8),
 )
 
 private val LightPalette = MapPalette(
@@ -65,7 +65,7 @@ private val LightPalette = MapPalette(
     floor = Color(0xFFE9EFEE),
     rooms = OfficialRoomColors,
     // Deep enough to read as ink rather than neon against the pastels.
-    path = Color(0xF2FFFFFF),
+    path = Color(0x99FFFFFF),
     charger = Color(0xFF1FB36A),
     robot = Color(0xFF1FB36A),
     markerRing = Color(0xFFFFFFFF),
@@ -75,7 +75,7 @@ private val DarkPalette = MapPalette(
     wall = Color(0xFF070B0C),
     floor = Color(0xFF17201F),
     rooms = OfficialRoomColors,
-    path = Color(0xF2FFFFFF),
+    path = Color(0x99FFFFFF),
     charger = Color(0xFF2ED47E),
     robot = Color(0xFF2ED47E),
     markerRing = Color(0xFF0B1112),
@@ -415,49 +415,45 @@ private fun drawWall(canvas: Canvas, map: ParsedMap, wall: VirtualWall) {
 
 private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     val main = Path()
-    val pure = Path()
     val wash = Path()
     var kind = -1
     var started = false
     for ((i, point) in map.pathMm.withIndex()) {
         val flag = map.pathFlags.getOrElse(i) { 0 }
-        val now = when {
-            flag and 0b1010 != 0 -> 2
-            flag and 0b100 != 0 -> 1
-            else -> 0
-        }
+        // As the app's route parser does: only bit 1 is a wash trip; bits 3 and 4 stay on the main route.
+        val now = if (flag and 0b10 != 0) 2 else 0
         val cellX = (point.x / 50f) - map.pixelOffsetLeft
         val cellY = (map.height - 1) - ((point.y / 50f) - map.pixelOffsetTop)
         if (cellX !in 0f..map.width.toFloat() || cellY !in 0f..map.height.toFloat()) {
             started = false
             continue
         }
-        val target = when (now) { 2 -> wash; 1 -> pure; else -> main }
+        val target = if (now == 2) wash else main
         if (!started || now != kind) target.moveTo(cellX, cellY) else target.lineTo(cellX, cellY)
         started = true
         kind = now
     }
     // A wide faint band for the ground the robot has covered, under the thin line of its route.
     canvas.drawPath(main, Paint().apply {
-        color = Color(0x38FFFFFF)
+        color = Color(0x4CE5E5E5) // the app's mopPathColor, #e5e5e54c
         style = PaintingStyle.Stroke
         strokeWidth = 6.5f
         strokeCap = StrokeCap.Round
         strokeJoin = StrokeJoin.Round
     })
-    for (line in listOf(main, pure)) {
+    for (line in listOf(main)) {
         canvas.drawPath(line, Paint().apply {
             color = palette.path
             style = PaintingStyle.Stroke
-            strokeWidth = 0.6f
+            strokeWidth = 0.9f
             strokeCap = StrokeCap.Round
         })
     }
     // The trips to the dock to wash the mop are dashed.
     canvas.drawPath(wash, Paint().apply {
-        color = palette.path
+        color = Color(0x33FFFFFF) // the app's backWashPathColor, #FFFFFF33
         style = PaintingStyle.Stroke
-        strokeWidth = 0.6f
+        strokeWidth = 0.9f
         pathEffect = PathEffect.dashPathEffect(floatArrayOf(2f, 3f))
     })
 }

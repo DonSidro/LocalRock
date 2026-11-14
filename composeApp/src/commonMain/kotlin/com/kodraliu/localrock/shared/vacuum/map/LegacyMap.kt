@@ -173,7 +173,13 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         // The middle of the label's pixel, so a tap on the label's centre finds this room.
         val cx = ((lx + 0.5f) / imageWidth).coerceIn(0f, 1f)
         val cy = ((imageHeight - 1 - ly + 0.5f) / imageHeight).coerceIn(0f, 1f)
-        ParsedMapRoom(id = roomId, name = "Room $roomId", labelNormX = cx, labelNormY = cy)
+        // The run of this room's own floor along the label's row, which is how wide a name may be.
+        fun inRoom(x: Int) = x in 0 until imageWidth && roomAt[ly * imageWidth + x] == roomId
+        var left = lx
+        while (inRoom(left - 1)) left--
+        var right = lx
+        while (inRoom(right + 1)) right++
+        ParsedMapRoom(id = roomId, name = "Room $roomId", labelNormX = cx, labelNormY = cy, labelSpanCells = right - left + 1)
     }
 
     return ParsedMap(
