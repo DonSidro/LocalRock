@@ -109,11 +109,12 @@ internal fun supersampleFor(map: ParsedMap): Int = (2400 / maxOf(map.width, map.
 fun rememberMapLayers(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap> {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val palette = if (dark) DarkPalette else LightPalette
-    // A live update replaces the map object every few seconds. The floor only depends on the grid and
-    // rooms, so it is not redrawn for a robot that has merely moved; the overlay carries the route.
+    // A live update replaces the map object every few seconds. The floor and the zones only depend on the
+    // grid, rooms and restrictions, so neither is redrawn for a robot that has merely moved; the route and
+    // the markers are drawn as vectors on top.
     val floorKey = remember(map) { map.floorKey() }
     val floor = remember(floorKey, dark, scale) { renderLayer(map, palette, scale, overlay = false) }
-    val overlay = remember(map, dark, scale) { renderLayer(map, palette, scale, overlay = true) }
+    val overlay = remember(map.restrictionsKey(), dark, scale) { renderLayer(map, palette, scale, overlay = true) }
     return floor to overlay
 }
 
@@ -123,7 +124,13 @@ fun rememberMapLayers(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap
  */
 internal fun ParsedMap.floorKey(): List<Any?> = listOf(
     width, height, resolution, pixelOffsetLeft, pixelOffsetTop, format,
-    grid.contentHashCode(), originalGrid?.contentHashCode(), rooms, segmentMaterials, segmentMaterialDirections,
+    grid.contentHashCode(), originalGrid?.contentHashCode(), carpetMask?.contentHashCode(), rooms,
+    segmentMaterials, segmentMaterialDirections,
+)
+
+/** What the zones and virtual walls are drawn from. */
+internal fun ParsedMap.restrictionsKey(): List<Any?> = listOf(
+    width, height, pixelOffsetLeft, pixelOffsetTop, carpetAreas, thresholds, noMopZones, noGoZones, virtualWalls,
 )
 
 /**
@@ -357,9 +364,22 @@ private fun drawOverlays(canvas: Canvas, map: ParsedMap, palette: MapPalette, dr
 }
 
 // Square dock, round robot: the two markers stay distinguishable without relying on colour.
-private fun drawMarkers(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
-    map.chargerMm?.let { drawMarker(canvas, map, it, palette.charger, palette.markerRing, square = true) }
-    map.robotMm?.let { drawMarker(canvas, map, it, palette.robot, palette.markerRing, square = false) }
+private fun drawMarkers(canvas: Canvas, map: ParsedMap, palette: MapPalette, yaw: Float = 0f, squash: Float = 1f) {
+    map.chargerMm?.let { p -> upright(canvas, map, p, yaw, squash) { drawMarker(canvas, map, p, palette.charger, palette.markerRing, square = true) } }
+    map.robotMm?.let { p -> upright(canvas, map, p, yaw, squash) { drawMarker(canvas, map, p, palette.robot, palette.markerRing, square = false) } }
+}
+
+/** Draws a marker undoing the map's turn and tilt around its own spot, so it stays upright on screen. */
+private inline fun upright(canvas: Canvas, map: ParsedMap, point: ParsedMapPoint, yaw: Float, squash: Float, draw: () -> Unit) {
+    val x = (point.x / 50f) - map.pixelOffsetLeft
+    val y = (map.height - 1) - ((point.y / 50f) - map.pixelOffsetTop)
+    canvas.save()
+    canvas.translate(x, y)
+    canvas.rotate(-yaw)
+    canvas.scale(1f, 1f / squash)
+    canvas.translate(-x, -y)
+    draw()
+    canvas.restore()
 }
 
 /**
@@ -369,15 +389,12 @@ private fun drawMarkers(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
 internal fun DrawScope.drawRouteAndMarkers(map: ParsedMap, view: MapView, scale: Int, dark: Boolean) {
     val palette = if (dark) DarkPalette else LightPalette
     withTransform({
-        translate(left = view.canvasW / 2f + view.pan.x, top = view.canvasH / 2f + view.pan.y)
-        scale(view.k, view.k, Offset.Zero)
-        rotate(view.yawDegrees, Offset.Zero)
-        scale(1f, view.squash, Offset.Zero)
-        translate(left = -view.centerX, top = -view.centerY)
+        // The same matrix as the floor, so the route lies on the rooms it ran over at any heading and tilt.
+        transform(view.layerMatrix(0f))
         scale(scale.toFloat(), scale.toFloat(), Offset.Zero)
     }) {
         if (map.pathMm.size >= 2) drawPath(drawContext.canvas, map, palette)
-        drawMarkers(drawContext.canvas, map, palette)
+        drawMarkers(drawContext.canvas, map, palette, view.yawDegrees, view.squash)
     }
 }
 
