@@ -54,9 +54,11 @@ import com.kodraliu.localrock.shared.vacuum.CleanRecord
 import com.kodraliu.localrock.shared.vacuum.PatrolThumbnail
 import com.kodraliu.localrock.shared.vacuum.cleanDurationLabel
 import com.kodraliu.localrock.shared.vacuum.cruiseTitle
+import com.kodraliu.localrock.shared.vacuum.patrolFailureMessage
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.PatrolPoint
 import com.kodraliu.localrock.ui.AppColors
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -148,10 +150,15 @@ private fun CruisePointRow(
 ) {
     var photos by remember(taskId, point) { mutableStateOf<List<ImageBitmap>?>(null) }
     var failure by remember(taskId, point) { mutableStateOf<String?>(null) }
-    LaunchedEffect(taskId, point) {
+    var attempt by remember(taskId, point) { mutableStateOf(0) }
+    LaunchedEffect(taskId, point, attempt) {
+        failure = null
         runCatching { loadThumbnails(taskId, point.x, point.y).map { it.png.decodeToImageBitmap() } }
             .onSuccess { photos = it }
-            .onFailure { failure = it.message ?: "The robot didn't send them" }
+            .onFailure {
+                if (it is CancellationException) throw it
+                failure = patrolFailureMessage(it)
+            }
     }
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Cruise point ${index + 1}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
@@ -172,11 +179,15 @@ private fun CruisePointRow(
                     )
                 }
             }
-            failure != null -> Text(
-                "Couldn't load the photos: $failure",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            failure != null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Couldn't load the photos: $failure",
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(onClick = { attempt++ }) { Text("Retry") }
+            }
             else -> Surface(Modifier.size(96.dp), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Box(contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) }
             }

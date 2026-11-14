@@ -24,6 +24,9 @@ private const val PHOTO_BLOCK_HEADER_MIN = 8
 /** A decoded "ROBOROCK" blob frame: the get_photo request it answers and its unzipped payload. */
 internal class BlobResponse(val requestId: Int, val data: ByteArray)
 
+/** A "ROBOROCK" frame split into its header and the body after it, which is still zipped, and encrypted for cipher_suite 1. */
+internal class RawBlobFrame(val requestId: Int, val header: ByteArray, val body: ByteArray)
+
 internal fun getPhotoParams(publicKey: JsonElement, security: SecurityData, photoId: String, type: Int = PHOTO_TYPE_CROP) =
     JsonObject(
         mapOf(
@@ -39,7 +42,10 @@ internal fun getPhotoParams(publicKey: JsonElement, security: SecurityData, phot
  * u16 at 16 and the gzip length a u32 at 20, all little endian. Null for any other frame, such as a
  * map, which arrives on the same protocol.
  */
-internal fun decodeBlobResponse(message: RoborockMessage): BlobResponse? {
+internal fun decodeBlobResponse(message: RoborockMessage): BlobResponse? =
+    decodeRawBlobFrame(message)?.let { BlobResponse(it.requestId, gunzip(it.body)) }
+
+internal fun decodeRawBlobFrame(message: RoborockMessage): RawBlobFrame? {
     val p = message.payload
     if (message.protocol != RoborockProtocol.MAP_RESPONSE || p.size < 24) return null
     if (!p.copyOfRange(0, BLOB_MAGIC.size).contentEquals(BLOB_MAGIC)) return null
@@ -47,7 +53,7 @@ internal fun decodeBlobResponse(message: RoborockMessage): BlobResponse? {
     val headerSize = u16le(p, 16)
     val end = headerSize.toLong() + (u32le(p, 20).toLong() and 0xFFFFFFFFL)
     if (headerSize < 24 || end > p.size) throw RoborockProtocolException("Invalid photo frame")
-    return BlobResponse(requestId, gunzip(p.copyOfRange(headerSize, end.toInt())))
+    return RawBlobFrame(requestId, p.copyOfRange(0, headerSize), p.copyOfRange(headerSize, end.toInt()))
 }
 
 /**

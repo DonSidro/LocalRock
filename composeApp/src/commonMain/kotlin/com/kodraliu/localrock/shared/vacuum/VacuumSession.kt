@@ -2,17 +2,22 @@ package com.kodraliu.localrock.shared.vacuum
 
 import com.kodraliu.localrock.shared.mqtt.MqttClient
 import com.kodraliu.localrock.shared.mqtt.MqttTopics
+import com.kodraliu.localrock.shared.onboarding.RsaKeyPair
+import com.kodraliu.localrock.shared.onboarding.generateRsa1024KeyPair
 import com.kodraliu.localrock.shared.protocol.RoborockCodec
 import com.kodraliu.localrock.shared.protocol.RoborockMessage
 import com.kodraliu.localrock.shared.protocol.RoborockProtocol
 import com.kodraliu.localrock.shared.protocol.RoborockProtocolException
 import com.kodraliu.localrock.shared.protocol.V1Envelope
 import com.kodraliu.localrock.shared.protocol.V1Response
+import com.kodraliu.localrock.shared.protocol.gunzip
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +26,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
@@ -75,7 +81,14 @@ class VacuumSession(
     /** Saved-map requests sent so far. A late frame for one of them must never pass for the live map. */
     private val savedMapRequestIds = mutableSetOf<Int>()
     /** Photos asked for with get_photo, by request id. */
-    private val pendingBlobs = mutableMapOf<Int, CompletableDeferred<ByteArray>>()
+    private val pendingBlobs = mutableMapOf<Int, PendingBlob>()
+
+    /** [keys] is the RSA key pair a cipher_suite 1 request was made with, null for a plain one. */
+    private class PendingBlob(val keys: RsaKeyPair?, val result: CompletableDeferred<ByteArray>)
+
+    /** Which cipher_suite get_patrol_photo worked with on this robot, once one has. */
+    private var patrolCipher: Int? = null
+    private var officialKeys: RsaKeyPair? = null
 
     /** The topic we are actually subscribed to, which can lag [topicsProvider] after a re-login. */
     private var subscribedTopic: String? = null
@@ -127,7 +140,7 @@ class VacuumSession(
      */
     suspend fun fetchPhoto(security: SecurityData, photoId: String, timeoutMs: Long = 15_000L): ByteArray =
         imageFromPhotoData(
-            requestBlob("get_photo", security, timeoutMs) { publicKey -> getPhotoParams(publicKey, security, photoId) },
+            requestBlob("get_photo", security, timeoutMs, null) { publicKey -> getPhotoParams(publicKey, security, photoId) },
         )
 
     /**
@@ -142,24 +155,60 @@ class VacuumSession(
         photoId: String? = null,
         type: Int = PATROL_TYPE_THUMBNAILS,
         timeoutMs: Long = 20_000L,
-    ): ByteArray = requestBlob("get_patrol_photo", security, timeoutMs) { publicKey ->
-        getPatrolPhotoParams(publicKey, security, taskId, x, y, photoId, type)
+    ): ByteArray {
+        val known = patrolCipher
+        val order = when (known) {
+            CIPHER_SUITE_RSA -> listOf(CIPHER_SUITE_RSA, CIPHER_SUITE_PLAIN)
+            else -> listOf(CIPHER_SUITE_PLAIN, CIPHER_SUITE_RSA)
+        }
+        var failure: Throwable? = null
+        for (cipher in order) {
+            // Without a known cipher the plain try gets only a short wait, so a robot that ignores it falls through soon.
+            val wait = if (known == null && cipher == CIPHER_SUITE_PLAIN) minOf(timeoutMs, PLAIN_TRY_MS) else timeoutMs
+            try {
+                val data = if (cipher == CIPHER_SUITE_RSA) {
+                    val keys = officialKeys ?: withContext(Dispatchers.Default) { generateRsa1024KeyPair() }.also { officialKeys = it }
+                    requestBlob("get_patrol_photo", security, wait, keys) { publicKey ->
+                        getPatrolPhotoParams(publicKey, security, taskId, x, y, photoId, type, CIPHER_SUITE_RSA, OFFICIAL_PARAMS_ENDPOINT)
+                    }
+                } else {
+                    requestBlob("get_patrol_photo", security, wait, null) { publicKey ->
+                        getPatrolPhotoParams(publicKey, security, taskId, x, y, photoId, type)
+                    }
+                }
+                patrolCipher = cipher
+                return data
+            } catch (e: TimeoutCancellationException) {
+                println("[VacLocal] get_patrol_photo cipher_suite $cipher timed out")
+                failure = failure ?: e
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                println("[VacLocal] get_patrol_photo cipher_suite $cipher failed: ${e.message}")
+                failure = e
+            }
+        }
+        throw PatrolPhotoException(patrolFailureMessage(failure!!), failure)
     }
 
     private suspend fun requestBlob(
         method: String,
         security: SecurityData,
         timeoutMs: Long,
+        keys: RsaKeyPair?,
         params: (publicKey: JsonElement) -> JsonElement,
     ): ByteArray {
         check(!demo && collectorJob != null) { "Session must be started before $method" }
-        val keyAnswer = sendCommand("get_random_pkey").requireOk("get_random_pkey").result
-        val publicKey = ((keyAnswer as? JsonArray)?.firstOrNull() ?: keyAnswer)
-            .let { (it as? JsonObject)?.get("pub_key") as? JsonObject }
-            ?: throw RoborockProtocolException("get_random_pkey did not return a public key")
+        val publicKey = if (keys != null) rsaPublicKeyJson(keys) else {
+            val keyAnswer = sendCommand("get_random_pkey").requireOk("get_random_pkey").result
+            ((keyAnswer as? JsonArray)?.firstOrNull() ?: keyAnswer)
+                .let { (it as? JsonObject)?.get("pub_key") as? JsonObject }
+                ?: throw RoborockProtocolException("get_random_pkey did not return a public key")
+        }
         val requestId = nextRequestId()
-        val blob = CompletableDeferred<ByteArray>()
-        mutex.withLock { pendingBlobs[requestId] = blob }
+        val pendingBlob = PendingBlob(keys, CompletableDeferred())
+        val blob = pendingBlob.result
+        mutex.withLock { pendingBlobs[requestId] = pendingBlob }
         try {
             val securityJson = buildJsonObject {
                 put("endpoint", security.endpoint)
@@ -237,7 +286,7 @@ class VacuumSession(
             pending.clear()
             pendingMap?.cancel()
             pendingMap = null
-            pendingBlobs.values.forEach { it.cancel() }
+            pendingBlobs.values.forEach { it.result.cancel() }
             pendingBlobs.clear()
             security = null
         }
@@ -347,10 +396,7 @@ class VacuumSession(
                 }
             }
 
-            decodePhotoFrame(m)?.let { blob ->
-                println("[VacLocal] photo frame id=${blob.requestId} bytes=${blob.data.size}")
-                mutex.withLock { pendingBlobs[blob.requestId] }?.complete(blob.data)
-            }
+            handlePhotoFrame(m)
 
             val (sd, pendingMapDef) = mutex.withLock { security to pendingMap }
             if (sd != null && pendingMapDef != null) {
@@ -364,11 +410,41 @@ class VacuumSession(
         }
     }
 
-    /** A photo frame, or null for anything else; a broken one is logged and dropped, so its request times out. */
-    private fun decodePhotoFrame(m: RoborockMessage): BlobResponse? =
-        runCatching { decodeBlobResponse(m) }
+    /**
+     * Gives a photo frame to the request it answers. A plain request gets the unzipped body; a cipher_suite 1 request
+     * one decrypted with its key, or the reason it could not be. A frame with no "ROBOROCK" header can only be an
+     * original patrol photo, which carries no request id, so it goes to the oldest cipher_suite 1 request that is
+     * still waiting and whose key it unwraps.
+     */
+    private suspend fun handlePhotoFrame(m: RoborockMessage) {
+        if (m.protocol != RoborockProtocol.MAP_RESPONSE) return
+        val raw = runCatching { decodeRawBlobFrame(m) }
             .onFailure { println("[VacLocal] photo frame FAILED: ${it.message}") }
             .getOrNull()
+        if (raw == null) {
+            if (m.payload.size < OFFICIAL_HEADER_SIZE) return
+            val waiting = mutex.withLock { pendingBlobs.values.filter { it.keys != null && !it.result.isCompleted } }
+            for (candidate in waiting) {
+                val data = decryptHeaderlessBody(m.payload, candidate.keys!!) ?: continue
+                println("[VacLocal] headerless photo frame bytes=${data.size}")
+                candidate.result.complete(data)
+                return
+            }
+            return
+        }
+        println("[VacLocal] photo frame id=${raw.requestId} bytes=${raw.body.size}")
+        val target = mutex.withLock { pendingBlobs[raw.requestId] } ?: return
+        val keys = target.keys
+        if (keys == null) {
+            runCatching { gunzip(raw.body) }
+                .onSuccess { target.result.complete(it) }
+                .onFailure { println("[VacLocal] photo frame FAILED: ${it.message}") }
+        } else {
+            runCatching { decryptOfficialBody(raw.header, raw.body, keys) }
+                .onSuccess { target.result.complete(it) }
+                .onFailure { target.result.completeExceptionally(it) }
+        }
+    }
 
     private suspend fun nextRequestId(): Int = mutex.withLock {
         val id = nextId
@@ -385,6 +461,7 @@ class VacuumSession(
         /** Short-lived reachability checks from the device list. */
         val PROBE_REQUEST_IDS = 30000..32767
 
+        private const val PLAIN_TRY_MS = 10_000L
         private const val SEQ_MIN = 100000
         private const val SEQ_MAX = 999999
         private const val RANDOM_MIN = 10000

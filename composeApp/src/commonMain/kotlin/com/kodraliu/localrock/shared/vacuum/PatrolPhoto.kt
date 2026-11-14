@@ -37,6 +37,8 @@ internal fun getPatrolPhotoParams(
     y: Int,
     photoId: String? = null,
     type: Int = PATROL_TYPE_THUMBNAILS,
+    cipherSuite: Int = CIPHER_SUITE_PLAIN,
+    endpoint: String = security.endpoint,
 ): JsonObject = JsonObject(
     buildMap {
         if (taskId != 0L) put("task_id", JsonPrimitive(taskId))
@@ -44,8 +46,8 @@ internal fun getPatrolPhotoParams(
         if (y != 0) put("y", JsonPrimitive(y))
         if (!photoId.isNullOrEmpty()) put("photo_id", JsonPrimitive(photoId.padEnd(PHOTO_ID_FIELD, Char(0))))
         put("type", JsonPrimitive(type))
-        put("endpoint", JsonPrimitive(security.endpoint))
-        put("security", JsonObject(mapOf("pub_key" to publicKey, "cipher_suite" to JsonPrimitive(0))))
+        put("endpoint", JsonPrimitive(endpoint))
+        put("security", JsonObject(mapOf("pub_key" to publicKey, "cipher_suite" to JsonPrimitive(cipherSuite))))
     },
 )
 
