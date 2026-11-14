@@ -298,6 +298,24 @@ fun ParsedMap.roomAtNorm(normX: Float, normY: Float): ParsedMapRoom? {
         }
 }
 
+/**
+ * The room id stored for one grid cell, or null where the cell belongs to no room's floor (outside,
+ * a wall, or floor the robot hasn't assigned to a room). It reads the cell the same way
+ * [roomAtNorm] does for each map format, minus that function's nearest-label fallback, so a room
+ * lit up on selection covers exactly the cells a tap on it would pick.
+ */
+fun ParsedMap.roomIdAtCell(idx: Int): Int? {
+    if (idx !in grid.indices) return null
+    if (originalGrid != null) {
+        val v = originalGrid[idx].toInt() and 0xff
+        if (v == 0 || (v and 0x07) == 1) return null
+        return ((v ushr 3) and 0x1f).takeIf { it > 0 }
+    }
+    val v = grid[idx].toInt() and 0xff
+    if (v == 0 || v == 127 || v == 128) return null
+    return v
+}
+
 
 @OptIn(ExperimentalSerializationApi::class)
 fun parseB01Map(bytes: ByteArray): ParsedMap {
