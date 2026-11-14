@@ -456,6 +456,23 @@ class VacuumRepository(
     }
 
 
+    /** The steps of one run, or null when the robot has no timeline (older models answer "not recognized"). */
+    suspend fun fetchCleanTimeline(record: CleanRecord): List<CleanTimelineStep>? {
+        val events = mutableListOf<CleanTimelineEvent>()
+        var from = 0
+        repeat(MAX_TIMELINE_PAGES) {
+            val response = runCatching { session.getCleanDetail(record.beginEpoch, from) }.getOrNull() ?: return null
+            if (response.error != null) return null
+            val page = CleanTimelineParser.parsePage(response.result) ?: return null
+            events += page.events
+            if (!page.more || page.num <= 0) {
+                return if (events.isEmpty()) null else CleanTimeline.build(events, record.endEpoch)
+            }
+            from = page.nextFrom
+        }
+        return if (events.isEmpty()) null else CleanTimeline.build(events)
+    }
+
     suspend fun resetConsumable(field: String) { session.resetConsumable(field) }
 
     suspend fun findMe() { session.findMe() }
@@ -1255,6 +1272,7 @@ class VacuumRepository(
         /** Map requests after a floor switch, [MAP_FAST_POLL_MS] apart: about a minute and a half. */
         const val FLOOR_SWITCH_MAP_REFRESHES = 12
         const val MAX_HISTORY_RECORDS = 20
+        const val MAX_TIMELINE_PAGES = 20
 
         const val READBACK_ATTEMPTS = 4
         const val READBACK_DELAY_MS = 2_000L

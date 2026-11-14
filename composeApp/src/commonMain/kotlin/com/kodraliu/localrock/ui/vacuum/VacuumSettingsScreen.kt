@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.ui.vacuum
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -107,6 +108,8 @@ import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.vacuum.AdvertisedFeature
 import com.kodraliu.localrock.shared.vacuum.BetaFeatureState
 import com.kodraliu.localrock.shared.vacuum.CleanRecord
+import com.kodraliu.localrock.shared.vacuum.CleanTimelineLabels
+import com.kodraliu.localrock.shared.vacuum.CleanTimelineStep
 import com.kodraliu.localrock.shared.vacuum.CleanSummary
 import com.kodraliu.localrock.shared.vacuum.PatrolThumbnail
 import com.kodraliu.localrock.shared.vacuum.ConsumableStatus
@@ -182,6 +185,7 @@ fun VacuumSettingsScreen(
     val valleySettings by repository.valleySettings.collectAsState()
     val cleanHistory by repository.cleanHistory.collectAsState()
     val cleanSummary by repository.cleanSummary.collectAsState()
+    val rooms by repository.rooms.collectAsState()
     val firmwareUpdate by viewModel.firmwareUpdate.collectAsState()
     val betaFeatures by repository.betaFeatures.collectAsState()
     val betaFeaturesLoading by repository.betaFeaturesLoading.collectAsState()
@@ -313,6 +317,8 @@ fun VacuumSettingsScreen(
                 loadMap = { repository.fetchCleanRecordMap(it) },
                 loadThumbnails = { task, x, y -> repository.fetchPatrolThumbnails(task, x, y) },
                 mapRotation = mapRotation,
+                loadTimeline = repository::fetchCleanTimeline,
+                roomName = { id -> rooms.firstOrNull { it.id == id }?.name },
                 onRefresh = {
                     scope.launch {
                         runCatching { repository.fetchCleanHistory() }
@@ -366,6 +372,7 @@ fun VacuumHistoryScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val cleanHistory by repository.cleanHistory.collectAsState()
     val cleanSummary by repository.cleanSummary.collectAsState()
+    val rooms by repository.rooms.collectAsState()
     LaunchedEffect(Unit) {
         runCatching { repository.fetchCleanHistory() }
         runCatching { repository.fetchCleanSummary() }
@@ -376,6 +383,8 @@ fun VacuumHistoryScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
         loadMap = { repository.fetchCleanRecordMap(it) },
         loadThumbnails = { task, x, y -> repository.fetchPatrolThumbnails(task, x, y) },
         mapRotation = mapRotation,
+        loadTimeline = repository::fetchCleanTimeline,
+        roomName = { id -> rooms.firstOrNull { it.id == id }?.name },
         onRefresh = {
             scope.launch {
                 runCatching { repository.fetchCleanHistory() }
@@ -891,6 +900,8 @@ private fun HistoryScreen(
     loadMap: suspend (beginEpoch: Long) -> ParsedMap,
     loadThumbnails: suspend (taskId: Long, x: Int, y: Int) -> List<PatrolThumbnail>,
     mapRotation: Int,
+    loadTimeline: suspend (CleanRecord) -> List<CleanTimelineStep>?,
+    roomName: (Int) -> String?,
     onRefresh: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -926,7 +937,7 @@ private fun HistoryScreen(
                 if (open.isCruise) {
                     CruiseRecordDetail(open, loadMap, loadThumbnails, mapRotation, Modifier.padding(padding))
                 } else {
-                    CleanRecordDetail(open, loadMap, mapRotation, Modifier.padding(padding))
+                    CleanRecordDetail(open, loadMap, loadTimeline, roomName, mapRotation, Modifier.padding(padding))
                 }
             } else if (records.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
@@ -1093,6 +1104,8 @@ private fun CruiseRecordRow(record: CleanRecord, onClick: () -> Unit) {
 private fun CleanRecordDetail(
     record: CleanRecord,
     loadMap: suspend (beginEpoch: Long) -> ParsedMap,
+    loadTimeline: suspend (CleanRecord) -> List<CleanTimelineStep>?,
+    roomName: (Int) -> String?,
     mapRotation: Int,
     modifier: Modifier = Modifier,
 ) {
@@ -1103,11 +1116,10 @@ private fun CleanRecordDetail(
     LaunchedEffect(record.beginEpoch) {
         runCatching { loadMap(record.beginEpoch) }.onSuccess { map = it }.onFailure { failed = true }
     }
-    Column(modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f, fill = false)
                 .aspectRatio(1f)
                 .clip(MaterialTheme.shapes.extraLarge)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -1151,6 +1163,59 @@ private fun CleanRecordDetail(
             Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                 SummaryStatItem(cleanDurationLabel(record.durationSeconds), "Cleaning Time")
                 SummaryStatItem(cleanAreaLabel(record.shownAreaMm2), "Cleaning Area")
+            }
+        }
+        CleanTimelineCard(record, loadTimeline, roomName)
+    }
+}
+
+@Composable
+private fun CleanTimelineCard(
+    record: CleanRecord,
+    loadTimeline: suspend (CleanRecord) -> List<CleanTimelineStep>?,
+    roomName: (Int) -> String?,
+) {
+    var loading by remember(record.beginEpoch) { mutableStateOf(true) }
+    var steps by remember(record.beginEpoch) { mutableStateOf<List<CleanTimelineStep>?>(null) }
+    LaunchedEffect(record.beginEpoch) {
+        steps = runCatching { loadTimeline(record) }.getOrNull()
+        loading = false
+    }
+    Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.extraLarge) {
+        CleanTimelineSection(steps, record.beginEpoch, loading, roomName)
+    }
+}
+
+@Composable
+private fun CleanTimelineSection(steps: List<CleanTimelineStep>?, beginEpoch: Long, loading: Boolean, roomName: (Int) -> String?) {
+    Column(Modifier.fillMaxWidth().padding(20.dp)) {
+        when {
+            loading -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            steps == null -> Text(
+                "No timeline for this run",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            else -> steps.forEach { step ->
+                val isError = step is CleanTimelineStep.Error
+                Row(Modifier.padding(vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        timelineOffset(step.time - beginEpoch),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(56.dp),
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            CleanTimelineLabels.title(step, roomName),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                        )
+                        CleanTimelineLabels.detail(step)?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
             }
         }
     }
@@ -2116,3 +2181,10 @@ private fun oneDecimal(value: Float): String {
     return "${scaled / 10}.${(scaled % 10).absoluteValue}"
 }
 
+
+private fun timelineOffset(seconds: Long): String {
+    val total = seconds.coerceAtLeast(0L)
+    val hours = total / 3600
+    val minutes = (total % 3600) / 60
+    return if (hours > 0) "+$hours:${minutes.toString().padStart(2, '0')}h" else "+${minutes}m"
+}
