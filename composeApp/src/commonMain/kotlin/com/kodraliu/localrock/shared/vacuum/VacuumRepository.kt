@@ -945,7 +945,9 @@ class VacuumRepository(
 
     /** Null when the robot did not reply at all, so a read that timed out is not mistaken for an answer. */
     private suspend fun readBetaFeature(def: BetaFeatureDef): BetaFeatureState? {
-        val resp = runCatching { session.sendCommand(def.getMethod) }.getOrNull() ?: return null
+        val resp = runCatching {
+            def.settingName?.let { session.getRobotSetting(it) } ?: session.sendCommand(def.getMethod)
+        }.getOrNull() ?: return null
         val parsed = parseBetaReply(resp.result)
         return BetaFeatureState(
             def = def,
@@ -981,6 +983,14 @@ class VacuumRepository(
      */
     suspend fun setBetaFeature(id: String, on: Boolean) {
         val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
+        current.def.settingName?.let { name ->
+            val sent = session.setRobotSetting(name, on)
+            readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }?.let { updated ->
+                _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
+            }
+            sent.requireOk("app_set_robot_setting")
+            return
+        }
         val candidates = betaSetParamCandidates(current.key, on)
         var last: V1Response? = null
         for (i in betaSetTryOrder(candidates.size, betaSetAcceptedShape[id])) {

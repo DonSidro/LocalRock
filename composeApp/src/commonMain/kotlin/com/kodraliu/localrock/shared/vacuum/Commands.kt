@@ -153,6 +153,19 @@ internal fun childLockParams(locked: Boolean): JsonObject =
 suspend fun VacuumSession.setChildLock(locked: Boolean): V1Response =
     sendCommandRaw(SET_CHILD_LOCK_STATUS, childLockParams(locked))
 
+// Newer firmware keeps many on/off options behind one pair of commands, picked by name:
+// app_get_robot_setting {"name": ...} answers {"status": n}, app_set_robot_setting takes {"name", "status"}.
+internal fun robotSettingReadParams(name: String): JsonObject = JsonObject(mapOf("name" to JsonPrimitive(name)))
+
+internal fun robotSettingWriteParams(name: String, on: Boolean): JsonObject =
+    JsonObject(mapOf("name" to JsonPrimitive(name), "status" to JsonPrimitive(if (on) 1 else 0)))
+
+suspend fun VacuumSession.getRobotSetting(name: String): V1Response =
+    sendCommandRaw("app_get_robot_setting", robotSettingReadParams(name))
+
+suspend fun VacuumSession.setRobotSetting(name: String, on: Boolean): V1Response =
+    sendCommandRaw("app_set_robot_setting", robotSettingWriteParams(name, on))
+
 suspend fun VacuumSession.getLedStatus(): V1Response = sendCommand("get_led_status")
 // The LED is the bare value `[1]`, the same shape get_led_status answers: an S8 Pro Ultra (a70) and a
 // Qrevo Curv 2 Flow (a245) answer `[{"led_status": 1}]` with -10005 "Invalid type".

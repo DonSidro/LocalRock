@@ -24,6 +24,8 @@ data class BetaFeatureDef(
     val getMethod: String,
     val setMethod: String,
     val section: FeatureSection = FeatureSection.BETA,
+    /** Set for options reached through app_get/set_robot_setting by name, not their own get/set pair. */
+    val settingName: String? = null,
 )
 
 val BetaFeatureDefs = listOf(
@@ -151,6 +153,55 @@ val BetaFeatureDefs = listOf(
         getMethod = "get_clean_follow_ground_material_status",
         setMethod = "set_clean_follow_ground_material_status",
         section = FeatureSection.FLOOR,
+    ),
+    BetaFeatureDef(
+        id = "uncleaned_area_reminder",
+        title = "Uncleaned area reminder",
+        description = "Tells you about any uncleaned area after each clean, with a one-tap option to clean it",
+        bit = null,
+        getMethod = "app_get_robot_setting",
+        setMethod = "app_set_robot_setting",
+        section = FeatureSection.ROBOT,
+        settingName = "enable_omission_area_clean_status",
+    ),
+    BetaFeatureDef(
+        id = "follow_low_obstacles",
+        title = "Follow low obstacles",
+        description = "Lets the robot follow low obstacles",
+        bit = 117,
+        getMethod = "app_get_robot_setting",
+        setMethod = "app_set_robot_setting",
+        section = FeatureSection.OBSTACLE,
+        settingName = "enable_follow_low_obs_status",
+    ),
+    BetaFeatureDef(
+        id = "full_duplex",
+        title = "Full duplex voice",
+        description = "Talk and listen at the same time during voice chat",
+        bit = 115,
+        getMethod = "app_get_robot_setting",
+        setMethod = "app_set_robot_setting",
+        section = FeatureSection.ROBOT,
+        settingName = "full_duplex_switch",
+    ),
+    BetaFeatureDef(
+        id = "climbing_arms_high_sill",
+        title = "Climbing arms on high thresholds",
+        description = "Uses the climbing arms to cross high door thresholds and carpet",
+        bit = null,
+        getMethod = "app_get_robot_setting",
+        setMethod = "app_set_robot_setting",
+        section = FeatureSection.FLOOR,
+        settingName = "enable_sway_arm_for_high_door_sill_carpet",
+    ),
+    BetaFeatureDef(
+        id = "optimize_battery",
+        title = "Smart charging",
+        description = "Charges to 80% first, then slowly to 100%, to protect the battery",
+        bit = 74,
+        getMethod = "get_optimize_battery_status",
+        setMethod = "set_optimize_battery_status",
+        section = FeatureSection.ROBOT,
     ),
 )
 

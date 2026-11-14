@@ -11,11 +11,11 @@ class BetaFeaturesTest {
 
     @Test
     fun supported_features_follow_the_feature_bits() {
-        // QX Revo Ultra 2 newFeatureSet: bits 36, 40, 43, 54, 56, 60 and 63 are on, 58 is off.
+        // QX Revo Ultra 2 newFeatureSet: bits 36, 40, 43, 54, 56, 60, 63 and 74 are on, 58 is off.
         val set = "0000000000119418CCD57EFDA869B6DDDBFF8F7F7EFEFFFF"
         assertEquals(
             listOf(
-                "avoid_collision", "corner_mop_stretch", "dirty_object_detect", "gap_deep_clean",
+                "avoid_collision", "corner_mop_stretch", "dirty_object_detect", "gap_deep_clean", "optimize_battery",
                 "pet_supplies_deep_clean", "right_brush_stretch", "water_leak_check",
             ),
             supportedBetaFeatures(set).filter { it.bit != null && it.bit != 3 && it.bit != 112 }.map { it.id }.sorted(),
@@ -35,7 +35,10 @@ class BetaFeaturesTest {
     @Test
     fun features_without_a_known_bit_are_always_probed() {
         assertEquals(
-            listOf("dust_collection_switch", "follow_ground_material", "identify_furniture", "identify_ground_material"),
+            listOf(
+                "climbing_arms_high_sill", "dust_collection_switch", "follow_ground_material", "identify_furniture",
+                "identify_ground_material", "uncleaned_area_reminder",
+            ),
             supportedBetaFeatures(null).map { it.id }.sorted(),
         )
     }
