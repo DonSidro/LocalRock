@@ -10,7 +10,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -69,6 +68,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.SelectAll
@@ -133,7 +133,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -146,7 +147,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.toSize
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.sin
+import kotlin.math.sqrt
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kodraliu.localrock.shared.model.Scene
@@ -226,8 +232,10 @@ fun VacuumDetailScreen(
 ) {
     val status by viewModel.status.collectAsState()
     val busy by viewModel.busy.collectAsState()
-    val supportsSmartPlan by viewModel.supportsSmartPlan.collectAsState()
-    val supportsWaterSlide by viewModel.supportsWaterSlide.collectAsState()
+    val mapRotation by viewModel.mapRotation.collectAsState()
+    val map3DYaw by viewModel.map3DYaw.collectAsState()
+    val map3DTilt by viewModel.map3DTilt.collectAsState()
+    val map3D by viewModel.map3D.collectAsState()
     val parsedMap by viewModel.repository.parsedMap.collectAsState()
     val floorMaps by viewModel.repository.floorMaps.collectAsState()
     val currentFloorFlag by viewModel.repository.currentFloorFlag.collectAsState()
@@ -698,6 +706,12 @@ private fun MapHeroSection(
     sessionRoomNames: List<String>,
     floorMaps: List<FloorMap>,
     currentFloorFlag: Int,
+    rotationDegrees: Int,
+    yaw3D: Float,
+    onYaw3DChange: (Float) -> Unit,
+    tilt3D: Float,
+    onTilt3DChange: (Float) -> Unit,
+    is3D: Boolean,
     onLoadMap: () -> Unit,
     onRecover: () -> Unit,
     onRoomTap: (Int) -> Unit,
@@ -752,6 +766,20 @@ private fun MapHeroSection(
         ) {
             if (busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
             else Icon(Icons.Default.Refresh, contentDescription = "Refresh map", modifier = Modifier.size(22.dp))
+        }
+
+        if (parsedMap != null) {
+            Row(
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilledTonalIconButton(onClick = onToggle3D, modifier = Modifier.size(40.dp)) {
+                    Text(if (is3D) "3D" else "2D", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+                FilledTonalIconButton(onClick = onRotate, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Default.RotateRight, contentDescription = "Rotate map 90°", modifier = Modifier.size(20.dp))
+                }
+            }
         }
 
         Column(
@@ -853,17 +881,55 @@ private fun SessionRoomsBadge(roomNames: List<String>, modifier: Modifier = Modi
     }
 }
 
+// Stylised, not to scale: tall enough that walls read as walls instead of thin borders.
+private const val WALL_HEIGHT_CELLS = 7f
+private const val MIN_ZOOM = 0.4f
+private const val MAX_ZOOM = 8f
+// Degrees of tilt per screen pixel two fingers are dragged vertically; a full-screen drag is about 70°.
+private const val TILT_DEGREES_PER_PX = 0.05f
+
+private fun DrawScope.drawMapLayer(image: ImageBitmap, view: MapView, height: Float, quality: FilterQuality) {
+    withTransform({
+        translate(left = 0f, top = -height * view.k * view.lift)
+        translate(left = view.canvasW / 2f + view.pan.x, top = view.canvasH / 2f + view.pan.y)
+        scale(view.k, view.k, Offset.Zero)
+        rotate(view.yawDegrees, Offset.Zero)
+        scale(1f, view.squash, Offset.Zero)
+        translate(left = -view.centerX, top = -view.centerY)
+    }) {
+        val size = IntSize(image.width, image.height)
+        drawImage(
+            image = image,
+            srcOffset = IntOffset.Zero,
+            srcSize = size,
+            dstOffset = IntOffset.Zero,
+            dstSize = size,
+            filterQuality = quality,
+        )
+    }
+}
+
 @Composable
 private fun VacuumMapImage(
     map: ParsedMap,
     selectedRoomIds: List<Int>,
     onRoomTap: (Int) -> Unit,
-    onObstacleTap: (MapObstacle) -> Unit,
+    is3D: Boolean,
+    yawDegrees: Float,
+    onYawChange: (Float) -> Unit,
+    tiltDegrees: Float,
+    onTiltChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     viewportScope: Any? = null,
     providedMapViewport: LiveMapViewport? = null,
 ) {
-    val bitmap = rememberMapBitmap(map)
+    // Drawn larger than the grid so a zoomed-in view stays crisp; every length below that is measured
+    // in the layers' own pixels (wall height, label lift) is in cells times this.
+    val scale = remember(map) { supersampleFor(map) }
+    val (bitmap, overlayBitmap) = rememberMapLayers(map, scale)
+    val (wallSide, wallTop) = rememberWallBitmaps(map, scale)
+    val selectionBitmap = rememberSelectionBitmap(map, selectedRoomIds, scale)
+    val wallHeight = WALL_HEIGHT_CELLS * scale
     val labelRooms = remember(map.rooms) { map.rooms.filter { it.labelNormX != null && it.labelNormY != null } }
     val textMeasurer = rememberTextMeasurer()
     // Labels follow the scheme rather than being a fixed black scrim: over a light map a dark
@@ -881,16 +947,16 @@ private fun VacuumMapImage(
     val currentOnObstacleTap by rememberUpdatedState(onObstacleTap)
     // Where the names were last drawn; filled while drawing, read by the tap handler.
     val labelHits = remember { mutableListOf<RoomLabelHit>() }
+    val currentYaw by rememberUpdatedState(yawDegrees)
+    val currentOnYawChange by rememberUpdatedState(onYawChange)
+    val currentTilt by rememberUpdatedState(tiltDegrees)
+    val currentOnTiltChange by rememberUpdatedState(onTiltChange)
 
-    // A parsed map is mostly blank grid, so open framed on the floor plan rather than on padding.
+    // A parsed map is mostly blank grid, so frame the floor plan rather than the padding around it.
     val bounds = remember(map) { map.contentBoundsNorm() }
-    var viewport by remember { mutableStateOf(Size.Zero) }
-    // Null until the view has been measured, so the framing is never applied from a stale size.
-    val fit: Pair<Float, Offset>? = remember(bounds, viewport) {
-        if (viewport.width == 0f || viewport.height == 0f) null
-        else frameMap(bounds, map.fittedSize(viewport), viewport)
-    }
-    val currentFit by rememberUpdatedState(fit)
+    // Each view starts framed, and keeps its own zoom and position while it is showing.
+    var zoom by remember(map, is3D) { mutableStateOf(1f) }
+    var pan by remember(map, is3D) { mutableStateOf(Offset.Zero) }
 
     val identity = map.viewportIdentity(viewportScope)
     val mapViewport = providedMapViewport ?: remember { LiveMapViewport() }
@@ -904,55 +970,67 @@ private fun VacuumMapImage(
             modifier = Modifier
                 .fillMaxSize()
                 .clipToBounds()
-                .onSizeChanged { viewport = it.toSize() }
-                .pointerInput(identity) {
-                    detectTransformGestures { centroid, pan, zoom, _ ->
-                        val view = size.toSize()
-                        val (newScale, newOffset) =
-                            zoomMap(mapViewport.scale, mapViewport.offset, centroid, pan, zoom, currentMap.fittedSize(view), view)
-                        mapViewport.scale = newScale
-                        mapViewport.offset = newOffset
+                .pointerInput(map, is3D) {
+                    // Pinch zooms about the fingers. In 3D the model behaves like a maps app's 3D
+                    // view: one finger moves it, a two-finger twist turns it to any heading, and two
+                    // fingers dragged up or down together tip the camera. The flat map keeps the
+                    // heading chosen with the rotate button, and two fingers pan it.
+                    detectMapGestures { centroid, panChange, zoomChange, rotation, fingers ->
+                        val newZoom = (zoom * zoomChange).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                        val tilting = is3D && fingers >= 2
+                        val center = Offset(size.width / 2f, size.height / 2f)
+                        val moved = (centroid - center) - ((centroid - center) - pan) * (newZoom / zoom) +
+                            (if (tilting) Offset.Zero else panChange)
+                        // Loose clamp so the plan can't be flung entirely out of reach.
+                        pan = Offset(
+                            moved.x.coerceIn(-size.width.toFloat(), size.width.toFloat()),
+                            moved.y.coerceIn(-size.height.toFloat(), size.height.toFloat()),
+                        )
+                        zoom = newZoom
+                        if (is3D && rotation != 0f) currentOnYawChange(currentYaw + rotation)
+                        // Dragging up tips the camera toward the horizon, as in a maps app.
+                        if (tilting && panChange.y != 0f) currentOnTiltChange(currentTilt - panChange.y * TILT_DEGREES_PER_PX)
                     }
                 }
-                .pointerInput(identity) {
+                .pointerInput(map, is3D) {
                     detectTapGestures(
-                        // Double tap returns to the framed view, not to the padded whole grid.
+                        // Double tap returns to the framed view; the heading is left as it is.
                         onDoubleTap = {
-                            currentFit?.let { (s, o) ->
-                                mapViewport.scale = s
-                                mapViewport.offset = o
-                            }
+                            zoom = 1f
+                            pan = Offset.Zero
                         },
-                        onTap = { tapOffset ->
-                            val content = currentMap.fittedSize(size.toSize())
-                            // An obstacle dot is small, so a tap near one opens it before any room.
-                            currentMap.obstacleAt(tapOffset, content, mapViewport.offset, mapViewport.scale, 20.dp.toPx())
-                                ?.let { currentOnObstacleTap(it); return@detectTapGestures }
-                            roomAtLabel(tapOffset, labelHits)?.let { currentOnRoomTap(it); return@detectTapGestures }
-                            val p = (tapOffset - mapViewport.offset) / mapViewport.scale
-                            val normX = p.x / content.width
-                            val normY = p.y / content.height
-                            // The view is larger than the map; a tap beside it is not on a room.
+                        onTap = { tap ->
+                            // The same transform that drew the map, run backwards, so a tap lands on
+                            // the room under the finger at any heading, zoom or tilt.
+                            roomAtLabel(tap, labelHits)?.let { currentOnRoomTap(it); return@detectTapGestures }
+                            val at = viewFor(size.width.toFloat(), size.height.toFloat()).toBitmap(tap.x, tap.y)
+                            val normX = at.x / bitmap.width
+                            val normY = at.y / bitmap.height
+                            // The canvas is larger than the map; a tap beside it is not on a room.
                             if (normX in 0f..1f && normY in 0f..1f) {
-                                currentMap.roomAtNorm(normX, normY)?.let { currentOnRoomTap(it.id) }
+                                map.roomAtNorm(normX, normY)?.let { currentOnRoomTap(it.id) }
                             }
                         },
                     )
                 },
         ) {
-            val content = map.fittedSize(size)
-            withTransform({
-                translate(left = mapViewport.offset.x, top = mapViewport.offset.y)
-                scale(mapViewport.scale, mapViewport.scale, pivot = Offset.Zero)
-            }) {
-                drawImage(
-                    image = bitmap,
-                    srcOffset = IntOffset.Zero,
-                    srcSize = IntSize(bitmap.width, bitmap.height),
-                    dstOffset = IntOffset.Zero,
-                    dstSize = IntSize(content.width.toInt(), content.height.toInt()),
-                    filterQuality = FilterQuality.None,
-                )
+            val view = viewFor(size.width, size.height)
+            // Magnified past 2 screen pixels per layer pixel, nearest-neighbour keeps edges crisp
+            // where smoothing would blur them; so does a flat quarter-turn, which maps pixels 1:1.
+            // Zoomed out, where many pixels share one on screen, smoothing avoids shimmer.
+            val quality = if ((!is3D && yawDegrees % 90f == 0f) || view.k >= 2f) FilterQuality.None else FilterQuality.Low
+            drawMapLayer(bitmap, view, 0f, quality)
+            // A selected room is tinted over the floor, and the path goes over the tint, so the
+            // choice reads at a glance without hiding where the robot has been.
+            selectionBitmap?.let { drawMapLayer(it, view, 0f, quality) }
+            drawMapLayer(overlayBitmap, view, 0f, quality)
+            if (is3D) {
+                // Walls rise by stacking the wall layer at climbing heights, then capping it with the
+                // lighter top. Each layer goes through the same transform as the floor, so the
+                // extrusion lines up at every heading.
+                val steps = (wallHeight * view.k * view.lift / 1.5f).toInt().coerceIn(2, 30)
+                for (i in 1..steps) drawMapLayer(wallSide, view, wallHeight * i / steps, quality)
+                drawMapLayer(wallTop, view, wallHeight, quality)
             }
 
             // Under the labels, so a name is never hidden by a badge. A tap still opens the obstacle first.
@@ -965,8 +1043,13 @@ private fun VacuumMapImage(
             for (room in labelRooms) {
                 val normX = room.labelNormX ?: continue
                 val normY = room.labelNormY ?: continue
-                val cx = mapViewport.offset.x + normX * content.width * mapViewport.scale
-                val cy = mapViewport.offset.y + normY * content.height * mapViewport.scale
+                val at = view.toScreen(
+                    normX * bitmap.width,
+                    normY * bitmap.height,
+                    height = if (is3D) wallHeight * 0.5f else 0f,
+                )
+                val cx = at.x
+                val cy = at.y
                 if (cx < 0f || cx > size.width || cy < 0f || cy > size.height) continue
                 val order = selectedRoomIds.indexOf(room.id)
                 val selected = order >= 0
@@ -995,23 +1078,6 @@ private fun VacuumMapImage(
             }
         }
 
-        // Zoom is reported relative to the framed view, which is now the resting state.
-        val baseScale = fit?.first ?: 1f
-        val relativeZoom = if (baseScale > 0f) mapViewport.scale / baseScale else mapViewport.scale
-        if (relativeZoom > 1.05f) {
-            Surface(
-                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
-                color = Color.Black.copy(alpha = 0.6f),
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Text(
-                    "${(relativeZoom * 100).toInt()}%",
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
-                )
-            }
-        }
     }
 }
 
