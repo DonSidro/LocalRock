@@ -132,6 +132,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -2399,7 +2400,7 @@ private fun SavedMapPreview(label: String, map: ParsedMap?, failed: Boolean, mod
 
 /** The floor plan of [map], cut to the part that holds floor and fitted into the space. */
 @Composable
-private fun SavedMapImage(map: ParsedMap, modifier: Modifier = Modifier) {
+internal fun SavedMapImage(map: ParsedMap, modifier: Modifier = Modifier, rotationDegrees: Int = 0) {
     val bitmap = rememberMapBitmap(map)
     val bounds = remember(map) { map.contentBoundsNorm() }
     Canvas(modifier) {
@@ -2408,17 +2409,20 @@ private fun SavedMapImage(map: ParsedMap, modifier: Modifier = Modifier) {
         val srcTop = if (usable) bounds.top * bitmap.height else 0f
         val srcW = (if (usable) bounds.width * bitmap.width else bitmap.width.toFloat()).coerceAtLeast(1f)
         val srcH = (if (usable) bounds.height * bitmap.height else bitmap.height.toFloat()).coerceAtLeast(1f)
-        val scale = minOf(size.width / srcW, size.height / srcH)
+        val sideways = rotationDegrees % 180 != 0
+        val scale = minOf(size.width / (if (sideways) srcH else srcW), size.height / (if (sideways) srcW else srcH))
         val dstW = srcW * scale
         val dstH = srcH * scale
-        drawImage(
-            image = bitmap,
-            srcOffset = IntOffset(srcLeft.toInt(), srcTop.toInt()),
-            srcSize = IntSize(srcW.toInt(), srcH.toInt()),
-            dstOffset = IntOffset(((size.width - dstW) / 2).toInt(), ((size.height - dstH) / 2).toInt()),
-            dstSize = IntSize(dstW.toInt(), dstH.toInt()),
-            filterQuality = FilterQuality.Low,
-        )
+        rotate(rotationDegrees.toFloat()) {
+            drawImage(
+                image = bitmap,
+                srcOffset = IntOffset(srcLeft.toInt(), srcTop.toInt()),
+                srcSize = IntSize(srcW.toInt(), srcH.toInt()),
+                dstOffset = IntOffset(((size.width - dstW) / 2).toInt(), ((size.height - dstH) / 2).toInt()),
+                dstSize = IntSize(dstW.toInt(), dstH.toInt()),
+                filterQuality = FilterQuality.Low,
+            )
+        }
     }
 }
 

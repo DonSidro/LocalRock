@@ -2,6 +2,8 @@ package com.kodraliu.localrock.ui.vacuum
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -94,6 +96,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
@@ -104,6 +107,12 @@ import com.kodraliu.localrock.shared.vacuum.BetaFeatureState
 import com.kodraliu.localrock.shared.vacuum.CleanRecord
 import com.kodraliu.localrock.shared.vacuum.CleanSummary
 import com.kodraliu.localrock.shared.vacuum.ConsumableStatus
+import com.kodraliu.localrock.shared.vacuum.totalAreaLabel
+import com.kodraliu.localrock.shared.vacuum.finishReasonLabel
+import com.kodraliu.localrock.shared.vacuum.cleanTypeLabel
+import com.kodraliu.localrock.shared.vacuum.cleanRecordTags
+import com.kodraliu.localrock.shared.vacuum.cleanDurationLabel
+import com.kodraliu.localrock.shared.vacuum.cleanAreaLabel
 import com.kodraliu.localrock.shared.vacuum.DndSettings
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.FeatureSection
@@ -150,6 +159,7 @@ fun VacuumSettingsScreen(
     onBack: () -> Unit,
 ) {
     val repository = viewModel.repository
+    val mapRotation = 0 // the live map has no rotation setting yet (#81 adds it)
     var route by remember { mutableStateOf<SettingsRoute>(SettingsRoute.Root) }
     // Sub-pages are local state, not nav destinations, so system back would leave Settings (#52).
     BackHandler(enabled = route != SettingsRoute.Root) {
@@ -293,6 +303,8 @@ fun VacuumSettingsScreen(
             HistoryScreen(
                 records = cleanHistory,
                 summary = cleanSummary,
+                loadMap = { repository.fetchCleanRecordMap(it) },
+                mapRotation = mapRotation,
                 onRefresh = {
                     scope.launch {
                         runCatching { repository.fetchCleanHistory() }
@@ -342,6 +354,7 @@ fun VacuumPinGoScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
 @Composable
 fun VacuumHistoryScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     val repository = viewModel.repository
+    val mapRotation = 0 // the live map has no rotation setting yet (#81 adds it)
     val scope = rememberCoroutineScope()
     val cleanHistory by repository.cleanHistory.collectAsState()
     val cleanSummary by repository.cleanSummary.collectAsState()
@@ -352,6 +365,8 @@ fun VacuumHistoryScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     HistoryScreen(
         records = cleanHistory,
         summary = cleanSummary,
+        loadMap = { repository.fetchCleanRecordMap(it) },
+        mapRotation = mapRotation,
         onRefresh = {
             scope.launch {
                 runCatching { repository.fetchCleanHistory() }
@@ -864,24 +879,34 @@ private fun ConsumableItem(
 private fun HistoryScreen(
     records: List<CleanRecord>,
     summary: CleanSummary?,
+    loadMap: suspend (beginEpoch: Long) -> ParsedMap,
+    mapRotation: Int,
     onRefresh: () -> Unit,
     onBack: () -> Unit,
 ) {
+    var selected by remember { mutableStateOf<CleanRecord?>(null) }
+    val open = selected
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("History") },
+                title = { Text(if (open == null) "History" else formatCleanRecordTime(open.beginEpoch)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                    IconButton(onClick = { if (open == null) onBack() else selected = null }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
                 },
                 actions = {
-                    IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Refresh") }
+                    if (open == null) {
+                        IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Refresh") }
+                    }
                 },
             )
         },
     ) { padding ->
         CenteredContent {
-            if (records.isEmpty()) {
+            if (open != null) {
+                CleanRecordDetail(open, loadMap, mapRotation, Modifier.padding(padding))
+            } else if (records.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -904,7 +929,7 @@ private fun HistoryScreen(
                         item { CleanSummaryCard(summary) }
                     }
                     items(records.sortedByDescending { it.beginEpoch }, key = { it.beginEpoch }) { record ->
-                        CleanRecordRow(record)
+                        CleanRecordRow(record, onClick = { selected = record })
                         HorizontalDivider(Modifier.padding(start = 72.dp))
                     }
                 }
@@ -915,24 +940,18 @@ private fun HistoryScreen(
 
 @Composable
 private fun CleanSummaryCard(summary: CleanSummary) {
-    val totalHours = summary.totalTimeSec / 3600
-    val totalMinutes = (summary.totalTimeSec % 3600) / 60
-    val totalAreaM2 = summary.totalAreaMm2 / 1_000_000f
     Surface(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
         shape = MaterialTheme.shapes.extraLarge,
     ) {
-        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Lifetime Stats", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                SummaryStatItem("${summary.totalCount}", "Sessions")
-                SummaryStatItem("${totalAreaM2.roundToInt()} m²", "Total area")
-                SummaryStatItem(
-                    if (totalHours > 0) "${totalHours}h ${totalMinutes}m" else "${totalMinutes}m",
-                    "Total time",
-                )
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            SummaryStatItem(totalAreaLabel(summary.totalAreaMm2), "Total Area")
+            SummaryStatItem("${summary.totalTimeSec / 3600} h", "Total Time")
+            SummaryStatItem("${summary.totalCount}", "Working Times")
         }
     }
 }
@@ -946,52 +965,111 @@ private fun SummaryStatItem(value: String, label: String) {
 }
 
 @Composable
-private fun CleanRecordRow(record: CleanRecord) {
-    val areaM2 = record.areaMm2 / 1_000_000f
-    val durationMin = record.durationSeconds / 60L
-    val dateStr = formatCleanRecordTime(record.beginEpoch)
+private fun CleanRecordRow(record: CleanRecord, onClick: () -> Unit) {
+    val done = record.complete == 1
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(
             shape = RoundedCornerShape(12.dp),
-            color = if (record.complete == 1) MaterialTheme.colorScheme.primaryContainer
-                    else MaterialTheme.colorScheme.errorContainer,
+            color = if (done) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
             modifier = Modifier.size(44.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    if (record.complete == 1) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    if (done) Icons.Default.CheckCircle else Icons.Default.Warning,
                     null,
                     Modifier.size(22.dp),
-                    if (record.complete == 1) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.onErrorContainer,
+                    if (done) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
                 )
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(dateStr, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(oneDecimal(areaM2)) }
-                        append(" m²")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append("$durationMin") }
-                        append(" min")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            Text(
+                formatCleanRecordTime(record.beginEpoch),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                listOfNotNull(
+                    cleanTypeLabel(record.cleanType),
+                    cleanDurationLabel(record.durationSeconds),
+                    cleanAreaLabel(record.shownAreaMm2),
+                ).joinToString("  |  "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CleanRecordDetail(
+    record: CleanRecord,
+    loadMap: suspend (beginEpoch: Long) -> ParsedMap,
+    mapRotation: Int,
+    modifier: Modifier = Modifier,
+) {
+    val done = record.complete == 1
+    val tags = cleanRecordTags(record)
+    var map by remember(record.beginEpoch) { mutableStateOf<ParsedMap?>(null) }
+    var failed by remember(record.beginEpoch) { mutableStateOf(false) }
+    LaunchedEffect(record.beginEpoch) {
+        runCatching { loadMap(record.beginEpoch) }.onSuccess { map = it }.onFailure { failed = true }
+    }
+    Column(modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .aspectRatio(1f)
+                .clip(MaterialTheme.shapes.extraLarge)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                map != null -> SavedMapImage(map!!, Modifier.fillMaxSize().padding(8.dp), mapRotation)
+                failed -> Text("Couldn't load this run's map", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+            }
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = MaterialTheme.shapes.extraLarge,
+        ) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (done) Icons.Default.CheckCircle else Icons.Default.Warning,
+                        null,
+                        Modifier.size(24.dp),
+                        if (done) AppColors.Good else AppColors.Warn,
+                    )
+                    Text(finishReasonLabel(record), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                }
+                if (tags.isNotEmpty()) {
+                    Text(
+                        tags.joinToString(" | "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = MaterialTheme.shapes.extraLarge,
+        ) {
+            Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                SummaryStatItem(cleanDurationLabel(record.durationSeconds), "Cleaning Time")
+                SummaryStatItem(cleanAreaLabel(record.shownAreaMm2), "Cleaning Area")
             }
         }
     }

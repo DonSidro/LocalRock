@@ -230,6 +230,16 @@ class VacuumSession(
     suspend fun fetchSavedMap(security: SecurityData, mapFlag: Int, backup: Boolean, timeoutMs: Long = 30_000L): MapResponse =
         requestMap(security, "get_multi_map", savedMapParams(mapFlag, backup), savedMap = true, timeoutMs = timeoutMs)
 
+    /** A past run's map: `get_clean_record_map {"start_time": <begin>}`, answered like a saved map (captured 2026-11-01). */
+    suspend fun fetchCleanRecordMap(security: SecurityData, startTime: Long, timeoutMs: Long = 30_000L): MapResponse =
+        requestMap(
+            security,
+            "get_clean_record_map",
+            buildJsonObject { put("start_time", startTime) },
+            savedMap = true,
+            timeoutMs = timeoutMs,
+        )
+
     private suspend fun requestMap(
         security: SecurityData,
         method: String,
