@@ -120,6 +120,10 @@ data class ParsedMap(
     val patrolPoints: List<PatrolPoint> = emptyList(),
     /** The `task_id` that `get_patrol_photo` takes for [patrolPoints], from the same block. */
     val patrolTaskId: Long? = null,
+    /** Per path point: bit 0 mopping, bit 2 vacuum only, bit 1 or 3 on a trip to wash the mop. Empty if unknown. */
+    val pathFlags: List<Int> = emptyList(),
+    /** One byte per grid cell, 1 where the robot has seen carpet; null if the map has none. */
+    val carpetMask: ByteArray? = null,
 ) {
     val floorCells: Int by lazy { grid.count { (it.toInt() and 0xff) == 128 } }
     val wallCells: Int by lazy { grid.count { (it.toInt() and 0xff) == 127 } }
@@ -137,8 +141,10 @@ data class ParsedMap(
             other.format == format &&
             other.carpetAreas == carpetAreas &&
             other.thresholds == thresholds &&
+            other.pathFlags == pathFlags &&
             other.obstacles == obstacles &&
-            other.patrolPoints == patrolPoints && other.patrolTaskId == patrolTaskId
+            other.patrolPoints == patrolPoints && other.patrolTaskId == patrolTaskId &&
+            (carpetMask?.contentEquals(other.carpetMask ?: ByteArray(0)) ?: (other.carpetMask == null))
 
     override fun hashCode(): Int {
         var r = width
@@ -157,7 +163,9 @@ data class ParsedMap(
         r = 31 * r + format.hashCode()
         r = 31 * r + carpetAreas.hashCode()
         r = 31 * r + thresholds.hashCode()
+        r = 31 * r + pathFlags.hashCode()
         r = 31 * r + obstacles.hashCode()
+        r = 31 * r + (carpetMask?.contentHashCode() ?: 0)
         return r
     }
 }
