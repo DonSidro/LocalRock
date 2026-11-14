@@ -967,7 +967,7 @@ class VacuumRepository(
                 val state = readBetaFeature(def) ?: break
                 if (state.answered && state.toggleable) states += state
             }
-            _betaFeatures.value = states
+            _betaFeatures.value = states.withoutReplaced()
         } finally {
             _betaFeaturesLoading.value = false
         }
@@ -1001,6 +1001,17 @@ class VacuumRepository(
         val updated = readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }
         if (updated != null) _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
         last?.requireOk(current.def.setMethod)
+    }
+
+    /** Writes one value of a multi-choice option, then reads it back so the screen shows what the robot holds. */
+    suspend fun setBetaChoice(id: String, value: Int) {
+        val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
+        val name = current.def.settingName ?: return
+        val sent = session.setRobotSetting(name, value)
+        readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }?.let { updated ->
+            _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
+        }
+        sent.requireOk("app_set_robot_setting")
     }
 
     suspend fun fetchDockSettings() {

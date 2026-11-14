@@ -16,6 +16,9 @@ import kotlinx.serialization.json.intOrNull
 /** The settings page a feature is shown on, following the official app's grouping. */
 enum class FeatureSection { CARPET, FLOOR, OBSTACLE, DOCK, ROBOT, BETA }
 
+/** One value of a multi-choice setting and the label shown for it. */
+data class FeatureChoice(val value: Int, val label: String, val description: String? = null)
+
 data class BetaFeatureDef(
     val id: String,
     val title: String,
@@ -26,6 +29,10 @@ data class BetaFeatureDef(
     val section: FeatureSection = FeatureSection.BETA,
     /** Set for options reached through app_get/set_robot_setting by name, not their own get/set pair. */
     val settingName: String? = null,
+    /** Set for a setting with more than two values: shown as a picker, not a switch. */
+    val choices: List<FeatureChoice>? = null,
+    /** Id of an older option this one replaces on robots that advertise this one. */
+    val replaces: String? = null,
 )
 
 val BetaFeatureDefs = listOf(
@@ -215,6 +222,22 @@ val BetaFeatureDefs = listOf(
         settingName = "enable_sway_arm_for_high_door_sill_carpet",
     ),
     BetaFeatureDef(
+        id = "cleaning_pattern",
+        title = "Cleaning pattern",
+        description = "How the robot lines up its passes",
+        bit = 70,
+        getMethod = "app_get_robot_setting",
+        setMethod = "app_set_robot_setting",
+        section = FeatureSection.FLOOR,
+        settingName = "clean_direction_status",
+        choices = listOf(
+            FeatureChoice(0, "Smart", "Runs along the long side of the room"),
+            FeatureChoice(1, "Along floor direction", "Follows the floor boards or tiles"),
+            FeatureChoice(2, "Mixed pattern", "Crosses the last clean's direction, which is slower"),
+        ),
+        replaces = "follow_ground_material",
+    ),
+    BetaFeatureDef(
         id = "optimize_battery",
         title = "Smart charging",
         description = "Charges to 80% first, then slowly to 100%, to protect the battery",
@@ -228,6 +251,12 @@ val BetaFeatureDefs = listOf(
 /** The features this robot's `newFeatureSet` advertises. */
 fun supportedBetaFeatures(newFeatureSet: String?): List<BetaFeatureDef> =
     BetaFeatureDefs.filter { it.bit == null || newFeatureBit(newFeatureSet, it.bit) }
+
+/** Drops an older option once the option that replaces it has answered, so a failed read keeps the old one. */
+fun List<BetaFeatureState>.withoutReplaced(): List<BetaFeatureState> {
+    val replaced = mapNotNull { it.def.replaces }.toSet()
+    return filter { it.def.id !in replaced }
+}
 
 /** The reads of [features] that belong on [section], in the order the definitions list them. */
 fun List<BetaFeatureState>.inSection(section: FeatureSection): List<BetaFeatureState> =
@@ -337,8 +366,14 @@ data class BetaFeatureState(
     val answered: Boolean = true,
 ) {
     val enabled: Boolean get() = value == 1
-    val toggleable: Boolean get() = value == 0 || value == 1
+    val toggleable: Boolean get() = if (def.choices != null) value != null else value == 0 || value == 1
+
+    /** The label for the current value of a multi-choice setting; a value the app has no name for shows as "Other (n)". */
+    val choiceLabel: String? get() = value?.let { v -> def.choices?.let { choiceLabelFor(it, v) } }
 }
+
+fun choiceLabelFor(choices: List<FeatureChoice>, value: Int): String =
+    choices.firstOrNull { it.value == value }?.label ?: "Other ($value)"
 
 /** Reads a reply that holds one number: `1`, `[1]`, `{"status":1}` or `[{"status":1}]`. */
 fun parseBetaReply(result: JsonElement?): Pair<String?, Int>? {
