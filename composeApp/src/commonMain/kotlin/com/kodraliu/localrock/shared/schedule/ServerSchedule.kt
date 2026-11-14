@@ -107,6 +107,8 @@ data class WeeklyTime(val hour: Int, val minute: Int, val days: Set<Int>) {
 /** Native timer state is independent of the server job's enabled flag. */
 fun nativeTimerState(result: JsonElement?, name: String): String {
     val entries = result as? JsonArray ?: return "Unknown"
+    // A malformed list proves nothing about which timers exist, so it is never "Missing".
+    if (entries.any { row -> row !is JsonArray || (row.getOrNull(0) as? JsonPrimitive)?.isString != true }) return "Unknown"
     val matches = entries.filterIsInstance<JsonArray>().filter {
         (it.getOrNull(0) as? JsonPrimitive)?.let { id -> id.isString && id.content == name } == true
     }

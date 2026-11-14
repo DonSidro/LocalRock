@@ -118,6 +118,7 @@ fun ScheduleScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
+    var missing by remember { mutableStateOf<List<CleanTimer>>(emptyList()) }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -128,6 +129,10 @@ fun ScheduleScreen(
         catch (e: CancellationException) { currentCoroutineContext().ensureActive(); loadError = "Schedule request timed out. Retry to refresh." }
         catch (e: Exception) { loadError = e.message ?: "Could not load schedules" }
         finally { loading = false }
+        // One robot read on open, so a schedule the robot lost is flagged before it is toggled.
+        missing = try { repository.missingNativeTimers(repository.timers.value) }
+            catch (e: CancellationException) { currentCoroutineContext().ensureActive(); emptyList() }
+            catch (_: Exception) { emptyList() }
     }
 
     // A refused save is shown, and the list is read back so it matches what the robot really holds.
@@ -184,6 +189,25 @@ fun ScheduleScreen(
             }
         } else {
             LazyColumn(modifier = Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (missing.isNotEmpty()) item(key = "missing-timers") {
+                    Card(shape = RoundedCornerShape(20.dp)) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(missingTimersText(missing.size), style = MaterialTheme.typography.bodyMedium)
+                            Button(enabled = !saving, onClick = {
+                                val lost = missing
+                                saveTimer {
+                                    val failures = lost.mapNotNull { t ->
+                                        try { repository.restoreNativeTimer(t); null }
+                                        catch (e: CancellationException) { throw e }
+                                        catch (e: Exception) { e.message }
+                                    }
+                                    refresh++
+                                    if (failures.isNotEmpty()) error(failures.distinct().joinToString(" "))
+                                }
+                            }) { Text("Restore on robot") }
+                        }
+                    }
+                }
                 items(timers.sortedWith(compareBy<CleanTimer> { it.hour }.thenBy { it.minute }.thenBy { it.id }), key = { it.id }) { timer ->
                     TimerRow(
                         timer = timer,
@@ -226,6 +250,7 @@ fun ScheduleScreen(
                 saveTimer { repository.updateTimer(timer, hour, minute, weekdays, settings, once, settingsChanged, timingChanged, enabled) }
             },
             readNativeState = { repository.nativeScheduleState(timer) },
+            restoreNative = { repository.restoreNativeTimer(timer) },
             onDelete = { editing = null; saveTimer { repository.deleteTimer(timer) } },
             onDismiss = { editing = null },
         )
@@ -284,6 +309,7 @@ private fun TimerDialog(
     rooms: List<ParsedMapRoom>, map: ParsedMap?, mapName: String, currentFlag: Int,
     onSave: (hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings, once: Boolean, settingsChanged: Boolean, timingChanged: Boolean, enabled: Boolean) -> Unit,
     readNativeState: (suspend () -> String)? = null,
+    restoreNative: (suspend () -> String)? = null,
     onDelete: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
@@ -414,6 +440,16 @@ private fun TimerDialog(
                                 catch (_: Exception) { nativeState = "Unknown — could not read timer" }
                             }
                         }) { Text("Check native timer") }
+                        // "On" for an off schedule is a restore that could not turn the timer off; Restore finishes it.
+                        val unfinished = nativeState == "On" && !initial.serverJob.enabled
+                        if ((nativeState == "Missing" || unfinished) && restoreNative != null) TextButton(onClick = {
+                            detailScope.launch {
+                                nativeState = "Restoring…"
+                                try { nativeState = restoreNative() }
+                                catch (e: CancellationException) { currentCoroutineContext().ensureActive(); nativeState = "Unknown — request timed out" }
+                                catch (e: Exception) { nativeState = "Not confirmed: ${e.message} Tap Check native timer for the current state." }
+                            }
+                        }) { Text(if (unfinished) "Finish restore (turn timer off)" else "Restore timer on robot") }
                     }
                 }
 
@@ -646,3 +682,7 @@ private fun formatRepeat(timer: CleanTimer): String {
         else -> choice.label
     }
 }
+
+private fun missingTimersText(count: Int) =
+    if (count == 1) "1 schedule is missing from the robot, which can happen after re-pairing. Toggling or editing it fails until it is restored."
+    else "$count schedules are missing from the robot, which can happen after re-pairing. Toggling or editing them fails until they are restored."

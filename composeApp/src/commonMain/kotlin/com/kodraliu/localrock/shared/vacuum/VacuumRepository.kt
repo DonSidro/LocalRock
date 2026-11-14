@@ -6,6 +6,7 @@ import com.kodraliu.localrock.shared.schedule.ScheduleException
 import com.kodraliu.localrock.shared.schedule.ServerJobCreation
 import com.kodraliu.localrock.shared.schedule.ServerJobDeletion
 import com.kodraliu.localrock.shared.schedule.nativeTimerState
+import com.kodraliu.localrock.shared.schedule.NativeTimerRestoration
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import com.kodraliu.localrock.shared.model.Room
@@ -1021,6 +1022,31 @@ class VacuumRepository(
         val reply = session.getServerTimer()
         reply.requireOk("get_server_timer")
         return nativeTimerState(reply.result, name)
+    }
+
+    /** Server schedules whose robot timer is gone (for example after re-pairing); empty when the robot cannot say. */
+    suspend fun missingNativeTimers(timers: List<CleanTimer>): List<CleanTimer> {
+        val linked = timers.filter { !it.serverJob?.nativeName.isNullOrBlank() }
+        if (linked.isEmpty()) return emptyList()
+        val reply = runCatching { session.getServerTimer() }.getOrNull()?.takeIf { it.error == null } ?: return emptyList()
+        return linked.filter { nativeTimerState(reply.result, requireNotNull(it.serverJob?.nativeName)) == "Missing" }
+    }
+
+    /** Puts back a server schedule's robot timer that went missing (for example after re-pairing), then verifies it. */
+    suspend fun restoreNativeTimer(timer: CleanTimer): String = scheduleWrite {
+        val job = timer.serverJob ?: throw ScheduleException("This is not a server schedule.")
+        val mirror = scheduleMirror ?: throw ScheduleException("Server schedules are unavailable; nothing was restored.")
+        NativeTimerRestoration(
+            readJobs = { mirror.list(duid) },
+            readTimers = { session.getServerTimer().also { it.requireOk("get_server_timer") }.result },
+            createTimer = { name, cron, settings ->
+                session.setServerTimer(name, cron, parseTimerSettings(settings).copy(serverTimerId = null).completedForServerTimer())
+                    .requireOk("set_server_timer")
+            },
+            writeTimer = { name, enabled -> session.updServerTimer(name, enabled).requireOk("upd_server_timer") },
+            writeJob = { current, patch -> mirror.update(duid, current.id, patch) },
+            isRefusal = { it is RobotCommandException },
+        ).restore(job).also { runCatching { fetchTimers() } }
     }
 
     suspend fun createTimer(hour: Int, minute: Int, weekdays: Set<Int>, settings: TimerSettings = TimerSettings(), once: Boolean = false): CleanTimer =

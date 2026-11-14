@@ -45,7 +45,7 @@ class ScheduleEnablement(
                     val desired = if (enabled) "On" else "Off"
                     val initial = nativeTimerState(request { readTimers() }, name)
                     if (initial !in listOf("On", "Off")) {
-                        throw ScheduleException("Native timer is ${initial.lowercase()}. No client write was sent; refresh and check More details. Timers are not recreated automatically.")
+                        throw ScheduleException("Native timer is ${initial.lowercase()}. No client write was sent. Use Restore on robot at the top of Schedules.")
                     }
                     if (initial != desired) {
                         // A concurrent server edit must stop us before changing the robot.
