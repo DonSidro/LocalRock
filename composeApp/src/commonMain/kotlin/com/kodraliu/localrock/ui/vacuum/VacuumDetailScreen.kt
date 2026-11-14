@@ -902,7 +902,7 @@ private fun VacuumMapImage(
     val walls = rememberWallBitmaps(map, scale, enabled = is3D)
     val selectionBitmap = rememberSelectionBitmap(map, selectedRoomIds, scale)
     val wallHeight = WALL_HEIGHT_CELLS * scale
-    val labelRooms = remember(map.rooms) { map.rooms.filter { it.labelNormX != null && it.labelNormY != null } }
+    val labelRooms = remember(map.rooms, map.eraserZones) { map.rooms.filter { it.labelNormX != null && it.labelNormY != null && it.id !in map.erasedRoomIds } }
     val textMeasurer = rememberTextMeasurer()
     // Labels follow the scheme rather than being a fixed black scrim: over a light map a dark
     // scrim reads as a scattering of heavy blobs and dominates the surface it sits on.

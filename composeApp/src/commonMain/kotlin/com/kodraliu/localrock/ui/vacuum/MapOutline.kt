@@ -12,9 +12,12 @@ import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 internal fun mapOutlineLoops(map: ParsedMap, smoothing: Int = 2): List<List<Offset>> {
     val w = map.width
     val h = map.height
+    val erased = map.erasedCells
     fun filled(x: Int, yDrawn: Int): Boolean {
         if (x !in 0 until w || yDrawn !in 0 until h) return false
-        val v = map.grid[(h - 1 - yDrawn) * w + x].toInt() and 0xff
+        val i = (h - 1 - yDrawn) * w + x
+        if (erased?.get(i) == true) return false
+        val v = map.grid[i].toInt() and 0xff
         return v == 127 || v == 128
     }
     // Directed unit edges with the filled cell on the right, keyed by where they start.

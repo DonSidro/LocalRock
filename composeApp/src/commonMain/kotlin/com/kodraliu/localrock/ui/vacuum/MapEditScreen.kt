@@ -175,7 +175,7 @@ private fun zoneColor(kind: ZoneKind) = when (kind) {
     ZoneKind.NO_GO -> NO_GO_COLOR
     ZoneKind.NO_MOP -> NO_MOP_COLOR
     ZoneKind.CARPET -> CARPET_COLOR
-    ZoneKind.THRESHOLD -> THRESHOLD_COLOR
+    ZoneKind.THRESHOLD, ZoneKind.ERASER -> THRESHOLD_COLOR
 }
 
 /** Zones that count towards save_map's vertex limit (carpets and thresholds have their own commands). */
@@ -327,7 +327,7 @@ fun MapEditScreen(
                 is Selection.Zone -> when (zones.getOrNull(sel.index)?.kind) {
                     ZoneKind.NO_GO -> saveBlocker == null
                     ZoneKind.CARPET, ZoneKind.THRESHOLD -> indexBlocker == null
-                    ZoneKind.NO_MOP, null -> false
+                    ZoneKind.NO_MOP, ZoneKind.ERASER, null -> false
                 }
                 null -> false
             }
@@ -647,7 +647,7 @@ private fun EditorCanvas(
     onWallChanged: (Int, VirtualWall) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val bitmap = rememberMapBitmap(map, drawRestrictions = false)
+    val bitmap = rememberMapBitmap(map, drawRestrictions = false, floorPlan = false)
     val textMeasurer = rememberTextMeasurer()
     val labelStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
     val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary)
@@ -660,7 +660,7 @@ private fun EditorCanvas(
     // Open framed on the floor plan rather than the mostly empty grid, like the main map does.
     // Done once per map size and view size so later map polls don't undo the user's own zoom,
     // while a rotated phone gets the floor plan fitted again.
-    val bounds = remember(map.width, map.height) { map.contentBoundsNorm() }
+    val bounds = remember(map.width, map.height) { map.contentBoundsNorm(floorPlan = false) }
     // Kept here, not in the viewport: a new map size brings a new viewport but no new layout pass.
     var viewSize by remember { mutableStateOf(Size.Zero) }
     LaunchedEffect(viewport, bounds, viewSize) {
@@ -909,6 +909,7 @@ private fun EditorCanvas(
                     RoomAction.None -> selectedRoom
                 }
                 map.rooms.forEach { room ->
+                    if (room.id in map.erasedRoomIds) return@forEach
                     val nx = room.labelNormX ?: return@forEach
                     val ny = room.labelNormY ?: return@forEach
                     val center = Offset(nx * w * scale + offset.x, ny * h * scale + offset.y)
@@ -1079,6 +1080,7 @@ private fun kindTitle(kind: ZoneKind?, round: Boolean = false) = when (kind) {
     ZoneKind.NO_MOP -> "No-mop zone"
     ZoneKind.CARPET -> if (round) "Round carpet" else "Carpet"
     ZoneKind.THRESHOLD -> "Threshold"
+    ZoneKind.ERASER -> "Removed area"
 }
 
 private fun kindHelp(kind: ZoneKind?, round: Boolean = false) = when {
@@ -1089,7 +1091,7 @@ private fun kindHelp(kind: ZoneKind?, round: Boolean = false) = when {
 private fun kindHelpFor(kind: ZoneKind?) = when (kind) {
     null, ZoneKind.THRESHOLD -> "Drag to move, drag the ends to reshape."
     ZoneKind.NO_GO, ZoneKind.CARPET -> "Drag to move. Corners resize, the knob rotates."
-    ZoneKind.NO_MOP -> "Set in the Roborock app. LocalRock can't change it yet."
+    ZoneKind.NO_MOP, ZoneKind.ERASER -> "Set in the Roborock app. LocalRock can't change it yet."
 }
 
 /** Replaces the tool dock while a shape is selected: what it is, and what can be done to it. */

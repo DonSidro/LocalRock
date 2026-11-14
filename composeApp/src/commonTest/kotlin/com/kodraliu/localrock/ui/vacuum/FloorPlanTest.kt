@@ -3,6 +3,10 @@ package com.kodraliu.localrock.ui.vacuum
 import androidx.compose.ui.geometry.Offset
 import com.kodraliu.localrock.shared.vacuum.map.FloorPlanPoint
 import com.kodraliu.localrock.shared.vacuum.map.FloorPlanZone
+import com.kodraliu.localrock.shared.vacuum.map.MapFormat
+import com.kodraliu.localrock.shared.vacuum.map.MapZone
+import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
+import com.kodraliu.localrock.shared.vacuum.map.ZoneKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -120,5 +124,28 @@ class FloorPlanBoundsTest {
         assertEquals(0.6f, b.right, 1e-4f)
         assertEquals(0.6f, b.top, 1e-4f)
         assertEquals(0.8f, b.bottom, 1e-4f)
+    }
+}
+
+class ErasedBoundsTest {
+    private fun map(erase: Boolean) = ParsedMap(
+        width = 10, height = 2, grid = ByteArray(20) { 128.toByte() }, rooms = emptyList(), resolution = 0.05f,
+        pixelOffsetLeft = 2, pixelOffsetTop = 1, format = MapFormat.LEGACY,
+        originalGrid = ByteArray(20) { i -> ((if (i % 10 < 5) 1 else 2) shl 3 or 7).toByte() },
+        eraserZones = if (erase) listOf(MapZone.rect(100, 50, 350, 250, ZoneKind.ERASER)) else emptyList(),
+        zoneLines = listOf(FloorPlanZone(1, listOf(FloorPlanPoint(0, 0, 1), FloorPlanPoint(5, 0, 1), FloorPlanPoint(5, 2, 1), FloorPlanPoint(0, 2, 1)))),
+    )
+
+    @Test
+    fun an_erased_room_leaves_the_framing_bounds() {
+        assertEquals(0f, map(false).contentBoundsNorm().left)
+        assertEquals(0.5f, map(true).contentBoundsNorm().left, 1e-4f)
+    }
+
+    @Test
+    fun the_raw_cell_view_frames_by_its_cells_alone() {
+        val m = map(false).copy(zoneLines = listOf(FloorPlanZone(1, listOf(FloorPlanPoint(0, 0, 1), FloorPlanPoint(5, 0, 1), FloorPlanPoint(5, 2, 1)))))
+        assertEquals(0f, m.contentBoundsNorm(floorPlan = false).left)
+        assertEquals(1f, m.contentBoundsNorm(floorPlan = false).right)
     }
 }

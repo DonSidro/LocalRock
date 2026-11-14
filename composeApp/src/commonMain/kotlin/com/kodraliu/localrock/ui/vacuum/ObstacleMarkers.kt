@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.vacuum.map.MapObstacle
+import com.kodraliu.localrock.shared.vacuum.map.isErasedMm
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.decodeToImageBitmap
@@ -50,6 +51,7 @@ internal fun ParsedMap.obstacleOnScreen(obstacle: MapObstacle, view: MapView, ce
 /** The obstacle closest to [tap] within [reachPx], or null; drawn last means on top, so it wins a tie. */
 internal fun ParsedMap.obstacleAt(tap: Offset, view: MapView, cellScale: Float, reachPx: Float): MapObstacle? =
     obstacles.withIndex()
+        .filter { !isErasedMm(it.value.x, it.value.y) }
         .map { (i, o) -> Triple(i, o, (obstacleOnScreen(o, view, cellScale) - tap).getDistance()) }
         .filter { it.third <= reachPx }
         .minWithOrNull(compareBy<Triple<Int, MapObstacle, Float>> { it.third }.thenByDescending { it.first })
@@ -62,6 +64,7 @@ internal fun ParsedMap.obstacleAt(tap: Offset, view: MapView, cellScale: Float, 
  */
 internal fun DrawScope.drawObstacles(map: ParsedMap, view: MapView, cellScale: Float) {
     for (o in map.obstacles) {
+        if (map.isErasedMm(o.x, o.y)) continue
         val c = map.obstacleOnScreen(o, view, cellScale)
         if (c.x < 0f || c.x > size.width || c.y < 0f || c.y > size.height) continue
         val hasPhoto = o.photoId != null

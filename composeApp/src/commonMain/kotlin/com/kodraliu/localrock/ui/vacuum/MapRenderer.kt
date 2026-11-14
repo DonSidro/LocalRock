@@ -89,10 +89,10 @@ private val DarkPalette = MapPalette(
  * the raw system setting, so the map never disagrees with the surface it sits on.
  */
 @Composable
-fun rememberMapBitmap(map: ParsedMap, drawRestrictions: Boolean = true): ImageBitmap {
+fun rememberMapBitmap(map: ParsedMap, drawRestrictions: Boolean = true, floorPlan: Boolean = true): ImageBitmap {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return remember(map, dark, drawRestrictions) {
-        renderMap(map, if (dark) DarkPalette else LightPalette, drawRestrictions)
+    return remember(map, dark, drawRestrictions, floorPlan) {
+        renderMap(map, if (dark) DarkPalette else LightPalette, drawRestrictions, floorPlan)
     }
 }
 
@@ -127,7 +127,7 @@ fun rememberMapLayers(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap
 internal fun ParsedMap.floorKey(): List<Any?> = listOf(
     width, height, resolution, pixelOffsetLeft, pixelOffsetTop, format,
     grid.contentHashCode(), originalGrid?.contentHashCode(), carpetMask?.contentHashCode(), rooms,
-    segmentMaterials, segmentMaterialDirections, zoneLines,
+    segmentMaterials, segmentMaterialDirections, zoneLines, eraserZones,
 )
 
 /** What the zones and virtual walls are drawn from. */
@@ -237,7 +237,7 @@ private fun renderWalls(map: ParsedMap, color: Color, scale: Int): ImageBitmap {
         // Same Y flip as renderMap, so a wall lands exactly on the wall cell in the floor bitmap.
         val drawY = (map.height - 1 - y).toFloat()
         for (x in 0 until map.width) {
-            if ((map.grid[rowOff + x].toInt() and 0xff) != 127) continue
+            if ((map.grid[rowOff + x].toInt() and 0xff) != 127 || map.erasedCells?.get(rowOff + x) == true) continue
             canvas.drawRect(Rect(x.toFloat(), drawY, x + 1f, drawY + 1f), paint)
         }
     }
@@ -255,7 +255,7 @@ class MapContentBounds(val left: Float, val top: Float, val right: Float, val bo
     val isUsable: Boolean get() = width > 0.01f && height > 0.01f
 }
 
-fun ParsedMap.contentBoundsNorm(): MapContentBounds {
+fun ParsedMap.contentBoundsNorm(floorPlan: Boolean = true): MapContentBounds {
     var minX = width
     var maxX = -1
     var minY = height
@@ -267,6 +267,7 @@ fun ParsedMap.contentBoundsNorm(): MapContentBounds {
         for (x in 0 until width) {
             val gv = grid[rowOff + x].toInt() and 0xff
             if (gv != 127 && gv != 128) continue
+            if (erasedCells?.get(rowOff + x) == true) continue
             if (x < minX) minX = x
             if (x > maxX) maxX = x
             if (drawY < minY) minY = drawY
@@ -283,15 +284,16 @@ fun ParsedMap.contentBoundsNorm(): MapContentBounds {
             bottom = (maxY + 1).toFloat() / height,
         )
     }
-    if (zoneLines.isEmpty()) return cells ?: MapContentBounds(0f, 0f, 1f, 1f)
-    return floorPlanBoundsNorm(cells, zoneLines, width, height, FLOOR_PLAN_OUTER_WIDTH_CELLS)
+    val zones = if (floorPlan) zoneLines.filter { it.segment !in erasedRoomIds } else emptyList()
+    if (zones.isEmpty()) return cells ?: MapContentBounds(0f, 0f, 1f, 1f)
+    return floorPlanBoundsNorm(cells, zones, width, height, FLOOR_PLAN_OUTER_WIDTH_CELLS)
 }
 
 /** [drawRestrictions] is false for the editor, which draws the shapes it is editing itself. */
-private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean): ImageBitmap {
+private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean, floorPlan: Boolean): ImageBitmap {
     val bitmap = ImageBitmap(map.width, map.height)
     val canvas = Canvas(bitmap)
-    drawFloor(canvas, map, palette)
+    drawFloor(canvas, map, palette, floorPlan)
     drawOverlays(canvas, map, palette, drawRestrictions)
     return bitmap
 }
@@ -310,7 +312,7 @@ private fun renderLayer(map: ParsedMap, palette: MapPalette, scale: Int, overlay
     return bitmap
 }
 
-private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
+private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, floorPlan: Boolean = true) {
     // The cells are masked by a rounded outline of the plan, so its edges are smooth rather than
     // stair steps. The mask is a path drawn over them, which anti-aliases where a clip would not.
     canvas.saveLayer(Rect(0f, 0f, map.width.toFloat(), map.height.toFloat()), Paint())
@@ -324,7 +326,8 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
     val raw = map.originalGrid
     val carpet = map.carpetMask
     // Rooms that have a floor-plan polygon are painted from it; the others, and every map without block 55, from the cells.
-    val shapes = if (raw != null) buildFloorPlan(map.zoneLines, FloorPlanFrame(h)) else emptyList()
+    val erased = map.erasedCells
+    val shapes = if (raw != null && floorPlan) buildFloorPlan(map.zoneLines.filter { it.segment !in map.erasedRoomIds }, FloorPlanFrame(h)) else emptyList()
     val zoned = shapes.mapTo(HashSet()) { it.segment }
     for (shape in shapes) {
         val room = shape.segment
@@ -350,6 +353,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
                 val floor = if (pattern == FloorPattern.NONE) base else shaded(base, textureShade(pattern, x, y))
                 val onCarpet = carpet != null && carpet[y * w + x].toInt() == 1
                 if (pattern == FloorPattern.NONE && !onCarpet) continue
+                if (erased?.get(y * w + x) == true) continue
                 roomPaint.color = if (onCarpet) shaded(floor, carpetShade(x, y)) else floor
                 val drawY = (h - 1 - y).toFloat()
                 canvas.drawRect(Rect(left = x.toFloat(), top = drawY, right = (x + 1).toFloat(), bottom = drawY + 1f), roomPaint)
@@ -362,6 +366,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette) {
         // Flip Y so the map reads with origin at the top (matches the Roborock app).
         val drawY = (h - 1 - y).toFloat()
         for (x in 0 until w) {
+            if (erased?.get(rowOff + x) == true) continue
             val gv = grid[rowOff + x].toInt() and 0xff
             val paint = when (gv) {
                 127, 128 -> {

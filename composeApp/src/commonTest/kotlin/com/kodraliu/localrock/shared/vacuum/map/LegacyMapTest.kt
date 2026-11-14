@@ -360,6 +360,29 @@ class LegacyMapTest {
         assertTrue(mapWithBlocks(hex).zoneLines.isEmpty())
     }
 
+    // ---- Block 47 (eraser zones): u32 id then four corners in mm, 20 bytes each ----
+
+    private fun eraserBlockHex(num: Int, vararg zones: List<Int>): String {
+        val body = zones.joinToString("") { z -> quadHex(z[0], 0) + quadHex(*z.drop(1).toIntArray()) }
+        return quadHex(47, 12) + quadHex(body.length / 2, 0) + quadHex(num, 0) + body
+    }
+
+    @Test
+    fun eraser_zones_are_read_as_millimetre_quads() {
+        val zones = mapWithBlocks(eraserBlockHex(2, listOf(0, 100, 200, 300, 200, 300, 400, 100, 400), listOf(1, 1, 2, 3, 4, 5, 6, 7, 8))).eraserZones
+        assertEquals(2, zones.size)
+        assertEquals(ZoneKind.ERASER, zones[0].kind)
+        assertEquals(listOf(100, 200, 300, 200, 300, 400, 100, 400), with(zones[0]) { listOf(x0, y0, x1, y1, x2, y2, x3, y3) })
+        assertEquals(1, zones[1].x0)
+    }
+
+    @Test
+    fun an_empty_or_short_eraser_block_has_no_zones_and_a_map_without_one_has_none() {
+        assertEquals(emptyList(), mapWithBlocks(eraserBlockHex(0)).eraserZones)
+        assertEquals(emptyList(), mapWithBlocks(quadHex(47, 12) + quadHex(8, 0) + quadHex(1, 0) + "0000000000000000").eraserZones)
+        assertEquals(emptyList(), liveS8Map().eraserZones)
+    }
+
     private fun quadHex(vararg v: Int): String =
         v.joinToString("") { n -> hexByte(n and 0xff) + hexByte((n ushr 8) and 0xff) }
 
