@@ -173,13 +173,35 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         // The middle of the label's pixel, so a tap on the label's centre finds this room.
         val cx = ((lx + 0.5f) / imageWidth).coerceIn(0f, 1f)
         val cy = ((imageHeight - 1 - ly + 0.5f) / imageHeight).coerceIn(0f, 1f)
-        // The run of this room's own floor along the label's row, which is how wide a name may be.
-        fun inRoom(x: Int) = x in 0 until imageWidth && roomAt[ly * imageWidth + x] == roomId
+        // How far the room reaches sideways around its label, over a few rows so the gaps inside a room
+        // (furniture, unscanned patches) do not make it look narrower than it is.
         var left = lx
-        while (inRoom(left - 1)) left--
         var right = lx
-        while (inRoom(right + 1)) right++
-        ParsedMapRoom(id = roomId, name = "Room $roomId", labelNormX = cx, labelNormY = cy, labelSpanCells = right - left + 1)
+        for (row in (ly - LABEL_SPAN_ROWS)..(ly + LABEL_SPAN_ROWS)) {
+            if (row !in 0 until imageHeight) continue
+            for (x in 0 until imageWidth) {
+                if (roomAt[row * imageWidth + x] == roomId) {
+                    if (x < left) left = x
+                    if (x > right) right = x
+                }
+            }
+        }
+        // The same reach up and down around the label, for a map turned a quarter turn.
+        var top = ly
+        var bottom = ly
+        for (col in (lx - LABEL_SPAN_ROWS)..(lx + LABEL_SPAN_ROWS)) {
+            if (col !in 0 until imageWidth) continue
+            for (y in 0 until imageHeight) {
+                if (roomAt[y * imageWidth + col] == roomId) {
+                    if (y < top) top = y
+                    if (y > bottom) bottom = y
+                }
+            }
+        }
+        ParsedMapRoom(
+            id = roomId, name = "Room $roomId", labelNormX = cx, labelNormY = cy,
+            labelSpanCells = right - left + 1, labelSpanCellsY = bottom - top + 1,
+        )
     }
 
     return ParsedMap(
@@ -289,9 +311,6 @@ private fun parsePatrolPoints(bytes: ByteArray, body: Int, count: Int, dataLen: 
 private const val BLOCK_PATROL = 37
 private const val PATROL_FIXED_BYTES = 6
 private const val PATROL_ID_BYTES = 32
-
-/** Rows either side of a room's label that its width is read over. */
-private const val LABEL_SPAN_ROWS = 8
 
 private const val MAGIC_0 = 0x72.toByte()
 private const val MAGIC_1 = 0x72.toByte()
