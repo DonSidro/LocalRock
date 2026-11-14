@@ -107,6 +107,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.vacuum.AdvertisedFeature
 import com.kodraliu.localrock.shared.vacuum.BetaFeatureState
+import com.kodraliu.localrock.shared.vacuum.FeatureChoice
+import com.kodraliu.localrock.shared.vacuum.choiceLabelFor
 import com.kodraliu.localrock.shared.vacuum.CleanRecord
 import com.kodraliu.localrock.shared.vacuum.CleanTimelineLabels
 import com.kodraliu.localrock.shared.vacuum.CleanTimelineStep
@@ -252,6 +254,7 @@ fun VacuumSettingsScreen(
             title = "Floor cleaning",
             features = betaFeatures.inSection(FeatureSection.FLOOR),
             onToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            onChoice = { id, value -> viewModel.report { it.setBetaChoice(id, value) } },
             onBack = { route = SettingsRoute.Root },
         )
         SettingsRoute.Obstacle -> FeatureSectionScreen(
@@ -1688,7 +1691,11 @@ private fun RobotSettingsScreen(
 
 /** One feature the robot reports, as a switch under the page it belongs to. */
 @Composable
-private fun FeatureToggleRow(f: BetaFeatureState, onToggle: (String, Boolean) -> Unit) {
+private fun FeatureToggleRow(
+    f: BetaFeatureState,
+    onToggle: (String, Boolean) -> Unit,
+    onChoice: (String, Int) -> Unit = { _, _ -> },
+) {
     val icon = when (f.def.section) {
         FeatureSection.CARPET -> Icons.Default.GridView
         FeatureSection.FLOOR -> Icons.Default.CleaningServices
@@ -1696,6 +1703,27 @@ private fun FeatureToggleRow(f: BetaFeatureState, onToggle: (String, Boolean) ->
         FeatureSection.DOCK -> Icons.Default.Home
         FeatureSection.ROBOT -> Icons.Default.Settings
         FeatureSection.BETA -> Icons.Default.Science
+    }
+    val choices = f.def.choices
+    if (choices != null) {
+        var showPicker by remember { mutableStateOf(false) }
+        SettingRowClickable(
+            icon = icon,
+            iconTint = AppColors.AccentCyan,
+            title = f.def.title,
+            subtitle = f.choiceLabel ?: f.def.description,
+            onClick = { showPicker = true },
+        )
+        if (showPicker) {
+            ChoicePickerDialog(
+                title = f.def.title,
+                choices = choices,
+                selected = f.value,
+                onSelect = { onChoice(f.def.id, it); showPicker = false },
+                onDismiss = { showPicker = false },
+            )
+        }
+        return
     }
     SettingRowSwitch(
         icon = icon,
@@ -1707,6 +1735,50 @@ private fun FeatureToggleRow(f: BetaFeatureState, onToggle: (String, Boolean) ->
     )
 }
 
+/** Radio list of a multi-choice setting's values; a current value with no listed choice shows as an extra "Other (n)" line. */
+@Composable
+private fun ChoicePickerDialog(
+    title: String,
+    choices: List<FeatureChoice>,
+    selected: Int?,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val unknown = selected?.takeIf { v -> choices.none { it.value == v } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                choices.forEach { choice ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = choice.value == selected, onClick = { onSelect(choice.value) })
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(choice.label, style = MaterialTheme.typography.bodyMedium)
+                            choice.description?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+                if (unknown != null) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = true, enabled = false, onClick = {})
+                        Spacer(Modifier.width(8.dp))
+                        Text(choiceLabelFor(choices, unknown), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FeatureSectionScreen(
@@ -1714,6 +1786,7 @@ private fun FeatureSectionScreen(
     features: List<BetaFeatureState>,
     onToggle: (String, Boolean) -> Unit,
     onBack: () -> Unit,
+    onChoice: (String, Int) -> Unit = { _, _ -> },
 ) {
     Scaffold(
         topBar = {
@@ -1726,7 +1799,7 @@ private fun FeatureSectionScreen(
         CenteredContent {
             LazyColumn(contentPadding = padding) {
                 items(features, key = { it.def.id }) { f ->
-                    FeatureToggleRow(f, onToggle)
+                    FeatureToggleRow(f, onToggle, onChoice)
                     HorizontalDivider(Modifier.padding(start = 72.dp))
                 }
             }

@@ -23,6 +23,14 @@ class RobotSettingParamsTest {
     }
 
     @Test
+    fun aChoiceWriteCarriesTheNumberAsStatus() {
+        assertEquals(
+            Json.parseToJsonElement("""{"name":"clean_direction_status","status":2}"""),
+            robotSettingWriteParams("clean_direction_status", 2),
+        )
+    }
+
+    @Test
     fun theStatusReplyReadsAsAToggle() {
         assertEquals("status" to 1, parseBetaReply(Json.parseToJsonElement("""{"status":1}""")))
         assertEquals("status" to 0, parseBetaReply(Json.parseToJsonElement("""[{"status":0}]""")))
