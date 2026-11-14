@@ -12,6 +12,14 @@ internal const val MAP_OUTLINE_WIDTH_CELLS = 0.30f
 internal val MAP_ROOM_BORDER_COLOR = Color(0xFF7C8185)
 internal const val MAP_ROOM_BORDER_WIDTH_CELLS = 0.22f
 
+// Floor-plan look (maps with block 55): strokes by polygon edge type, colours from the official plugin.
+internal val FLOOR_PLAN_OUTER_COLOR = Color(0xFF6B7174)
+internal const val FLOOR_PLAN_OUTER_WIDTH_CELLS = 0.35f
+internal val FLOOR_PLAN_INNER_COLOR = Color(0xFF999999)
+internal const val FLOOR_PLAN_INNER_WIDTH_CELLS = 0.25f
+internal val FLOOR_PLAN_DOOR_COLOR = Color(0xFFF2F2F7)
+internal const val FLOOR_PLAN_DOOR_WIDTH_CELLS = 1.0f
+
 /** Background behind the map in the detail hero. */
 internal val MAP_HERO_BACKGROUND = Color(0xFF000000)
 
