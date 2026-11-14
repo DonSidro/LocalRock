@@ -13,12 +13,23 @@ internal val MAP_ROOM_BORDER_COLOR = Color(0xFF7C8185)
 internal const val MAP_ROOM_BORDER_WIDTH_CELLS = 0.22f
 
 // Floor-plan look (maps with block 55): strokes by polygon edge type, colours from the official plugin.
-internal val FLOOR_PLAN_OUTER_COLOR = Color(0xFF6B7174)
-internal const val FLOOR_PLAN_OUTER_WIDTH_CELLS = 0.35f
-internal val FLOOR_PLAN_INNER_COLOR = Color(0xFF999999)
-internal const val FLOOR_PLAN_INNER_WIDTH_CELLS = 0.25f
+// Stroke widths are device pixels, drawn at screen scale so they do not shrink with the zoom.
+internal val FLOOR_PLAN_OUTER_COLOR = Color(0xFF959B9F)
+internal const val FLOOR_PLAN_OUTER_WIDTH_PX = 2.8f
+internal val FLOOR_PLAN_INNER_COLOR = Color(0xFFB4B9BC)
+internal const val FLOOR_PLAN_INNER_WIDTH_PX = 2.0f
 internal val FLOOR_PLAN_DOOR_COLOR = Color(0xFFF2F2F7)
-internal const val FLOOR_PLAN_DOOR_WIDTH_CELLS = 1.0f
+internal const val FLOOR_PLAN_DOOR_WIDTH_PX = 4.0f
+
+/** Screen pixels per cell assumed when the plan is baked into a bitmap (thumbnails), which has no zoom to follow. */
+internal const val FLOOR_PLAN_BITMAP_PX_PER_CELL = 4f
+internal const val FLOOR_PLAN_OUTER_WIDTH_CELLS = FLOOR_PLAN_OUTER_WIDTH_PX / FLOOR_PLAN_BITMAP_PX_PER_CELL
+
+/** Plank and tile contrast as a share of the full pattern; the official app's is only a few percent of lightness. */
+internal const val FLOOR_TEXTURE_STRENGTH = 0.25f
+
+/** Carpet hatching contrast as a share of the full pattern: softer than before but still recognisable. */
+internal const val CARPET_HATCH_STRENGTH = 0.45f
 
 /** Background behind the map in the detail hero. */
 internal val MAP_HERO_BACKGROUND = Color(0xFF000000)

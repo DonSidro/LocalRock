@@ -18,13 +18,19 @@ internal const val NO_COLOUR_SLOT = 4
  */
 internal fun roomColorSlots(map: ParsedMap, slots: Int): Map<Int, Int> {
     val raw = map.originalGrid ?: return lookAcrossColorSlots(map, slots)
-    return appRoomColours(raw, map.width, map.height).mapValues { (_, colour) -> if (colour in 1..4) colour - 1 else NO_COLOUR_SLOT }
+    return appRoomColours(raw, map.width, map.height, floorPlanTouches(map.zoneLines), map.erasedRoomIds).mapValues { (_, colour) -> if (colour in 1..4) colour - 1 else NO_COLOUR_SLOT }
 }
 
 private const val ROOM_IDS = 32
 private const val COLOURS = 4
 
-internal fun appRoomColours(raw: ByteArray, width: Int, height: Int): Map<Int, Int> {
+internal fun appRoomColours(
+    raw: ByteArray,
+    width: Int,
+    height: Int,
+    extraTouches: Set<Pair<Int, Int>> = emptySet(),
+    hidden: Set<Int> = emptySet(),
+): Map<Int, Int> {
     val segment = IntArray(raw.size) { i ->
         val v = raw[i].toInt() and 0xff
         if (v and 0x07 != 0) v ushr 3 else 0
@@ -49,6 +55,10 @@ internal fun appRoomColours(raw: ByteArray, width: Int, height: Int): Map<Int, I
             }
         }
     }
+    for ((a, b) in extraTouches) {
+        if (a in 1 until ROOM_IDS && b in 1 until ROOM_IDS) { touches[a][b] = true; touches[b][a] = true }
+    }
+    for (id in hidden) if (id in 0 until ROOM_IDS) { exists[id] = false; pixels[id] = 0 }
     return colourRooms(exists, pixels, touches)
 }
 

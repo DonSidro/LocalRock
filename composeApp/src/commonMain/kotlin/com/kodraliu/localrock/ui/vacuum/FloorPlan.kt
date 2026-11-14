@@ -22,7 +22,8 @@ internal data class FloorPlanShape(
 )
 
 internal val FLOOR_PLAN_OUTER = setOf(1)
-internal val FLOOR_PLAN_INNER = setOf(2)
+// Type 6 is where two rooms touch with no type 2 edge on either side (the open boundary on a real Curv map); it is drawn as an inner wall.
+internal val FLOOR_PLAN_INNER = setOf(2, 6)
 
 // The plugin names only 3 as a door, but on a real Curv map the edges of type 4 sit exactly where the official app draws its white door bars.
 internal val FLOOR_PLAN_DOOR = setOf(3, 4)
@@ -96,3 +97,30 @@ internal fun floorPlanBoundsNorm(
     }
     return MapContentBounds(left.coerceAtLeast(0f), top.coerceAtLeast(0f), right.coerceAtMost(1f), bottom.coerceAtMost(1f))
 }
+
+/** Pairs of room ids (smaller first) whose polygons share a stretch of wall, as the plugin's getNeighboursInfo finds them from the zone lines. */
+internal fun floorPlanTouches(zones: List<FloorPlanZone>): Set<Pair<Int, Int>> {
+    // Axis-aligned edges grouped by the line they lie on: (vertical = true, coordinate) -> (low, high, room).
+    val lines = HashMap<Pair<Boolean, Int>, MutableList<Triple<Int, Int, Int>>>()
+    for (zone in zones) {
+        val pts = zone.points
+        for (i in pts.indices) {
+            val a = pts[i]
+            val b = pts[(i + 1) % pts.size]
+            when {
+                a.x == b.x && a.y != b.y -> lines.getOrPut(true to a.x) { mutableListOf() }.add(Triple(minOf(a.y, b.y), maxOf(a.y, b.y), zone.segment))
+                a.y == b.y && a.x != b.x -> lines.getOrPut(false to a.y) { mutableListOf() }.add(Triple(minOf(a.x, b.x), maxOf(a.x, b.x), zone.segment))
+            }
+        }
+    }
+    val touches = HashSet<Pair<Int, Int>>()
+    for (edges in lines.values) {
+        for (i in edges.indices) for (j in i + 1 until edges.size) {
+            val (lo1, hi1, r1) = edges[i]
+            val (lo2, hi2, r2) = edges[j]
+            if (r1 != r2 && minOf(hi1, hi2) > maxOf(lo1, lo2)) touches += minOf(r1, r2) to maxOf(r1, r2)
+        }
+    }
+    return touches
+}
+
