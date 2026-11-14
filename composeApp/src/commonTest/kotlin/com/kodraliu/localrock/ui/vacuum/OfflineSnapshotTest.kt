@@ -42,7 +42,7 @@ class OfflineSnapshotTest {
         )
 
         assertEquals(
-            listOf("Offline since 12:34 AM", "Last reported: Battery 5%, Charger disconnected", "Showing where it was last seen"),
+            listOf("Offline since 12:34 AM", "Last reported: Battery 5%, Sleeping", "Showing where it was last seen"),
             lastKnownLines(lastKnown, now, utc),
         )
     }

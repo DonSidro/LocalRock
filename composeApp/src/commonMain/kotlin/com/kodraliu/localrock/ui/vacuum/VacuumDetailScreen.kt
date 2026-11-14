@@ -2558,6 +2558,8 @@ private fun isBusyState(state: Int?): Boolean = when (state) {
     VacuumStateCodes.NOT_CHARGING,
     VacuumStateCodes.CHARGING,
     VacuumStateCodes.CHARGER_DISCONNECTED,
+    VacuumStateCodes.CHARGING_COMPLETE,
+    VacuumStateCodes.OFFLINE,
     VacuumStateCodes.SHUTTING_DOWN -> false
     else -> true
 }
@@ -2581,8 +2583,7 @@ private fun PulsingDot(color: Color, modifier: Modifier = Modifier) {
 @Composable
 private fun stateTint(state: Int?): Color = when (state) {
     VacuumStateCodes.WASHING_MOP, VacuumStateCodes.GOING_TO_WASH_MOP,
-    VacuumStateCodes.DRYING_MOP,
-    VacuumStateCodes.RETURNING_TO_DOCK_FOR_DRYING -> MaterialTheme.colorScheme.tertiary
+    VacuumStateCodes.DRYING_MOP, VacuumStateCodes.WASHING_MOP_ALT -> MaterialTheme.colorScheme.tertiary
     VacuumStateCodes.ERROR, VacuumStateCodes.CHARGING_ERROR -> MaterialTheme.colorScheme.error
     VacuumStateCodes.CLEANING, VacuumStateCodes.SEGMENT_CLEANING,
     VacuumStateCodes.ZONED_CLEANING, VacuumStateCodes.SPOT_CLEANING,
