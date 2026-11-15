@@ -138,8 +138,8 @@ class VacuumSession(
      * `["ok"]` and sends the photo afterwards as a frame of its own carrying the request id, so the
      * photo is waited for under that id from before the request goes out.
      */
-    suspend fun fetchPhoto(security: SecurityData, photoId: String, timeoutMs: Long = 15_000L): ByteArray =
-        imageFromPhotoData(
+    suspend fun fetchPhoto(security: SecurityData, photoId: String, timeoutMs: Long = 15_000L): ObstaclePhotoData =
+        obstaclePhotoFromData(
             requestBlob("get_photo", security, timeoutMs, null) { publicKey -> getPhotoParams(publicKey, security, photoId) },
         )
 
@@ -417,6 +417,7 @@ class VacuumSession(
      * still waiting and whose key it unwraps.
      */
     private suspend fun handlePhotoFrame(m: RoborockMessage) {
+        if (joinSplitBlob(m)) return
         if (m.protocol != RoborockProtocol.MAP_RESPONSE) return
         val raw = runCatching { decodeRawBlobFrame(m) }
             .onFailure { println("[VacLocal] photo frame FAILED: ${it.message}") }
@@ -432,6 +433,41 @@ class VacuumSession(
             }
             return
         }
+        deliverBlob(raw)
+    }
+
+    // A full-size photo starts on protocol 300 with the header and part of the body; headerless 301 frames carry the rest.
+    private var splitBlob: BlobStart? = null
+
+    /** True when [m] was part of a split blob and has been taken; the blob is delivered once its body is whole. */
+    private suspend fun joinSplitBlob(m: RoborockMessage): Boolean {
+        val start = runCatching { decodeBlobStart(m) }.getOrNull()
+        if (start != null) {
+            if (start.body.size >= start.bodyLength) {
+                splitBlob = null
+                return false
+            }
+            if (mutex.withLock { pendingBlobs[start.requestId] } == null) return true
+            splitBlob = start
+            return true
+        }
+        val part = splitBlob ?: return false
+        if (m.protocol != RoborockProtocol.MAP_RESPONSE) return false
+        val joined = part.body + m.payload
+        if (joined.size > part.bodyLength) {
+            splitBlob = null
+            return false
+        }
+        if (joined.size < part.bodyLength) {
+            splitBlob = BlobStart(part.requestId, part.header, part.bodyLength, joined)
+            return true
+        }
+        splitBlob = null
+        deliverBlob(RawBlobFrame(part.requestId, part.header, joined))
+        return true
+    }
+
+    private suspend fun deliverBlob(raw: RawBlobFrame) {
         println("[VacLocal] photo frame id=${raw.requestId} bytes=${raw.body.size}")
         val target = mutex.withLock { pendingBlobs[raw.requestId] } ?: return
         val keys = target.keys

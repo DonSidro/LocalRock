@@ -1207,10 +1207,10 @@ class VacuumRepository(
             ?: throw MapEditException("The robot sent a map this app can't read")
 
     private val photoMutex = Mutex()
-    private val obstaclePhotos = mutableMapOf<String, ByteArray>()
+    private val obstaclePhotos = mutableMapOf<String, ObstaclePhotoData>()
 
     /** The photo the robot keeps for an obstacle on the map (#36), fetched once per photo id. */
-    suspend fun fetchObstaclePhoto(photoId: String): ByteArray = photoMutex.withLock {
+    suspend fun fetchObstaclePhoto(photoId: String): ObstaclePhotoData = photoMutex.withLock {
         obstaclePhotos[photoId]
             ?: session.fetchPhoto(createSecurityData(rriotKeyProvider()), photoId).also { obstaclePhotos[photoId] = it }
     }
