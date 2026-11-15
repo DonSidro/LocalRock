@@ -11,6 +11,8 @@ import com.kodraliu.localrock.shared.vacuum.BetaFeatureDef
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.RoomType
+import com.kodraliu.localrock.shared.vacuum.VoiceAssistant
+import com.kodraliu.localrock.shared.vacuum.isVoiceAssistantSupported
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
@@ -73,6 +75,10 @@ class VacuumViewModel(
     val supportsWaterSlide: StateFlow<Boolean> = repository.robotFeatureSet
         .map { isWaterSlideSupported(it ?: serverFeatureSet) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, isWaterSlideSupported(serverFeatureSet))
+    val supportsVoiceAssistant: StateFlow<Boolean> = newFeatureSet
+        .map { isVoiceAssistantSupported(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, isVoiceAssistantSupported(serverFeatureSet))
+    val voice = VoiceAssistant(repository.session)
     val status = repository.status
 
     private val errorBannerKey = "robot-error-${device.duid}"
@@ -136,6 +142,11 @@ class VacuumViewModel(
                 runCatching { repository.fetchRobotFeatureSet() }
                 runCatching { repository.fetchConsumableStatus() }
                 runCatching { repository.rooms() }
+                // Preloaded so the Voice Assistant page opens complete; the chat history waits for its own page.
+                if (isVoiceAssistantSupported(newFeatureSet.value)) {
+                    runCatching { voice.fetchSwitch() }
+                    runCatching { voice.fetchSettings() }
+                }
             }
         }
 

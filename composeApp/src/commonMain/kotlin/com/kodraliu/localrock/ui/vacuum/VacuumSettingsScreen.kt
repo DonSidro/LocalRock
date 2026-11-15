@@ -42,6 +42,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Refresh
@@ -141,6 +142,7 @@ import com.kodraliu.localrock.shared.vacuum.washFrequencyLabel
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.ui.AppColors
 import com.kodraliu.localrock.ui.adaptive.CenteredContent
+import com.kodraliu.localrock.ui.strings.VoiceStrings
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -152,6 +154,7 @@ private sealed interface SettingsRoute {
     data object Maintenance : SettingsRoute
     data object DockSettings : SettingsRoute
     data object RobotSettings : SettingsRoute
+    data object VoiceAssistant : SettingsRoute
     data object DndMode : SettingsRoute
     data object Carpet : SettingsRoute
     data object Floor : SettingsRoute
@@ -307,8 +310,10 @@ fun VacuumSettingsScreen(
             onLedChange = { on -> viewModel.report { it.setLed(on) } },
             features = betaFeatures.inSection(FeatureSection.ROBOT),
             onFeatureToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            onVoiceAssistant = if (viewModel.supportsVoiceAssistant.collectAsState().value) ({ route = SettingsRoute.VoiceAssistant }) else null,
             onBack = { route = SettingsRoute.Root },
         )
+        SettingsRoute.VoiceAssistant -> VoiceAssistantSettings(viewModel, onBack = { route = SettingsRoute.RobotSettings })
         SettingsRoute.DndMode -> DndScreen(
             dndSettings = dndSettings,
             onEnable = { sh, sm, eh, em -> scope.launch { runCatching { repository.setDnd(sh, sm, eh, em) } } },
@@ -1518,7 +1523,7 @@ private fun ValleyScreen(
 }
 
 @Composable
-private fun SimplePickerDialog(
+internal fun SimplePickerDialog(
     title: String,
     options: List<String>,
     selected: Int,
@@ -1561,6 +1566,7 @@ private fun RobotSettingsScreen(
     onLedChange: (Boolean) -> Unit,
     features: List<BetaFeatureState>,
     onFeatureToggle: (String, Boolean) -> Unit,
+    onVoiceAssistant: (() -> Unit)? = null,
     onBack: () -> Unit,
 ) {
     var findTriggered by remember { mutableStateOf(false) }
@@ -1591,13 +1597,24 @@ private fun RobotSettingsScreen(
                 }
                 item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
                 item {
-                    SettingRowClickable(
-                        icon = Icons.AutoMirrored.Filled.VolumeUp,
-                        iconTint = AppColors.Water,
-                        title = "Volume",
-                        subtitle = volumeLabel,
-                        onClick = { showVolumeDialog = true },
-                    )
+                    // Voice control robots keep the volume on the Voice Assistant page, as the official app does.
+                    if (onVoiceAssistant != null) {
+                        SettingRowClickable(
+                            icon = Icons.Default.RecordVoiceOver,
+                            iconTint = AppColors.Water,
+                            title = VoiceStrings.VOICE_ASSISTANT,
+                            subtitle = VoiceStrings.VOICE_ASSISTANT_ENTRY,
+                            onClick = onVoiceAssistant,
+                        )
+                    } else {
+                        SettingRowClickable(
+                            icon = Icons.AutoMirrored.Filled.VolumeUp,
+                            iconTint = AppColors.Water,
+                            title = "Volume",
+                            subtitle = volumeLabel,
+                            onClick = { showVolumeDialog = true },
+                        )
+                    }
                 }
                 item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
                 item {
@@ -1866,7 +1883,7 @@ private fun BetaFeaturesScreen(
 }
 
 @Composable
-private fun SettingRowClickable(
+internal fun SettingRowClickable(
     icon: ImageVector,
     iconTint: Color,
     title: String,
@@ -1980,7 +1997,7 @@ private fun FirmwareUpdateRow(state: FirmwareUpdateState, onCheck: () -> Unit) {
 }
 
 @Composable
-private fun SettingRowSwitch(
+internal fun SettingRowSwitch(
     icon: ImageVector,
     iconTint: Color,
     title: String,
