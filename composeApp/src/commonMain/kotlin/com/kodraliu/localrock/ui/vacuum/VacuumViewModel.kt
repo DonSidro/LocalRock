@@ -12,7 +12,12 @@ import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.RoomType
 import com.kodraliu.localrock.shared.vacuum.VoiceAssistant
+import com.kodraliu.localrock.shared.vacuum.VoiceInstallException
+import com.kodraliu.localrock.shared.vacuum.VoiceInstallState
+import com.kodraliu.localrock.shared.vacuum.VoicePack
+import com.kodraliu.localrock.shared.vacuum.VoicePackListState
 import com.kodraliu.localrock.shared.vacuum.isVoiceAssistantSupported
+import com.kodraliu.localrock.shared.vacuum.parseVoicePackList
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
@@ -253,6 +258,51 @@ class VacuumViewModel(
     fun removeDefaultCleanOrder() {
         container.appSettings.setCleanOrder(device.duid, repository.currentFloorFlag.value, emptyList())
         container.messages.success("Default order removed")
+    }
+
+    private val _voicePacks = MutableStateFlow<VoicePackListState>(VoicePackListState.Loading)
+    val voicePacks: StateFlow<VoicePackListState> = _voicePacks.asStateFlow()
+
+    /** Reads the robot's current pack, then the server's pack list for this model. */
+    fun loadVoicePacks() {
+        viewModelScope.launch {
+            _voicePacks.value = VoicePackListState.Loading
+            val current = runCatching { voice.fetchCurrentSound() }.getOrNull() ?: voice.currentSound.value
+            val model = modelName
+            _voicePacks.value = if (model == null) {
+                VoicePackListState.Unavailable(null)
+            } else {
+                runCatching { container.deviceRepository.voicePackages(model) }.fold(
+                    onSuccess = { info ->
+                        parseVoicePackList(info, current?.location)?.let { VoicePackListState.Loaded(it) }
+                            ?: VoicePackListState.Unavailable(null)
+                    },
+                    onFailure = { VoicePackListState.Unavailable(it.message) },
+                )
+            }
+        }
+    }
+
+    private val _voiceInstall = MutableStateFlow<VoiceInstallState?>(null)
+    val voiceInstall: StateFlow<VoiceInstallState?> = _voiceInstall.asStateFlow()
+
+    // Runs in the view model so leaving the page does not stop the polling.
+    fun installVoicePack(pack: VoicePack) {
+        if (_voiceInstall.value?.running == true) return
+        _voiceInstall.value = VoiceInstallState(pack.id)
+        viewModelScope.launch {
+            try {
+                voice.installVoicePack(pack, onProgress = { p -> _voiceInstall.value = VoiceInstallState(pack.id, p) })
+                _voiceInstall.value = null
+                runCatching { voice.fetchSettings() }
+            } catch (e: VoiceInstallException) {
+                _voiceInstall.value = VoiceInstallState(pack.id, failure = e.failure)
+            }
+        }
+    }
+
+    fun dismissVoiceInstallFailure() {
+        if (_voiceInstall.value?.running == false) _voiceInstall.value = null
     }
 
     /**
