@@ -5,6 +5,7 @@ import com.kodraliu.localrock.shared.demo.DemoData
 import com.kodraliu.localrock.shared.model.Device
 import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
+import com.kodraliu.localrock.shared.model.LastKnown
 import com.kodraliu.localrock.shared.model.Product
 import com.kodraliu.localrock.shared.model.Room
 import com.kodraliu.localrock.shared.model.Scene
@@ -43,6 +44,10 @@ class DeviceRepository(
     private val _reachability = MutableStateFlow<Map<String, Reachability>>(emptyMap())
     val reachability: StateFlow<Map<String, Reachability>> = _reachability.asStateFlow()
 
+    /** Robots the server knows from the cloud import but has never paired; they open Add vacuum when tapped. */
+    private val _unpaired = MutableStateFlow<Set<String>>(emptySet())
+    val unpaired: StateFlow<Set<String>> = _unpaired.asStateFlow()
+
     private var probeJob: Job? = null
 
     /**
@@ -76,6 +81,16 @@ class DeviceRepository(
         }
     }
 
+    /** A robot the server has never heard from over MQTT was imported from the cloud but never paired to this server. */
+    private fun markNeverHeard(devices: List<Device>) {
+        scope.launch {
+            val never = devices.filter { device ->
+                try { !deviceApi.lastKnown(device.duid, false).known } catch (e: CancellationException) { throw e } catch (e: Throwable) { false }
+            }.map { it.duid }.toSet()
+            _unpaired.value = never
+        }
+    }
+
     suspend fun refresh() {
         if (isDemo()) {
             val home = DemoData.home
@@ -97,6 +112,7 @@ class DeviceRepository(
         _devicesFlow.value = home.devices
         val productsByDeviceId = home.products.associateBy { it.id }
         _products.value = home.devices.associate { it.duid to productsByDeviceId[it.productId]!! }
+        markNeverHeard(home.devices)
     }
 
     /** Create (or look up by name) a cloud room in the current home. */
@@ -115,6 +131,12 @@ class DeviceRepository(
     suspend fun runScene(sceneId: Long): SceneRunResult {
         if (isDemo()) error("Routines can't be run in demo mode")
         return deviceApi.executeScene(sceneId)
+    }
+
+    /** What the server last heard from [duid], or null in demo mode or when it has heard nothing. */
+    suspend fun lastKnown(duid: String, includeMap: Boolean = true): LastKnown? {
+        if (isDemo()) return null
+        return deviceApi.lastKnown(duid, includeMap).takeIf { it.known }
     }
 
     suspend fun checkFirmwareUpdate(duid: String): FirmwareUpdateInfo? {

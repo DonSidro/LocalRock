@@ -254,10 +254,15 @@ private fun describe(e: Throwable): String = "${e::class.simpleName}: ${e.messag
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddVacuumScreen(onBack: () -> Unit) {
+fun AddVacuumScreen(onBack: () -> Unit, initialDuid: String? = null) {
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
-    val model = remember { AddVacuumModel(container, scope) }
+    val model = remember { AddVacuumModel(container, scope).also { m -> initialDuid?.let(m::selectDuid) } }
+    // Coming from a robot that is not paired yet: list the vacuums with the saved admin password, so it is already picked.
+    androidx.compose.runtime.LaunchedEffect(initialDuid) {
+        val saved = container.appSettings.adminPassword.value
+        if (initialDuid != null && !saved.isNullOrBlank()) model.loadDevices(saved.trim())
+    }
 
     val step by model.step.collectAsState()
     val running by model.running.collectAsState()

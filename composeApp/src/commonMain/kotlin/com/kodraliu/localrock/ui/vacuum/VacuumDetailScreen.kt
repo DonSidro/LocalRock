@@ -149,6 +149,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kodraliu.localrock.shared.model.Scene
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
+import com.kodraliu.localrock.shared.http.currentEpochSeconds
+import kotlinx.datetime.Instant
 import com.kodraliu.localrock.shared.vacuum.DockErrorCodes
 import com.kodraliu.localrock.shared.vacuum.DockSettings
 import com.kodraliu.localrock.shared.vacuum.FloorMap
@@ -226,7 +228,14 @@ fun VacuumDetailScreen(
     val busy by viewModel.busy.collectAsState()
     val supportsSmartPlan by viewModel.supportsSmartPlan.collectAsState()
     val supportsWaterSlide by viewModel.supportsWaterSlide.collectAsState()
-    val parsedMap by viewModel.repository.parsedMap.collectAsState()
+    val liveMap by viewModel.repository.parsedMap.collectAsState()
+    val lastKnown by viewModel.lastKnown.collectAsState()
+    val lastKnownMap by viewModel.lastKnownMap.collectAsState()
+    // While the robot does not answer, its last map (with where it was last seen) stands in.
+    val parsedMap = liveMap ?: lastKnownMap
+    val offlineLines = remember(lastKnown) {
+        lastKnown?.let { lastKnownLines(it, Instant.fromEpochSeconds(currentEpochSeconds())) } ?: emptyList()
+    }
     val floorMaps by viewModel.repository.floorMaps.collectAsState()
     val currentFloorFlag by viewModel.repository.currentFloorFlag.collectAsState()
     val maxFloorMaps by viewModel.repository.maxFloorMaps.collectAsState()
@@ -547,6 +556,7 @@ fun VacuumDetailScreen(
             MapHeroSection(
                 deviceId = viewModel.repository.duid,
                 parsedMap = parsedMap,
+                offlineLines = offlineLines,
                 busy = busy,
                 selectedRoomIds = selectedRoomIds,
                 sessionRoomNames = sessionRoomNames,
@@ -690,6 +700,7 @@ fun VacuumDetailScreen(
 private fun MapHeroSection(
     deviceId: String,
     parsedMap: ParsedMap?,
+    offlineLines: List<String>,
     busy: Boolean,
     selectedRoomIds: List<Int>,
     sessionRoomNames: List<String>,
@@ -768,6 +779,7 @@ private fun MapHeroSection(
             if (sessionRoomNames.isNotEmpty()) {
                 SessionRoomsBadge(roomNames = sessionRoomNames)
             }
+            OfflineSnapshotBadge(offlineLines)
         }
     }
 }
@@ -2533,6 +2545,8 @@ private fun isBusyState(state: Int?): Boolean = when (state) {
     VacuumStateCodes.NOT_CHARGING,
     VacuumStateCodes.CHARGING,
     VacuumStateCodes.CHARGER_DISCONNECTED,
+    VacuumStateCodes.CHARGING_COMPLETE,
+    VacuumStateCodes.OFFLINE,
     VacuumStateCodes.SHUTTING_DOWN -> false
     else -> true
 }
@@ -2556,8 +2570,7 @@ private fun PulsingDot(color: Color, modifier: Modifier = Modifier) {
 @Composable
 private fun stateTint(state: Int?): Color = when (state) {
     VacuumStateCodes.WASHING_MOP, VacuumStateCodes.GOING_TO_WASH_MOP,
-    VacuumStateCodes.DRYING_MOP,
-    VacuumStateCodes.RETURNING_TO_DOCK_FOR_DRYING -> MaterialTheme.colorScheme.tertiary
+    VacuumStateCodes.DRYING_MOP, VacuumStateCodes.WASHING_MOP_ALT -> MaterialTheme.colorScheme.tertiary
     VacuumStateCodes.ERROR, VacuumStateCodes.CHARGING_ERROR -> MaterialTheme.colorScheme.error
     VacuumStateCodes.CLEANING, VacuumStateCodes.SEGMENT_CLEANING,
     VacuumStateCodes.ZONED_CLEANING, VacuumStateCodes.SPOT_CLEANING,
