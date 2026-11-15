@@ -456,30 +456,21 @@ class VacuumRepository(
     }
 
 
-    private fun parseCleanRecord(result: JsonElement, recordId: Long): CleanRecord? {
-        val element = if (result is JsonArray) result.firstOrNull() ?: return null else result
-        return when (element) {
-            is JsonArray -> {
-                if (element.size < 6) return null
-                CleanRecord(
-                    beginEpoch = (element[0] as? JsonPrimitive)?.longOrNull ?: recordId,
-                    endEpoch = (element[1] as? JsonPrimitive)?.longOrNull ?: 0L,
-                    durationSeconds = (element[2] as? JsonPrimitive)?.longOrNull ?: 0L,
-                    areaMm2 = (element[3] as? JsonPrimitive)?.longOrNull ?: 0L,
-                    errorCode = (element[4] as? JsonPrimitive)?.intOrNull ?: 0,
-                    complete = (element[5] as? JsonPrimitive)?.intOrNull ?: 0,
-                )
+    /** The steps of one run, or null when the robot has no timeline (older models answer "not recognized"). */
+    suspend fun fetchCleanTimeline(record: CleanRecord): List<CleanTimelineStep>? {
+        val events = mutableListOf<CleanTimelineEvent>()
+        var from = 0
+        repeat(MAX_TIMELINE_PAGES) {
+            val response = runCatching { session.getCleanDetail(record.beginEpoch, from) }.getOrNull() ?: return null
+            if (response.error != null) return null
+            val page = CleanTimelineParser.parsePage(response.result) ?: return null
+            events += page.events
+            if (!page.more || page.num <= 0) {
+                return if (events.isEmpty()) null else CleanTimeline.build(events, record.endEpoch)
             }
-            is JsonObject -> CleanRecord(
-                beginEpoch = element["begin"]?.jsonPrimitive?.longOrNull ?: recordId,
-                endEpoch = element["end"]?.jsonPrimitive?.longOrNull ?: 0L,
-                durationSeconds = element["duration"]?.jsonPrimitive?.longOrNull ?: 0L,
-                areaMm2 = element["area"]?.jsonPrimitive?.longOrNull ?: 0L,
-                errorCode = element["error"]?.jsonPrimitive?.intOrNull ?: 0,
-                complete = element["complete"]?.jsonPrimitive?.intOrNull ?: 0,
-            )
-            else -> null
+            from = page.nextFrom
         }
+        return if (events.isEmpty()) null else CleanTimeline.build(events)
     }
 
     suspend fun resetConsumable(field: String) { session.resetConsumable(field) }
@@ -1101,6 +1092,7 @@ class VacuumRepository(
                     totalTimeSec = result["clean_time"]?.jsonPrimitive?.longOrNull ?: 0L,
                     totalAreaMm2 = result["clean_area"]?.jsonPrimitive?.longOrNull ?: 0L,
                     totalCount = result["clean_count"]?.jsonPrimitive?.intOrNull ?: 0,
+                    patrolCount = result["patrol_count"]?.jsonPrimitive?.intOrNull ?: 0,
                 )
                 (result["records"] as? JsonArray)
                     ?.mapNotNull { (it as? JsonPrimitive)?.longOrNull }
@@ -1201,19 +1193,35 @@ class VacuumRepository(
      * turn with the live map, since the session tracks one map request at a time.
      */
     suspend fun fetchSavedMap(mapFlag: Int, backup: Boolean): ParsedMap = mapFetchMutex.withLock {
-        val resp = session.fetchSavedMap(createSecurityData(rriotKeyProvider()), mapFlag, backup)
-        runCatching { parseB01Map(resp.data) }.getOrNull()
-            ?: runCatching { parseLegacyMap(resp.data) }.getOrNull()
-            ?: throw MapEditException("The robot sent a map this app can't read")
+        readMap(session.fetchSavedMap(createSecurityData(rriotKeyProvider()), mapFlag, backup).data)
     }
 
+    /** The map the robot drew for the run that began at [beginEpoch], for the history page. */
+    suspend fun fetchCleanRecordMap(beginEpoch: Long): ParsedMap = mapFetchMutex.withLock {
+        readMap(session.fetchCleanRecordMap(createSecurityData(rriotKeyProvider()), beginEpoch).data)
+    }
+
+    private fun readMap(data: ByteArray): ParsedMap =
+        runCatching { parseB01Map(data) }.getOrNull()
+            ?: runCatching { parseLegacyMap(data) }.getOrNull()
+            ?: throw MapEditException("The robot sent a map this app can't read")
+
     private val photoMutex = Mutex()
-    private val obstaclePhotos = mutableMapOf<String, ByteArray>()
+    private val obstaclePhotos = mutableMapOf<String, ObstaclePhotoData>()
 
     /** The photo the robot keeps for an obstacle on the map (#36), fetched once per photo id. */
-    suspend fun fetchObstaclePhoto(photoId: String): ByteArray = photoMutex.withLock {
+    suspend fun fetchObstaclePhoto(photoId: String): ObstaclePhotoData = photoMutex.withLock {
         obstaclePhotos[photoId]
             ?: session.fetchPhoto(createSecurityData(rriotKeyProvider()), photoId).also { obstaclePhotos[photoId] = it }
+    }
+
+    private val patrolThumbnails = mutableMapOf<Triple<Long, Int, Int>, List<PatrolThumbnail>>()
+
+    /** The thumbnails the robot took at one cruise point of a run, fetched once per point. */
+    suspend fun fetchPatrolThumbnails(taskId: Long, x: Int, y: Int): List<PatrolThumbnail> = photoMutex.withLock {
+        patrolThumbnails.getOrPut(Triple(taskId, x, y)) {
+            parsePatrolThumbnails(session.fetchPatrolPhotoData(createSecurityData(rriotKeyProvider()), taskId, x, y))
+        }
     }
 
     private suspend fun fetchMapLocked(): MapResponse {
@@ -1264,6 +1272,7 @@ class VacuumRepository(
         /** Map requests after a floor switch, [MAP_FAST_POLL_MS] apart: about a minute and a half. */
         const val FLOOR_SWITCH_MAP_REFRESHES = 12
         const val MAX_HISTORY_RECORDS = 20
+        const val MAX_TIMELINE_PAGES = 20
 
         const val READBACK_ATTEMPTS = 4
         const val READBACK_DELAY_MS = 2_000L

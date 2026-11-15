@@ -51,7 +51,7 @@ internal object Aes128 {
         return out
     }
 
-    fun decryptCbc(ciphertext: ByteArray, key: ByteArray, iv: ByteArray): ByteArray {
+    fun decryptCbc(ciphertext: ByteArray, key: ByteArray, iv: ByteArray, unpad: Boolean = true): ByteArray {
         require(key.size == BLOCK) { "AES-128 key must be 16 bytes" }
         require(iv.size == BLOCK) { "AES IV must be 16 bytes" }
         require(ciphertext.size % BLOCK == 0) { "AES-CBC ciphertext must be a multiple of 16 bytes" }
@@ -65,7 +65,7 @@ internal object Aes128 {
             prev = ciphertext.copyOfRange(off, off + BLOCK)
             off += BLOCK
         }
-        return pkcs7Unpad(out)
+        return if (unpad) pkcs7Unpad(out) else out
     }
 
     private fun pkcs7Pad(input: ByteArray): ByteArray {
