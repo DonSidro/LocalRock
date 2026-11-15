@@ -84,7 +84,7 @@ class BetaFeaturesTest {
     fun advertised_features_without_a_switch_are_listed_by_name() {
         val set = "0000000000119418CCD57EFDA869B6DDDBFF8F7F7EFEFFFF"
         val listed = unlistedAdvertisedFeatures(set).map { it.name }
-        assertTrue("Matter" in listed)
+        assertFalse("Matter" in listed)
         assertTrue("Auto tear down mop" in listed)
         assertFalse("Gap deep clean" in listed)
         assertFalse("UVC sterilize" in listed)

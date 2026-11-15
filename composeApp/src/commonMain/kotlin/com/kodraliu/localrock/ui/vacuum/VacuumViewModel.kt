@@ -8,12 +8,16 @@ import com.kodraliu.localrock.shared.model.Scene
 import com.kodraliu.localrock.shared.model.SceneRunResult
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.FeatureSection
+import com.kodraliu.localrock.shared.vacuum.MATTER_FEATURE_BIT
+import com.kodraliu.localrock.shared.vacuum.PET_SNAPSHOT_FEATURE_BIT
+import com.kodraliu.localrock.shared.vacuum.VIDEO_PATROL_FEATURE_BIT
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.RoomType
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
+import com.kodraliu.localrock.shared.vacuum.newFeatureBit
 import com.kodraliu.localrock.shared.vacuum.supportedBetaFeatures
 import com.kodraliu.localrock.shared.vacuum.unlistedAdvertisedFeatures
 import kotlinx.coroutines.TimeoutCancellationException
@@ -44,6 +48,8 @@ class VacuumViewModel(
     val dockCapabilities = DockCapabilities(modelName, device.featureSet, device.newFeatureSet)
     val betaFeatureDefs = supportedBetaFeatures(device.newFeatureSet)
     val unlistedFeatures = unlistedAdvertisedFeatures(device.newFeatureSet)
+    val supportsPetSearch = newFeatureBit(device.newFeatureSet, VIDEO_PATROL_FEATURE_BIT) || newFeatureBit(device.newFeatureSet, PET_SNAPSHOT_FEATURE_BIT)
+    val supportsMatter = newFeatureBit(device.newFeatureSet, MATTER_FEATURE_BIT)
     val showsBetaFeatures = betaFeatureDefs.any { it.section == FeatureSection.BETA && it.bit != null } || unlistedFeatures.isNotEmpty()
     val repository: VacuumRepository = container.vacuumRepositoryFor(device)
 

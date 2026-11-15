@@ -486,6 +486,15 @@ class VacuumRepository(
 
     suspend fun findMe() { session.findMe() }
 
+    suspend fun startPetSearch() { session.startPetSearch().requireOk("app_start_pet_patrol") }
+
+    suspend fun fetchMatterStatus(): MatterInfo? =
+        parseMatterStatus(session.getMatterStatus().requireOk("matter.get_status").result)
+
+    suspend fun requestMatterKey() { session.downloadMatterKey().requireOk("matter.dnld_key") }
+
+    suspend fun resetMatter() { session.resetMatter().requireOk("matter.reset") }
+
     suspend fun startRemoteControl() { session.appRcStart() }
 
     suspend fun moveRemote(velocity: Double, omega: Double, durationMs: Int) {
