@@ -16,7 +16,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.coroutineContext
@@ -105,7 +104,8 @@ class MqttClient(private val transport: MqttNativeTransport) {
         keepAliveSeconds: Int = 30,
     ) {
         mutex.withLock {
-            if (superviseJob != null) return
+            // A supervisor that ended on an unexpected error must not keep a new one from starting.
+            if (superviseJob?.isActive == true) return
             closed = false
             params = Params(creds, clientId, keepAliveSeconds, connectTimeoutMs)
             superviseJob = scope.launch { superviseLoop() }
@@ -233,7 +233,9 @@ class MqttClient(private val transport: MqttNativeTransport) {
                     conn = c
                     currentDisconnect = disconnected
                 }
-                withTimeout(p.connectTimeoutMs) { connectResult.await() }
+                // withTimeout's exception is a CancellationException and would end this loop for good.
+                withTimeoutOrNull(p.connectTimeoutMs) { connectResult.await() }
+                    ?: throw MqttClientException("MQTT connect timed out after ${p.connectTimeoutMs} ms")
 
                 _connected.value = true
                 backoffMs = INITIAL_BACKOFF_MS
