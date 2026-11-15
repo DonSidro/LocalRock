@@ -1018,6 +1018,7 @@ private fun VacuumMapImage(
     val drawn = remember { DrawnView() }
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        val obstacleIcons = rememberObstacleIcons()
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
@@ -1090,7 +1091,7 @@ private fun VacuumMapImage(
             }
 
             // Under the labels, so a name is never hidden by a badge. A tap still opens the obstacle first.
-            drawObstacles(map, view, bitmap.width / map.width.toFloat())
+            drawObstacles(map, view, bitmap.width / map.width.toFloat(), obstacleIcons)
 
             // Labels are drawn outside the zoom transform so they stay a constant, legible size
             // instead of growing to 8x with the map. Selected rooms carry their cleaning order,
