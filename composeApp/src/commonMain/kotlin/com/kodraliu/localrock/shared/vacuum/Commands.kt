@@ -195,8 +195,9 @@ suspend fun VacuumSession.appSetDryerStatus(on: Boolean): V1Response =
     sendCommandRaw("app_set_dryer_status", JsonObject(mapOf("status" to JsonPrimitive(if (on) 1 else 0))))
 
 suspend fun VacuumSession.getCarpetCleanMode(): V1Response = sendCommand("get_carpet_clean_mode")
+// A bare object like the official app; a Curv 2 Flow refuses the list form ("param is not an object").
 suspend fun VacuumSession.setCarpetCleanMode(mode: Int): V1Response =
-    sendCommand("set_carpet_clean_mode", listOf(JsonObject(mapOf("carpet_clean_mode" to JsonPrimitive(mode)))))
+    sendCommandRaw("set_carpet_clean_mode", JsonObject(mapOf("carpet_clean_mode" to JsonPrimitive(mode))))
 
 
 suspend fun VacuumSession.getWashTowelMode(): V1Response = sendCommand("get_wash_towel_mode")
