@@ -208,13 +208,23 @@ object WaterBoxMode {
     const val HIGH = 203
     const val CUSTOM = 204
     const val SMART = 209
+    const val SLIDE_LOW = 225
     const val SLIDE_MEDIUM = 235
+    const val SLIDE_HIGH = 245
+
+    /** The code a robot with water slide takes for [level] (LOW, MEDIUM or HIGH); others pass through. */
+    fun forSlide(level: Int): Int = when (level) {
+        LOW -> SLIDE_LOW
+        MEDIUM -> SLIDE_MEDIUM
+        HIGH -> SLIDE_HIGH
+        else -> level
+    }
 
     /** Pure-water-flow robots (e.g. Saros 10R) report 201/202/203 back as 225/235/245. */
     fun normalize(code: Int?): Int? = when (code) {
-        225 -> LOW
+        SLIDE_LOW -> LOW
         SLIDE_MEDIUM -> MEDIUM
-        245 -> HIGH
+        SLIDE_HIGH -> HIGH
         else -> code
     }
 }

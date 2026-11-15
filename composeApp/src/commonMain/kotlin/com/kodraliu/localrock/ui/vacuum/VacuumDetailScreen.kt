@@ -851,7 +851,7 @@ private fun SessionRoomsBadge(roomNames: List<String>, modifier: Modifier = Modi
 }
 
 @Composable
-private fun VacuumMapImage(
+internal fun VacuumMapImage(
     map: ParsedMap,
     selectedRoomIds: List<Int>,
     onRoomTap: (Int) -> Unit,
