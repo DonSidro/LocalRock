@@ -4,7 +4,9 @@ import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSDateFormatterMediumStyle
 import platform.Foundation.NSDateFormatterShortStyle
+import platform.Foundation.NSTimeZone
 import platform.Foundation.dateWithTimeIntervalSince1970
+import platform.Foundation.localTimeZone
 
 actual fun formatCleanRecordTime(epochSeconds: Long): String {
     if (epochSeconds <= 0L) return "Unknown"
@@ -17,3 +19,6 @@ actual fun formatCleanRecordTime(epochSeconds: Long): String {
     }
     return formatter.stringFromDate(date)
 }
+
+actual fun localUtcOffsetSeconds(epochSeconds: Long): Int =
+    NSTimeZone.localTimeZone.secondsFromGMTForDate(NSDate.dateWithTimeIntervalSince1970(epochSeconds.toDouble())).toInt()

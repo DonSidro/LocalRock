@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonElement
 
 class DeviceRepository(
     private val deviceApi: DeviceApi,
@@ -104,6 +105,11 @@ class DeviceRepository(
         if (isDemo()) error("Rooms can't be renamed in demo mode")
         val homeId = _home.value?.id ?: error("Home not loaded")
         return deviceApi.createRoom(homeId, name)
+    }
+
+    suspend fun voicePackages(model: String): JsonElement {
+        if (isDemo()) error("Voice packs are not available in demo mode")
+        return deviceApi.voicePackages(model)
     }
 
     /** Routines saved for [duid] (made in the official app; local_roborock_server keeps them). */
