@@ -24,6 +24,9 @@ private const val KEY_NOTIFY_FINISHED = "notify_finished"
 private const val KEY_NOTIFY_DOCK = "notify_dock"
 private const val KEY_NOTIFY_BACKGROUND = "notify_background"
 private const val KEY_NOTIFY_PROGRESS = "notify_progress"
+// A three-quarter view, so a first look at the 3D map shows two faces of every wall.
+private const val DEFAULT_MAP_3D_YAW = 35f
+private const val DEFAULT_MAP_3D_TILT = 53f
 
 class AppSettings(private val settings: Settings) {
 
@@ -169,6 +172,39 @@ class AppSettings(private val settings: Settings) {
     fun setCleanOrder(duid: String, mapFlag: Int, order: List<Int>) {
         val key = "clean_order_${duid}_$mapFlag"
         if (order.isEmpty()) settings.remove(key) else settings.putString(key, order.joinToString(","))
+    }
+
+    /** The map's on-screen rotation for one robot: 0, 90, 180 or 270. Remembered per robot. */
+    fun mapRotation(duid: String): Int = settings.getInt("map_rotation_$duid", 0)
+
+    fun setMapRotation(duid: String, degrees: Int) {
+        val normalized = ((degrees % 360) + 360) % 360
+        if (normalized == 0) settings.remove("map_rotation_$duid")
+        else settings.putInt("map_rotation_$duid", normalized)
+    }
+
+    /**
+     * The 3D view's own heading, in degrees. Kept apart from [mapRotation] on purpose: turning the
+     * 3D model around must not disturb the orientation chosen for the flat 2D map.
+     */
+    fun map3DYaw(duid: String): Float = settings.getFloat("map_3d_yaw_$duid", DEFAULT_MAP_3D_YAW)
+
+    fun setMap3DYaw(duid: String, degrees: Float) {
+        settings.putFloat("map_3d_yaw_$duid", degrees)
+    }
+
+    /** How far the 3D camera is tipped from looking straight down, in degrees; 0 is the flat view. */
+    fun map3DTilt(duid: String): Float = settings.getFloat("map_3d_tilt_$duid", DEFAULT_MAP_3D_TILT)
+
+    fun setMap3DTilt(duid: String, degrees: Float) {
+        settings.putFloat("map_3d_tilt_$duid", degrees)
+    }
+
+    /** Whether the map view for one robot shows a tilted 3D perspective instead of flat 2D. */
+    fun map3D(duid: String): Boolean = settings.getBoolean("map_3d_$duid", false)
+
+    fun setMap3D(duid: String, value: Boolean) {
+        if (!value) settings.remove("map_3d_$duid") else settings.putBoolean("map_3d_$duid", true)
     }
 
     internal fun readUserDataJson(): String? = settings.getStringOrNull(KEY_USER_DATA)
