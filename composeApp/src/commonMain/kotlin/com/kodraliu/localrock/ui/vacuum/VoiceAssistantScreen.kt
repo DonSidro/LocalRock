@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -22,12 +23,15 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -40,6 +44,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -51,17 +56,23 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import com.kodraliu.localrock.shared.vacuum.VoiceInstallFailure
+import com.kodraliu.localrock.shared.vacuum.VoiceInstallState
+import com.kodraliu.localrock.shared.vacuum.VoicePack
+import com.kodraliu.localrock.shared.vacuum.VoicePackListState
 import com.kodraliu.localrock.shared.vacuum.VolumeLevels
 import com.kodraliu.localrock.shared.vacuum.formatVoiceTimestamp
 import com.kodraliu.localrock.shared.vacuum.volumeLabel
 import com.kodraliu.localrock.shared.vacuum.volumeLevelIndex
+import com.kodraliu.localrock.shared.vacuum.voiceLanguageName
 import com.kodraliu.localrock.shared.vacuum.voiceTimestampsShown
 import com.kodraliu.localrock.ui.AppColors
 import com.kodraliu.localrock.ui.adaptive.CenteredContent
 import com.kodraliu.localrock.ui.strings.VoiceCommandStrings
 import com.kodraliu.localrock.ui.strings.VoiceStrings
+import kotlinx.coroutines.launch
 
-private enum class VoicePage { MAIN, COMMANDS, HISTORY }
+private enum class VoicePage { MAIN, COMMANDS, HISTORY, LANGUAGE }
 
 /** The official Voice Assistant page and the pages it opens, reached from Robot settings on voice control robots. */
 @OptIn(ExperimentalComposeUiApi::class)
@@ -80,6 +91,7 @@ internal fun VoiceAssistantSettings(viewModel: VacuumViewModel, onBack: () -> Un
         VoicePage.MAIN -> VoiceAssistantScreen(viewModel, onBack = onBack, onOpen = { page = it })
         VoicePage.COMMANDS -> VoiceCommandsScreen(onBack = toMain)
         VoicePage.HISTORY -> VoiceHistoryScreen(viewModel, onBack = toMain)
+        VoicePage.LANGUAGE -> VoiceLanguageScreen(viewModel, onBack = toMain)
     }
 }
 
@@ -106,6 +118,18 @@ private fun VoiceAssistantScreen(viewModel: VacuumViewModel, onBack: () -> Unit,
         item { VoiceExamples(onMore = { onOpen(VoicePage.COMMANDS) }) }
         item { Footnote(VoiceStrings.VOICE_POLICY) }
         item { HorizontalDivider(Modifier.padding(top = 8.dp)) }
+        voice.languageCode?.let { code ->
+            item {
+                SettingRowClickable(
+                    icon = Icons.Default.Language,
+                    iconTint = AppColors.AccentPurple,
+                    title = VoiceStrings.LANGUAGE,
+                    subtitle = voiceLanguageName(code),
+                    onClick = { onOpen(VoicePage.LANGUAGE) },
+                )
+            }
+            item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+        }
         item {
             SettingRowClickable(
                 icon = Icons.AutoMirrored.Filled.VolumeUp,
@@ -324,4 +348,80 @@ private fun VoiceChatBubble(text: String, fromUser: Boolean, timestamp: String?)
             }
         }
     }
+}
+
+/** Language: the robot's voice packs with Current or Use, as the official SoundPackagePage lists them. */
+@Composable
+private fun VoiceLanguageScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
+    val packs by viewModel.voicePacks.collectAsState()
+    val install by viewModel.voiceInstall.collectAsState()
+    val current by viewModel.voice.currentSound.collectAsState()
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { viewModel.loadVoicePacks() }
+    LaunchedEffect(install?.failure) {
+        val failure = install?.failure ?: return@LaunchedEffect
+        snackbar.showSnackbar(voiceInstallFailureText(failure))
+        viewModel.dismissVoiceInstallFailure()
+    }
+    VoicePageScaffold(VoiceStrings.LANGUAGE, onBack, snackbar) {
+        when (val state = packs) {
+            VoicePackListState.Loading -> item {
+                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            }
+            is VoicePackListState.Unavailable -> item {
+                Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(VoiceStrings.VOICE_PACKS_UNAVAILABLE, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        state.reason ?: VoiceStrings.VOICE_PACKS_UNAVAILABLE_HINT,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(onClick = { viewModel.loadVoicePacks() }) { Text(VoiceStrings.RETRY) }
+                }
+            }
+            is VoicePackListState.Loaded -> {
+                if (state.packs.isEmpty()) {
+                    item { Footnote(VoiceStrings.VOICE_PACKS_EMPTY) }
+                } else {
+                    itemsIndexed(state.packs) { i, pack ->
+                        if (i > 0) HorizontalDivider(Modifier.padding(start = 16.dp))
+                        VoicePackRow(pack, current?.sidInUse == pack.id, install) {
+                            if (install?.running == true) {
+                                scope.launch { snackbar.showSnackbar(VoiceStrings.VOICE_PACK_BUSY) }
+                            } else {
+                                viewModel.installVoicePack(pack)
+                            }
+                        }
+                    }
+                    if (install?.running == true) item { Footnote(VoiceStrings.VOICE_PACK_DOWNLOADING) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoicePackRow(pack: VoicePack, isCurrent: Boolean, install: VoiceInstallState?, onUse: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(pack.title, style = MaterialTheme.typography.bodyLarge)
+            pack.subTitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        when {
+            install?.running == true && install.sid == pack.id -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                install.percent?.let { Text("$it%", style = MaterialTheme.typography.bodyMedium) }
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+            isCurrent -> Text(VoiceStrings.VOICE_CURRENT, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else -> OutlinedButton(onClick = onUse) { Text(VoiceStrings.VOICE_USE) }
+        }
+    }
+}
+
+private fun voiceInstallFailureText(failure: VoiceInstallFailure): String = when (failure) {
+    VoiceInstallFailure.SEND -> VoiceStrings.VOICE_PACK_SEND_FAILED
+    VoiceInstallFailure.DOWNLOAD -> VoiceStrings.VOICE_PACK_DOWNLOAD_FAILED
+    VoiceInstallFailure.INSTALL -> VoiceStrings.VOICE_PACK_INSTALL_FAILED
+    VoiceInstallFailure.TIMEOUT -> VoiceStrings.VOICE_PACK_TIMEOUT
 }
