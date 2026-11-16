@@ -206,21 +206,34 @@ internal fun encodeGroundMaterialParams(segment: Int, materialId: Int, direction
         JsonPrimitive(segment), JsonPrimitive(materialId), JsonPrimitive(direction ?: NO_DIRECTION),
     ))))))
 
-/** One row of the robot's segment table, as `get_room_mapping` returns it. */
-data class SegmentEntry(val segment: Int, val roomId: String, val tagId: Int)
+/**
+ * One row of the robot's segment table, as `get_room_mapping` returns it. [tagId] is null on
+ * firmware that lists no tag column.
+ */
+data class SegmentEntry(val segment: Int, val roomId: String, val tagId: Int?)
 
 /**
- * The robot's `get_room_mapping` answer as `[segment, roomId, tag]` rows. An empty list means no
- * room has been assigned yet (S7 Max Ultra, Qrevo Edge, #33). Null means the answer is not a table
- * this app can write back whole, so name_segment must not be sent.
+ * Tag for a segment the robot lists without one: a segment that gets its first table entry, or
+ * any row on firmware without a tag column. In the capture the official app gave the previously
+ * unlisted segment 24 tag 12 when the user named it.
+ */
+internal const val NEW_SEGMENT_TAG = 12
+
+/**
+ * The robot's `get_room_mapping` answer as `[segment, roomId, tag]` rows, or `[segment, roomId]`
+ * rows on firmware without tags (S7 on 02.16.12, S4 on 02.06.26). An empty list means no room has
+ * been assigned yet (S7 Max Ultra, Qrevo Edge, #33). Null means the answer is not a table this app
+ * can write back whole, so name_segment must not be sent. A table that mixes the two row shapes is
+ * one of those.
  */
 internal fun parseSegmentTable(result: JsonElement?): List<SegmentEntry>? {
     val rows = result as? JsonArray ?: return null
+    val tagged = (rows.firstOrNull() as? JsonArray)?.let { it.size >= 3 }
     return rows.map { row ->
-        if (row !is JsonArray || row.size < 3) return null
+        if (row !is JsonArray || row.size < 2 || (row.size >= 3) != tagged) return null
         val segment = (row[0] as? JsonPrimitive)?.intOrNull ?: return null
         val roomId = (row[1] as? JsonPrimitive)?.content ?: return null
-        val tag = (row[2] as? JsonPrimitive)?.intOrNull ?: return null
+        val tag = if (row.size >= 3) (row[2] as? JsonPrimitive)?.intOrNull ?: return null else null
         SegmentEntry(segment, roomId, tag)
     }
 }
@@ -236,7 +249,9 @@ internal fun nameSegmentData(table: List<SegmentEntry>): JsonArray =
         JsonObject(mapOf(
             "iotRoomId" to JsonPrimitive(e.roomId),
             "robotRoomId" to JsonPrimitive(e.segment),
-            "robotTagId" to JsonPrimitive(e.tagId),
+            // Firmware without a tag column took 12 on a named segment (S7, 2026-11-15) and still
+            // lists no tag afterwards, so an untagged row is written back with it.
+            "robotTagId" to JsonPrimitive(e.tagId ?: NEW_SEGMENT_TAG),
         ))
     })
 
