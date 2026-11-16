@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.ui.vacuum
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import com.kodraliu.localrock.shared.vacuum.MAX_MAP_COORD_MM
 import com.kodraliu.localrock.shared.vacuum.map.MapZone
@@ -19,6 +20,17 @@ import kotlin.math.roundToInt
  */
 
 internal const val MM_PER_CELL = 50f
+
+/** A room name as drawn on screen, kept so a tap on the name selects its room. */
+internal data class RoomLabelHit(val roomId: Int, val bounds: Rect)
+
+/**
+ * The room whose drawn name holds [tap], or null. A name can reach past its room's floor, over a
+ * wall or the room next door, so it is checked before the floor under the finger. Names drawn
+ * later are on top, so the last match wins.
+ */
+internal fun roomAtLabel(tap: Offset, labels: List<RoomLabelHit>): Int? =
+    labels.lastOrNull { it.bounds.contains(tap) }?.roomId
 
 /** Robot mm -> bitmap cell (Y flipped to match the renderer). */
 internal fun ParsedMap.mmToCell(xMm: Int, yMm: Int): Offset {

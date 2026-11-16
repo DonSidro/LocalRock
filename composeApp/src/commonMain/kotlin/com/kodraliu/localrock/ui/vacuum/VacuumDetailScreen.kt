@@ -128,6 +128,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -876,6 +877,8 @@ private fun VacuumMapImage(
     val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary)
     val currentOnRoomTap by rememberUpdatedState(onRoomTap)
     val currentOnObstacleTap by rememberUpdatedState(onObstacleTap)
+    // Where the names were last drawn; filled while drawing, read by the tap handler.
+    val labelHits = remember { mutableListOf<RoomLabelHit>() }
 
     // A parsed map is mostly blank grid, so open framed on the floor plan rather than on padding.
     val bounds = remember(map) { map.contentBoundsNorm() }
@@ -923,6 +926,7 @@ private fun VacuumMapImage(
                             // An obstacle dot is small, so a tap near one opens it before any room.
                             currentMap.obstacleAt(tapOffset, content, mapViewport.offset, mapViewport.scale, 20.dp.toPx())
                                 ?.let { currentOnObstacleTap(it); return@detectTapGestures }
+                            roomAtLabel(tapOffset, labelHits)?.let { currentOnRoomTap(it); return@detectTapGestures }
                             val p = (tapOffset - mapViewport.offset) / mapViewport.scale
                             val normX = p.x / content.width
                             val normY = p.y / content.height
@@ -955,6 +959,7 @@ private fun VacuumMapImage(
             // Labels are drawn outside the zoom transform so they stay a constant, legible size
             // instead of growing to 8x with the map. Selected rooms carry their cleaning order,
             // so selection reads without relying on the highlight colour alone.
+            labelHits.clear()
             for (room in labelRooms) {
                 val normX = room.labelNormX ?: continue
                 val normY = room.labelNormY ?: continue
@@ -970,12 +975,15 @@ private fun VacuumMapImage(
                 val th = measured.size.height.toFloat()
                 val padX = 6.dp.toPx()
                 val padY = 3.dp.toPx()
+                val labelTopLeft = Offset(cx - tw / 2 - padX, cy - th / 2 - padY)
+                val labelSize = Size(tw + padX * 2, th + padY * 2)
                 drawRoundRect(
                     color = if (selected) selectedBgColor else bgColor,
-                    topLeft = Offset(cx - tw / 2 - padX, cy - th / 2 - padY),
-                    size = Size(tw + padX * 2, th + padY * 2),
+                    topLeft = labelTopLeft,
+                    size = labelSize,
                     cornerRadius = CornerRadius(6.dp.toPx()),
                 )
+                labelHits += RoomLabelHit(room.id, Rect(labelTopLeft, labelSize))
                 drawText(
                     textMeasurer = textMeasurer,
                     text = text,

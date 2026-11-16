@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.ui.vacuum
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.thresholdStrip
@@ -16,6 +17,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class MapGeometryTest {
@@ -201,5 +203,18 @@ class MapGeometryTest {
         assertEquals(Offset(250f, 0f), offset)
         // No usable floor plan: the whole map, centred.
         assertEquals(1f to Offset(375f, 0f), frameMap(MapContentBounds(0f, 0f, 0f, 0f), content, view))
+    }
+
+    @Test
+    fun a_tap_on_a_room_name_finds_that_room_and_the_top_name_wins() {
+        val labels = listOf(
+            RoomLabelHit(16, Rect(100f, 100f, 180f, 120f)),
+            // Drawn later, so on top where the two overlap.
+            RoomLabelHit(20, Rect(170f, 110f, 250f, 130f)),
+        )
+        assertEquals(16, roomAtLabel(Offset(120f, 110f), labels))
+        assertEquals(20, roomAtLabel(Offset(175f, 115f), labels))
+        assertNull(roomAtLabel(Offset(300f, 300f), labels))
+        assertNull(roomAtLabel(Offset(120f, 110f), emptyList()))
     }
 }
