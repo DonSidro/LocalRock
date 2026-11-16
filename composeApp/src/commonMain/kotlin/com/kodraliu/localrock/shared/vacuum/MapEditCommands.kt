@@ -51,6 +51,106 @@ fun V1Response.requireOk(method: String): V1Response {
     return this
 }
 
+/**
+ * What firmware puts in `result`, with no error object, for a method it has no handler for. An S7
+ * on 02.16.12 answered set_carpet_area and app_set_smart_door_sill this way: `"result":
+ * "unknown_method"`.
+ */
+internal const val UNKNOWN_METHOD_RESULT = "unknown_method"
+
+/** The robot doesn't know [method] at all, so nothing was changed. */
+class RobotUnsupportedCommandException(val method: String) :
+    RuntimeException("The robot doesn't support $method")
+
+/** True when the answer is `"unknown_method"`, bare or as the only item of a list. */
+internal fun V1Response.isUnknownMethod(): Boolean {
+    val r = result
+    val value = (if (r is JsonArray && r.size == 1) r[0] else r) as? JsonPrimitive ?: return false
+    return value.isString && value.content == UNKNOWN_METHOD_RESULT
+}
+
+/**
+ * [requireOk], and also fails when the robot doesn't know the command. That answer carries no
+ * error object, so [requireOk] alone takes it as success.
+ */
+fun V1Response.requireApplied(method: String): V1Response {
+    requireOk(method)
+    if (isUnknownMethod()) throw RobotUnsupportedCommandException(method)
+    return this
+}
+
+/** Thrown after a save the robot took only in part: it doesn't support [refused]. */
+class UnsupportedMapEditException(val refused: Set<ZoneKind>, savedOther: Boolean) :
+    RuntimeException(unsupportedMapEditMessage(refused, savedOther))
+
+private fun unsupportedKindsText(kinds: Set<ZoneKind>): String = listOfNotNull(
+    "carpet areas".takeIf { ZoneKind.CARPET in kinds },
+    "thresholds".takeIf { ZoneKind.THRESHOLD in kinds },
+).joinToString(" or ")
+
+/** What to tell the user after a save in which the robot refused [refused]. */
+internal fun unsupportedMapEditMessage(refused: Set<ZoneKind>, savedOther: Boolean): String =
+    "This robot doesn't support ${unsupportedKindsText(refused)}, so they were not saved." +
+        if (savedOther) " Your other changes were saved." else ""
+
+/** Note for the editor when the robot doesn't support some kinds, or null. */
+fun unsupportedMapEditNote(unsupported: Set<ZoneKind>): String? =
+    unsupportedKindsText(unsupported).takeIf { it.isNotEmpty() }?.let { "This robot doesn't support $it." }
+
+/** `new_feature_info` bit for drawing carpet areas (python-roborock is_map_carpet_add_support). */
+private const val MAP_CARPET_ADD_MASK = 1L shl 30
+
+/**
+ * Masks over the last 8 characters of `new_feature_info_str` for thresholds (python-roborock
+ * is_support_custom_door_sill and is_support_smart_door_sill).
+ */
+private const val CUSTOM_DOOR_SILL_MASK = 32L
+private const val SMART_DOOR_SILL_MASK = 1024L
+
+/**
+ * Kinds the robot's own `app_get_init_status` flags say it can't store, so the editor can grey their
+ * tools out before anything is drawn. An S7 on 02.16.12 reports neither carpet areas nor thresholds,
+ * and answers both commands with unknown_method. An unknown flag blocks nothing, and neither does a
+ * kind the map already holds: the robot plainly stores those.
+ */
+fun advertisedUnsupportedMapEdits(
+    newFeatureInfo: Long?,
+    newFeatureInfoStr: String?,
+    mapHasCarpets: Boolean,
+    mapHasThresholds: Boolean,
+): Set<ZoneKind> = buildSet {
+    if (newFeatureInfo != null && (newFeatureInfo and MAP_CARPET_ADD_MASK) == 0L && !mapHasCarpets) {
+        add(ZoneKind.CARPET)
+    }
+    val low = newFeatureInfoStr?.takeIf { it.length >= 8 }?.takeLast(8)?.toLongOrNull(16)
+    if (low != null && (low and (CUSTOM_DOOR_SILL_MASK or SMART_DOOR_SILL_MASK)) == 0L && !mapHasThresholds) {
+        add(ZoneKind.THRESHOLD)
+    }
+}
+
+/**
+ * Sends the changed categories of a zones-and-walls save in order. [restrictions] failing fails the
+ * save. A robot that doesn't know the [carpets] or [thresholds] command leaves that category out
+ * and the rest is still sent. Returns the kinds the robot refused that way.
+ */
+internal suspend fun sendMapEditCategories(
+    restrictions: (suspend () -> Any?)?,
+    carpets: (suspend () -> Any?)?,
+    thresholds: (suspend () -> Any?)?,
+): Set<ZoneKind> {
+    val refused = mutableSetOf<ZoneKind>()
+    restrictions?.invoke()
+    for ((kind, send) in listOf(ZoneKind.CARPET to carpets, ZoneKind.THRESHOLD to thresholds)) {
+        if (send == null) continue
+        try {
+            send()
+        } catch (e: RobotUnsupportedCommandException) {
+            refused += kind
+        }
+    }
+    return refused
+}
+
 /** Largest coordinate the robot's map can hold: 1024 pixels of 50 mm. */
 internal const val MAX_MAP_COORD_MM = 51_200
 
@@ -373,11 +473,11 @@ fun RobotCommandException.code(): Int? =
 
 suspend fun VacuumSession.setCarpetAreas(carpets: List<MapZone>, mapIndex: Int, withFlags: Boolean): V1Response =
     sendCommandRaw("set_carpet_area", encodeCarpetAreaParams(carpets, mapIndex, withFlags), timeoutMs = MAP_EDIT_TIMEOUT_MS)
-        .requireOk("set_carpet_area")
+        .requireApplied("set_carpet_area")
 
 suspend fun VacuumSession.setThresholds(thresholds: List<MapZone>, mapIndex: Int): V1Response =
     sendCommandRaw("app_set_smart_door_sill", encodeThresholdParams(thresholds, mapIndex), timeoutMs = MAP_EDIT_TIMEOUT_MS)
-        .requireOk("app_set_smart_door_sill")
+        .requireApplied("app_set_smart_door_sill")
 
 suspend fun VacuumSession.mergeSegment(segmentA: Int, segmentB: Int): V1Response =
     sendData("merge_segment", mergeSegmentData(segmentA, segmentB))

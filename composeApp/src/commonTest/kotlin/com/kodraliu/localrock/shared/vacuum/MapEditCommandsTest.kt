@@ -509,4 +509,112 @@ class MapEditCommandsTest {
             encodeSplitSegmentParams(1, a.first, a.second, b.first, b.second).toString(),
         )
     }
+
+    /*
+     * The answers below are from an S7 (roborock.vacuum.a15, firmware 02.16.12) edited through
+     * local_roborock_server (decompiled_mqtt.jsonl, 2026-11-15): it answered set_carpet_area and
+     * app_set_smart_door_sill with "unknown_method" and no error object.
+     */
+
+    @Test
+    fun unknown_method_answer_is_a_refusal() {
+        val unknown = V1Response(id = 13446, result = Json.parseToJsonElement("\"unknown_method\""), error = null)
+        assertFailsWith<RobotUnsupportedCommandException> { unknown.requireApplied("set_carpet_area") }
+        val listed = V1Response(id = 1, result = Json.parseToJsonElement("""["unknown_method"]"""), error = null)
+        assertFailsWith<RobotUnsupportedCommandException> { listed.requireApplied("app_set_smart_door_sill") }
+        val ok = V1Response(id = 13465, result = Json.parseToJsonElement("""["ok"]"""), error = null)
+        assertEquals(ok, ok.requireApplied("save_map"))
+        // requireOk keeps its meaning for callers that read the result themselves.
+        assertEquals(unknown, unknown.requireOk("set_carpet_area"))
+    }
+
+    @Test
+    fun error_answer_is_still_a_robot_error() {
+        val refused = V1Response(
+            id = 13464,
+            result = null,
+            error = Json.parseToJsonElement("""{"code":-10005,"message":"Param is not an array"}""").jsonObject,
+        )
+        assertFailsWith<RobotCommandException> { refused.requireApplied("save_map") }
+    }
+
+    @Test
+    fun a_refused_category_does_not_stop_the_rest_of_the_save() = runTest {
+        val sent = mutableListOf<String>()
+        val refused = sendMapEditCategories(
+            restrictions = { sent += "save_map" },
+            carpets = {
+                sent += "set_carpet_area"
+                throw RobotUnsupportedCommandException("set_carpet_area")
+            },
+            thresholds = { sent += "app_set_smart_door_sill" },
+        )
+        assertEquals(setOf(ZoneKind.CARPET), refused)
+        assertEquals(listOf("save_map", "set_carpet_area", "app_set_smart_door_sill"), sent)
+    }
+
+    @Test
+    fun other_robot_errors_still_fail_the_save() = runTest {
+        assertFailsWith<RobotCommandException> {
+            sendMapEditCategories(
+                restrictions = null,
+                carpets = { throw RobotCommandException("set_carpet_area", JsonObject(emptyMap())) },
+                thresholds = null,
+            )
+        }
+    }
+
+    @Test
+    fun unsupported_message_says_what_was_and_was_not_saved() {
+        assertEquals(
+            "This robot doesn't support carpet areas or thresholds, so they were not saved. Your other changes were saved.",
+            unsupportedMapEditMessage(setOf(ZoneKind.CARPET, ZoneKind.THRESHOLD), savedOther = true),
+        )
+        assertEquals(
+            "This robot doesn't support thresholds, so they were not saved.",
+            unsupportedMapEditMessage(setOf(ZoneKind.THRESHOLD), savedOther = false),
+        )
+        assertNull(unsupportedMapEditNote(emptySet()))
+        assertEquals("This robot doesn't support carpet areas.", unsupportedMapEditNote(setOf(ZoneKind.CARPET)))
+    }
+
+    /*
+     * Feature flags from app_get_init_status (2026-11-15): an S7 (a15, 02.16.12) reported
+     * new_feature_info 636084721975295 and new_feature_info_str "0000000000002000"; an S4 reported
+     * new_feature_info 159751 and no string.
+     */
+
+    @Test
+    fun the_s7s_flags_rule_out_carpet_areas_and_thresholds() {
+        assertEquals(
+            setOf(ZoneKind.CARPET, ZoneKind.THRESHOLD),
+            advertisedUnsupportedMapEdits(636084721975295L, "0000000000002000", mapHasCarpets = false, mapHasThresholds = false),
+        )
+        assertEquals(
+            "This robot doesn't support carpet areas or thresholds.",
+            unsupportedMapEditNote(setOf(ZoneKind.CARPET, ZoneKind.THRESHOLD)),
+        )
+    }
+
+    @Test
+    fun a_missing_flag_rules_out_nothing() {
+        assertEquals(setOf(ZoneKind.CARPET), advertisedUnsupportedMapEdits(159751L, null, false, false))
+        assertEquals(emptySet(), advertisedUnsupportedMapEdits(null, null, false, false))
+        // Shorter than the 8 characters python-roborock reads: unknown, not "no".
+        assertEquals(emptySet(), advertisedUnsupportedMapEdits(null, "2000", false, false))
+    }
+
+    @Test
+    fun set_flags_allow_carpet_areas_and_either_threshold_flag_allows_thresholds() {
+        assertEquals(emptySet(), advertisedUnsupportedMapEdits(1L shl 30, "00000020", false, false))
+        assertEquals(emptySet(), advertisedUnsupportedMapEdits(1L shl 30, "00000400", false, false))
+    }
+
+    @Test
+    fun a_kind_already_on_the_map_is_never_ruled_out() {
+        assertEquals(
+            emptySet(),
+            advertisedUnsupportedMapEdits(636084721975295L, "0000000000002000", mapHasCarpets = true, mapHasThresholds = true),
+        )
+    }
 }

@@ -114,12 +114,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
 import com.kodraliu.localrock.shared.vacuum.MAX_RESTRICTION_VERTICES
+import com.kodraliu.localrock.shared.vacuum.UnsupportedMapEditException
+import com.kodraliu.localrock.shared.vacuum.advertisedUnsupportedMapEdits
 import com.kodraliu.localrock.shared.vacuum.mapIndexBlocker
 import com.kodraliu.localrock.shared.vacuum.restrictionSaveBlocker
 import com.kodraliu.localrock.shared.vacuum.restrictionsMatch
 import com.kodraliu.localrock.shared.vacuum.thresholdStrip
 import com.kodraliu.localrock.shared.vacuum.saveMapIndex
 import com.kodraliu.localrock.shared.vacuum.restrictionVertexCount
+import com.kodraliu.localrock.shared.vacuum.unsupportedMapEditNote
 import com.kodraliu.localrock.shared.vacuum.map.FloorMaterial
 import com.kodraliu.localrock.shared.vacuum.map.MapZone
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
@@ -203,6 +206,11 @@ fun MapEditScreen(
     val status by repository.status.collectAsState()
     val floorMaps by repository.floorMaps.collectAsState()
     val floorMapsLoaded by repository.floorMapsLoaded.collectAsState()
+    val unsupportedMapEdits by repository.unsupportedMapEdits.collectAsState()
+    val robotFeatureSet by repository.robotFeatureSet.collectAsState()
+    val robotNewFeatureInfo by repository.robotNewFeatureInfo.collectAsState()
+    // The robot's own flags say which tools it can store; usually read already when it connected.
+    LaunchedEffect(Unit) { runCatching { repository.fetchRobotFeatureSet() } }
     // The list request can be lost (e.g. sent while MQTT is reconnecting); keep asking until the
     // robot answers, since saving needs it.
     LaunchedEffect(Unit) {
@@ -245,6 +253,13 @@ fun MapEditScreen(
 
     val pm = parsedMap
     val blockedReason = repository.editBlockedReason(pm, status.state)
+    // Kinds the robot's flags say it can't store, plus any it refused while saving.
+    val unsupportedKinds = unsupportedMapEdits + advertisedUnsupportedMapEdits(
+        robotNewFeatureInfo,
+        robotFeatureSet,
+        mapHasCarpets = pm?.carpetAreas?.isNotEmpty() == true,
+        mapHasThresholds = pm?.thresholds?.isNotEmpty() == true,
+    )
     val mapIndex = saveMapIndex(floorMaps)
     // Carpets and thresholds only need the map index; no-go zones and walls also need save_map to
     // be safe on this map.
@@ -320,8 +335,15 @@ fun MapEditScreen(
             val editable = blockedReason == null && !working
             fun toolEnabled(t: Tool) = editable && when (t) {
                 Tool.NO_GO, Tool.WALL -> saveBlocker == null
-                Tool.CARPET, Tool.THRESHOLD -> indexBlocker == null
+                Tool.CARPET -> indexBlocker == null && ZoneKind.CARPET !in unsupportedKinds
+                Tool.THRESHOLD -> indexBlocker == null && ZoneKind.THRESHOLD !in unsupportedKinds
             }
+            // A tool the robot can't store stays visible, greyed out, and says why when tapped.
+            fun unsupportedReason(t: Tool): String? = when (t) {
+                Tool.CARPET -> ZoneKind.CARPET
+                Tool.THRESHOLD -> ZoneKind.THRESHOLD
+                Tool.NO_GO, Tool.WALL -> null
+            }?.takeIf { it in unsupportedKinds }?.let { unsupportedMapEditNote(setOf(it)) }
             val deleteEnabled = editable && when (val sel = selection) {
                 is Selection.Wall -> saveBlocker == null
                 is Selection.Zone -> when (zones.getOrNull(sel.index)?.kind) {
@@ -457,7 +479,14 @@ fun MapEditScreen(
                     EditMode.RESTRICTIONS -> {
                         val sel = selection
                         if (sel == null) {
-                            ToolDock(toolEnabled = ::toolEnabled, onAdd = ::addShape, vertices = vertices)
+                            ToolDock(
+                                toolEnabled = ::toolEnabled,
+                                onAdd = ::addShape,
+                                vertices = vertices,
+                                note = unsupportedMapEditNote(unsupportedKinds),
+                                unsupportedReason = ::unsupportedReason,
+                                onUnsupported = { notice = Notice(it, isError = false) },
+                            )
                         } else {
                             val selectedZone = (sel as? Selection.Zone)?.let { zones.getOrNull(it.index) }
                             val kind = selectedZone?.kind
@@ -509,7 +538,15 @@ fun MapEditScreen(
                     val thresholdStrips = zones.filter { it.kind == ZoneKind.THRESHOLD }
                     val savedWalls = walls
                     runEdit("Saved. The robot's map shows the changes.") {
-                        repository.saveMapEdits(noGoZones, savedWalls, carpetAreas, thresholdStrips)
+                        try {
+                            repository.saveMapEdits(noGoZones, savedWalls, carpetAreas, thresholdStrips)
+                        } catch (e: UnsupportedMapEditException) {
+                            // The rest is saved and read back; showing the robot's map again drops
+                            // the shapes it can't store.
+                            dirty = false
+                            selection = null
+                            throw e
+                        }
                         dirty = false
                         selection = null
                         null
@@ -1028,7 +1065,14 @@ private val TOOL_SPECS = listOf(
  * the dock doubles as the map's key.
  */
 @Composable
-private fun ToolDock(toolEnabled: (Tool) -> Boolean, onAdd: (Tool) -> Unit, vertices: Int) {
+private fun ToolDock(
+    toolEnabled: (Tool) -> Boolean,
+    onAdd: (Tool) -> Unit,
+    vertices: Int,
+    note: String? = null,
+    unsupportedReason: (Tool) -> String? = { null },
+    onUnsupported: (String) -> Unit = {},
+) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Add to map", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -1041,21 +1085,35 @@ private fun ToolDock(toolEnabled: (Tool) -> Boolean, onAdd: (Tool) -> Unit, vert
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TOOL_SPECS.forEach { spec ->
-                ToolTile(spec, enabled = toolEnabled(spec.tool), onClick = { onAdd(spec.tool) })
+                val reason = unsupportedReason(spec.tool)
+                ToolTile(
+                    spec,
+                    enabled = toolEnabled(spec.tool),
+                    explainOnly = reason != null,
+                    onClick = { if (reason != null) onUnsupported(reason) else onAdd(spec.tool) },
+                )
             }
+        }
+        if (note != null) {
+            Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
-private fun ToolTile(spec: ToolSpec, enabled: Boolean, onClick: () -> Unit) {
+private fun ToolTile(spec: ToolSpec, enabled: Boolean, onClick: () -> Unit, explainOnly: Boolean = false) {
     val alpha = if (enabled) 1f else 0.38f
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
-            .clickable(enabled = enabled, role = Role.Button, onClickLabel = "Add ${spec.label.lowercase()}", onClick = onClick)
+            .clickable(
+                enabled = enabled || explainOnly,
+                role = Role.Button,
+                onClickLabel = if (explainOnly) "Why ${spec.label.lowercase()} is unavailable" else "Add ${spec.label.lowercase()}",
+                onClick = onClick,
+            )
             .widthIn(min = 72.dp)
             .padding(horizontal = 6.dp, vertical = 4.dp),
     ) {
