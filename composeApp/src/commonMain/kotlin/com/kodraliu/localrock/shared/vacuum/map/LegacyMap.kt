@@ -147,25 +147,16 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         }
     }
 
-    val roomSumX = mutableMapOf<Int, Long>()
-    val roomSumY = mutableMapOf<Int, Long>()
-    val roomCount = mutableMapOf<Int, Int>()
-    for (y in 0 until imageHeight) {
-        for (x in 0 until imageWidth) {
-            val v = pixels[y * imageWidth + x].toInt() and 0xff
-            if ((v and 0x07) == 7) {
-                val roomId = (v ushr 3) and 0x1f
-                if (roomId > 0) {
-                    roomSumX[roomId] = (roomSumX[roomId] ?: 0L) + x
-                    roomSumY[roomId] = (roomSumY[roomId] ?: 0L) + y
-                    roomCount[roomId] = (roomCount[roomId] ?: 0) + 1
-                }
-            }
-        }
+    val roomAt = IntArray(imageWidth * imageHeight) { i ->
+        val v = pixels[i].toInt() and 0xff
+        if ((v and 0x07) == 7) (v ushr 3) and 0x1f else 0
     }
-    val rooms = roomCount.entries.sortedBy { it.key }.map { (roomId, count) ->
-        val cx = (roomSumX[roomId]!! / count.toFloat() / imageWidth).coerceIn(0f, 1f)
-        val cy = ((imageHeight - 1 - roomSumY[roomId]!! / count.toFloat()) / imageHeight).coerceIn(0f, 1f)
+    val labelCells = roomLabelCells(roomAt, imageWidth, imageHeight)
+    val rooms = labelCells.keys.sorted().map { roomId ->
+        val (lx, ly) = labelCells.getValue(roomId)
+        // The middle of the label's pixel, so a tap on the label's centre finds this room.
+        val cx = ((lx + 0.5f) / imageWidth).coerceIn(0f, 1f)
+        val cy = ((imageHeight - 1 - ly + 0.5f) / imageHeight).coerceIn(0f, 1f)
         ParsedMapRoom(id = roomId, name = "Room $roomId", labelNormX = cx, labelNormY = cy)
     }
 
@@ -298,3 +289,68 @@ private fun u32(b: ByteArray, off: Int): Int =
         ((b[off + 1].toInt() and 0xff) shl 8) or
         ((b[off + 2].toInt() and 0xff) shl 16) or
         ((b[off + 3].toInt() and 0xff) shl 24)
+
+/**
+ * Where each room's name goes, as an (x, y) pixel of [roomAt] (a room id per pixel, 0 for none,
+ * row 0 at the bottom like the image): the floor pixel nearest the room's middle among those at
+ * least half as far from any wall, gap, other room or the image edge as the room's most open
+ * pixel. The middle alone can fall outside an L- or U-shaped room, on a gap or in the room next
+ * door; the most open pixel alone drifts away from furniture gaps toward one side of the room.
+ */
+internal fun roomLabelCells(roomAt: IntArray, width: Int, height: Int): Map<Int, Pair<Int, Int>> {
+    // City-block distance from each floor pixel to the nearest pixel that isn't the same room's
+    // floor (the image edge counts as one), in a forward and a backward pass.
+    val far = IntArray(roomAt.size)
+    fun sameRoom(i: Int, x: Int, y: Int) =
+        x in 0 until width && y in 0 until height && roomAt[y * width + x] == roomAt[i]
+    for (y in 0 until height) {
+        for (x in 0 until width) {
+            val i = y * width + x
+            if (roomAt[i] == 0) continue
+            val left = if (sameRoom(i, x - 1, y)) far[i - 1] else 0
+            val below = if (sameRoom(i, x, y - 1)) far[i - width] else 0
+            far[i] = minOf(left, below) + 1
+        }
+    }
+    for (y in height - 1 downTo 0) {
+        for (x in width - 1 downTo 0) {
+            val i = y * width + x
+            if (roomAt[i] == 0) continue
+            val right = if (sameRoom(i, x + 1, y)) far[i + 1] else 0
+            val above = if (sameRoom(i, x, y + 1)) far[i + width] else 0
+            far[i] = minOf(far[i], minOf(right, above) + 1)
+        }
+    }
+
+    val sumX = HashMap<Int, Long>()
+    val sumY = HashMap<Int, Long>()
+    val count = HashMap<Int, Int>()
+    for (i in roomAt.indices) {
+        val room = roomAt[i]
+        if (room == 0) continue
+        sumX[room] = (sumX[room] ?: 0L) + i % width
+        sumY[room] = (sumY[room] ?: 0L) + i / width
+        count[room] = (count[room] ?: 0) + 1
+    }
+
+    val mostOpen = HashMap<Int, Int>()
+    for (i in roomAt.indices) {
+        val room = roomAt[i]
+        if (room != 0 && far[i] > (mostOpen[room] ?: 0)) mostOpen[room] = far[i]
+    }
+    val best = HashMap<Int, Int>()
+    val bestDistance = HashMap<Int, Float>()
+    for (i in roomAt.indices) {
+        val room = roomAt[i]
+        if (room == 0 || far[i] < (mostOpen.getValue(room) + 1) / 2) continue
+        val n = count.getValue(room).toFloat()
+        val dx = i % width - sumX.getValue(room) / n
+        val dy = i / width - sumY.getValue(room) / n
+        val distance = dx * dx + dy * dy
+        if (distance < (bestDistance[room] ?: Float.MAX_VALUE)) {
+            best[room] = i
+            bestDistance[room] = distance
+        }
+    }
+    return best.mapValues { (_, i) -> (i % width) to (i / width) }
+}

@@ -649,6 +649,8 @@ private fun EditorCanvas(
 ) {
     val bitmap = rememberMapBitmap(map, drawRestrictions = false)
     val textMeasurer = rememberTextMeasurer()
+    // Where the room names were last drawn (Rooms mode only); filled while drawing.
+    val labelHits = remember { mutableListOf<RoomLabelHit>() }
     val labelStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
     val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary)
     val labelBg = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
@@ -701,6 +703,7 @@ private fun EditorCanvas(
                         val h = fitted.height
                         val content = (tap - offset) / scale
                         if (mode == EditMode.ROOMS) {
+                            roomAtLabel(tap, labelHits)?.let { currentOnRoomTap(it); return@detectTapGestures }
                             val normX = content.x / w
                             val normY = content.y / h
                             // The view is larger than the map; a tap beside it is not on a room.
@@ -902,6 +905,7 @@ private fun EditorCanvas(
                 }
             }
 
+            labelHits.clear()
             if (mode == EditMode.ROOMS) {
                 val focus = when (roomAction) {
                     is RoomAction.Split -> roomAction.segment
@@ -924,6 +928,7 @@ private fun EditorCanvas(
                         size = Size(boxW, boxH),
                         cornerRadius = CornerRadius(boxH / 2),
                     )
+                    labelHits += RoomLabelHit(room.id, Rect(topLeft, Size(boxW, boxH)))
                     drawText(layout, topLeft = Offset(topLeft.x + pad, topLeft.y + pad / 2))
                 }
             }

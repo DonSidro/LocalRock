@@ -138,6 +138,67 @@ class LegacyMapTest {
         return b
     }
 
+    /** A room grid from rows written top first, as they look on screen; '.' is no room. */
+    private fun grid(vararg rowsTopFirst: String): Triple<IntArray, Int, Int> {
+        val width = rowsTopFirst.first().length
+        val height = rowsTopFirst.size
+        val cells = IntArray(width * height)
+        rowsTopFirst.forEachIndexed { fromTop, row ->
+            val y = height - 1 - fromTop
+            row.forEachIndexed { x, c -> cells[y * width + x] = if (c == '.') 0 else c.digitToInt() }
+        }
+        return Triple(cells, width, height)
+    }
+
+    @Test
+    fun a_u_shaped_rooms_label_stays_on_its_floor() {
+        // The middle of this U is the gap between its arms, where the label used to go.
+        val (cells, w, h) = grid(
+            "11...11",
+            "11...11",
+            "11...11",
+            "1111111",
+        )
+        val (x, y) = roomLabelCells(cells, w, h).getValue(1)
+        assertEquals(1, cells[y * w + x])
+    }
+
+    @Test
+    fun a_label_goes_on_the_open_part_of_a_room_not_its_corridor() {
+        // An L-shaped hallway: a 5x5 landing and a long corridor. The label sits in the landing,
+        // off its walls and toward the room's middle, not out in the corridor or on the next room.
+        val (cells, w, h) = grid(
+            "11111.....",
+            "11111.....",
+            "11111.....",
+            "11111.....",
+            "1111111111",
+            "2222222222",
+        )
+        val labels = roomLabelCells(cells, w, h)
+        assertEquals(3 to 3, labels.getValue(1))
+        val (x2, y2) = labels.getValue(2)
+        assertEquals(2, cells[y2 * w + x2])
+    }
+
+    @Test
+    fun furniture_gaps_do_not_pull_a_name_off_the_middle() {
+        // The most open spot is left of the gaps at (5, 4); the middle is at about (6.8, 4.0), and
+        // (7, 4) is open enough, so the name goes there.
+        val (cells, w, h) = grid(
+            "111111111111111",
+            "111111111111111",
+            "111111111111111",
+            "111111111111111",
+            "1111111111.1.1.",
+            "1111111111.1.1.",
+            "111111111111111",
+            "111111111111111",
+            "111111111111111",
+        )
+        assertEquals(7 to 4, roomLabelCells(cells, w, h).getValue(1))
+    }
+
     // ---- Hand-built blocks for cases the S8 captures don't contain ----
 
     @Test
