@@ -1268,11 +1268,6 @@ class VacuumRepository(
         const val READBACK_ATTEMPTS = 4
         const val READBACK_DELAY_MS = 2_000L
         const val SPLIT_RETRY_DELAY_MS = 12_000L
-        /**
-         * Tag for a segment that gets its first table entry. In the capture the official app gave
-         * the previously unlisted segment 24 tag 12 when the user named it.
-         */
-        const val NEW_SEGMENT_TAG = 12
         const val STATUS_READBACK_ATTEMPTS = 6
         const val STATUS_READBACK_DELAY_MS = 1_000L
 
