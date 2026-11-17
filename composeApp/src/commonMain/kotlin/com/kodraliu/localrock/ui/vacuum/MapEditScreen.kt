@@ -765,6 +765,12 @@ private fun EditorCanvas(
             modifier = Modifier
                 .fillMaxSize()
                 .onSizeChanged { viewSize = it.toSize() }
+                .mouseWheelZoom(
+                    key = map,
+                    content = { map.fittedSize(it) },
+                    read = { scale to offset },
+                    write = { s, o -> scale = s; offset = o },
+                )
                 .pointerInput(map, mode) {
                     detectTapGestures { tap ->
                         val fitted = map.fittedSize(size.toSize())

@@ -155,6 +155,12 @@ fun ZoneCleanScreen(
                             .fillMaxSize()
                             .clipToBounds()
                             .onSizeChanged { viewport = it.toSize() }
+                            .mouseWheelZoom(
+                                key = pm,
+                                content = { pm.fittedSize(it) },
+                                read = { mapScale to mapOffset },
+                                write = { s, o -> mapScale = s; mapOffset = o },
+                            )
                             .pointerInput(Unit) {
                                 // A tap selects the zone under it for editing, or clears the selection;
                                 // a double tap returns to the framed floor plan.
