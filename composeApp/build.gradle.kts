@@ -1,4 +1,5 @@
 import java.util.Base64
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -26,7 +27,22 @@ kotlin {
         }
     }
 
+    // Windows / macOS / Linux desktop app (Compose Desktop on the JVM).
+    jvm("desktop") {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
+
     sourceSets {
+        val desktopMain by getting {
+            dependencies {
+                implementation(compose.desktop.currentOs)
+                implementation(libs.kotlinx.coroutines.swing)
+                implementation(libs.ktor.client.okhttp)
+                implementation(libs.paho.mqttv3)
+            }
+        }
         commonMain.dependencies {
             // Compose UI
             implementation(libs.compose.runtime)
@@ -75,6 +91,25 @@ kotlin {
         }
         androidUnitTest.dependencies {
             implementation(libs.robolectric)
+        }
+    }
+}
+
+compose.desktop {
+    application {
+        mainClass = "com.kodraliu.localrock.MainKt"
+
+        nativeDistributions {
+            targetFormats(TargetFormat.Msi, TargetFormat.Dmg, TargetFormat.Deb)
+            packageName = "LocalRock"
+            packageVersion = "1.4.0"
+            description = "Local-network client for Roborock vacuums"
+            // java.prefs holds the app settings; jdk.crypto.ec is needed for TLS to EC certificates.
+            modules("java.prefs", "jdk.crypto.ec", "java.naming")
+            windows {
+                menuGroup = "LocalRock"
+                perUserInstall = true
+            }
         }
     }
 }
