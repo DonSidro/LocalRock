@@ -226,7 +226,9 @@ fun VacuumDetailScreen(
     val busy by viewModel.busy.collectAsState()
     val supportsSmartPlan by viewModel.supportsSmartPlan.collectAsState()
     val supportsWaterSlide by viewModel.supportsWaterSlide.collectAsState()
-    val parsedMap by viewModel.repository.parsedMap.collectAsState()
+    val liveMap by viewModel.repository.parsedMap.collectAsState()
+    // A robot carried to its dock keeps its old map position until it re-localizes, so draw it at the charger.
+    val parsedMap = remember(liveMap, status.state) { liveMap?.withRobotOnDock(isDocked(status.state)) }
     val floorMaps by viewModel.repository.floorMaps.collectAsState()
     val currentFloorFlag by viewModel.repository.currentFloorFlag.collectAsState()
     val maxFloorMaps by viewModel.repository.maxFloorMaps.collectAsState()
@@ -234,6 +236,7 @@ fun VacuumDetailScreen(
     val mopMode by viewModel.repository.mopMode.collectAsState()
     val roomCleanModes by viewModel.repository.roomCleanModes.collectAsState()
     val dockSettings by viewModel.repository.dockSettings.collectAsState()
+    val dockCapabilities by viewModel.dockCapabilities.collectAsState()
     var selectedRoomIds by remember { mutableStateOf(emptyList<Int>()) }
 
     var sessionRoomIds by remember { mutableStateOf(emptyList<Int>()) }
@@ -388,7 +391,7 @@ fun VacuumDetailScreen(
                 status = status,
                 busy = busy,
                 dockSettings = dockSettings,
-                dockCapabilities = viewModel.dockCapabilities,
+                dockCapabilities = dockCapabilities,
                 onEmptyDustbin = { panel = null; viewModel.run { it.collectDust() } },
                 onWashMop = { panel = null; viewModel.run { it.washMop() } },
                 // Dry keeps the sheet open so the drying status row appears in place.

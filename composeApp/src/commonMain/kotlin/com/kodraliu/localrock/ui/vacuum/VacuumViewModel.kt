@@ -6,14 +6,16 @@ import com.kodraliu.localrock.shared.AppContainer
 import com.kodraliu.localrock.shared.messages.MessageSeverity
 import com.kodraliu.localrock.shared.model.Scene
 import com.kodraliu.localrock.shared.model.SceneRunResult
+import com.kodraliu.localrock.shared.vacuum.AdvertisedFeature
+import com.kodraliu.localrock.shared.vacuum.BetaFeatureDef
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
-import com.kodraliu.localrock.shared.vacuum.FeatureSection
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.RoomType
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
+import com.kodraliu.localrock.shared.vacuum.showsBetaPage
 import com.kodraliu.localrock.shared.vacuum.supportedBetaFeatures
 import com.kodraliu.localrock.shared.vacuum.unlistedAdvertisedFeatures
 import kotlinx.coroutines.TimeoutCancellationException
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -41,11 +44,27 @@ class VacuumViewModel(
     val modelName: String? = container.deviceRepository.productsByDuid.value[duid]?.model
     val firmwareVersion: String? = device.fv
     private val serverFeatureSet = device.newFeatureSet
-    val dockCapabilities = DockCapabilities(modelName, device.featureSet, device.newFeatureSet)
-    val betaFeatureDefs = supportedBetaFeatures(device.newFeatureSet)
-    val unlistedFeatures = unlistedAdvertisedFeatures(device.newFeatureSet)
-    val showsBetaFeatures = betaFeatureDefs.any { it.section == FeatureSection.BETA && it.bit != null } || unlistedFeatures.isNotEmpty()
+    private val serverFeatureInfo = device.featureSet
     val repository: VacuumRepository = container.vacuumRepositoryFor(device)
+
+    // The robot's own flags win; the server's record is the fallback until the robot has answered
+    // app_get_init_status. A robot paired through the local server has no record there at all, so
+    // without its answer every option gated on a flag stays hidden.
+    private val newFeatureSet: StateFlow<String?> = repository.robotFeatureSet
+        .map { it ?: serverFeatureSet }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, serverFeatureSet)
+    val dockCapabilities: StateFlow<DockCapabilities> =
+        combine(newFeatureSet, repository.robotNewFeatureInfo) { flags, info ->
+            DockCapabilities(modelName, info?.toString() ?: serverFeatureInfo, flags)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, DockCapabilities(modelName, serverFeatureInfo, serverFeatureSet))
+    val betaFeatureDefs: StateFlow<List<BetaFeatureDef>> = newFeatureSet
+        .map { supportedBetaFeatures(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, supportedBetaFeatures(serverFeatureSet))
+    val unlistedFeatures: StateFlow<List<AdvertisedFeature>> = newFeatureSet
+        .map { unlistedAdvertisedFeatures(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, unlistedAdvertisedFeatures(serverFeatureSet))
+    val showsBetaFeatures: StateFlow<Boolean> = combine(betaFeatureDefs, unlistedFeatures, ::showsBetaPage)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, showsBetaPage(betaFeatureDefs.value, unlistedFeatures.value))
 
     // The robot's own answer wins; the server's record is the fallback until it has replied.
     val supportsSmartPlan: StateFlow<Boolean> = repository.robotFeatureSet
@@ -111,11 +130,12 @@ class VacuumViewModel(
             }
             // One-shot reads: the link may still be coming up, so wait for it rather than let
             // them fail and leave the consumables and room names empty.
+            // The feature flags go first: the settings pages wait on them to know what to offer.
             launch {
                 container.awaitMqttConnected()
+                runCatching { repository.fetchRobotFeatureSet() }
                 runCatching { repository.fetchConsumableStatus() }
                 runCatching { repository.rooms() }
-                runCatching { repository.fetchRobotFeatureSet() }
             }
         }
 

@@ -112,9 +112,16 @@ class VacuumRepository(
     /** The feature flags the robot reports itself; null until it has answered. */
     val robotFeatureSet: StateFlow<String?> = _robotFeatureSet
 
+    private val _robotNewFeatureInfo = MutableStateFlow<Long?>(null)
+
+    /** The robot's `new_feature_info` number from the same answer; null until it has answered. */
+    val robotNewFeatureInfo: StateFlow<Long?> = _robotNewFeatureInfo
+
     suspend fun fetchRobotFeatureSet() {
-        if (_robotFeatureSet.value != null) return
-        _robotFeatureSet.value = featureSetFromInitStatus(session.getInitStatus().requireOk("app_get_init_status").result)
+        if (_robotFeatureSet.value != null && _robotNewFeatureInfo.value != null) return
+        val result = session.getInitStatus().requireOk("app_get_init_status").result
+        _robotFeatureSet.value = featureSetFromInitStatus(result)
+        _robotNewFeatureInfo.value = newFeatureInfoFromInitStatus(result)
     }
 
     private val _dockSettings = MutableStateFlow(DockSettings())
@@ -945,27 +952,47 @@ class VacuumRepository(
 
     /** Null when the robot did not reply at all, so a read that timed out is not mistaken for an answer. */
     private suspend fun readBetaFeature(def: BetaFeatureDef): BetaFeatureState? {
-        val resp = runCatching { session.sendCommand(def.getMethod) }.getOrNull() ?: return null
-        val parsed = parseBetaReply(resp.result)
+        val resp = runCatching {
+            def.settingName?.let { session.getRobotSetting(it) } ?: session.sendCommand(def.getMethod)
+        }.getOrNull() ?: return null
+        val parsed = parseFeatureReply(def, resp.result)
         return BetaFeatureState(
             def = def,
-            value = parsed?.second,
-            key = parsed?.first,
-            raw = resp.result?.toString() ?: resp.error?.toString(),
+            value = parsed?.value,
+            key = parsed?.key,
+            // A field of a larger reply (get_status) keeps only that field, not the whole status.
+            raw = if (def.readKey != null && parsed != null) parsed.value.toString() else resp.result?.toString() ?: resp.error?.toString(),
             answered = resp.error == null,
+            reply = parsed?.reply,
         )
     }
+
+    /** The definitions the last read went through to the end; null until one has. */
+    private var betaFeatureDefsRead: List<BetaFeatureDef>? = null
+
+    /**
+     * Whether [defs] still has to be read: nothing answered yet, or the list changed since the last
+     * full read, as it does when the robot's own feature flags arrive after the server's.
+     */
+    fun betaFeaturesNeedReading(defs: List<BetaFeatureDef>): Boolean =
+        _betaFeatures.value.isEmpty() || defs != betaFeatureDefsRead
 
     /** Stops at the first option the robot does not reply to, so an offline robot costs one timeout, not one per option. */
     suspend fun fetchBetaFeatures(defs: List<BetaFeatureDef>) {
         _betaFeaturesLoading.value = true
         try {
             val states = mutableListOf<BetaFeatureState>()
+            var complete = true
             for (def in defs) {
-                val state = readBetaFeature(def) ?: break
+                val state = readBetaFeature(def)
+                if (state == null) {
+                    complete = false
+                    break
+                }
                 if (state.answered && state.toggleable) states += state
             }
-            _betaFeatures.value = states
+            _betaFeatures.value = states.withoutReplaced()
+            if (complete) betaFeatureDefsRead = defs
         } finally {
             _betaFeaturesLoading.value = false
         }
@@ -979,18 +1006,33 @@ class VacuumRepository(
      * last time, then reads the option back so the screen shows what the robot holds. Throws the robot's
      * refusal, if any, after that.
      */
-    suspend fun setBetaFeature(id: String, on: Boolean) {
+    suspend fun setBetaFeature(id: String, on: Boolean) = writeBetaFeature(id, if (on) 1 else 0)
+
+    /** Writes one value of a multi-choice option, then reads it back so the screen shows what the robot holds. */
+    suspend fun setBetaChoice(id: String, value: Int) = writeBetaFeature(id, value)
+
+    private suspend fun writeBetaFeature(id: String, value: Int) {
         val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
-        val candidates = betaSetParamCandidates(current.key, on)
-        var last: V1Response? = null
-        for (i in betaSetTryOrder(candidates.size, betaSetAcceptedShape[id])) {
-            last = session.sendCommandRaw(current.def.setMethod, candidates[i])
-            if (last.error == null) betaSetAcceptedShape[id] = i
-            if (last.error?.get("code")?.jsonPrimitive?.intOrNull !in BetaShapeRefusalCodes) break
+        val method: String
+        val sent: V1Response?
+        val name = current.def.settingName
+        if (name != null) {
+            method = "app_set_robot_setting"
+            sent = session.setRobotSetting(name, value)
+        } else {
+            method = current.def.setMethod
+            val candidates = featureSetParamCandidates(current, value)
+            var last: V1Response? = null
+            for (i in betaSetTryOrder(candidates.size, betaSetAcceptedShape[id])) {
+                last = session.sendCommandRaw(method, candidates[i])
+                if (last.error == null) betaSetAcceptedShape[id] = i
+                if (last.error?.get("code")?.jsonPrimitive?.intOrNull !in BetaShapeRefusalCodes) break
+            }
+            sent = last
         }
         val updated = readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }
         if (updated != null) _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
-        last?.requireOk(current.def.setMethod)
+        sent?.requireOk(method)
     }
 
     suspend fun fetchDockSettings() {
