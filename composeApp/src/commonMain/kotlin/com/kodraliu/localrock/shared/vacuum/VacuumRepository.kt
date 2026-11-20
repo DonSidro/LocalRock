@@ -955,13 +955,15 @@ class VacuumRepository(
         val resp = runCatching {
             def.settingName?.let { session.getRobotSetting(it) } ?: session.sendCommand(def.getMethod)
         }.getOrNull() ?: return null
-        val parsed = parseBetaReply(resp.result)
+        val parsed = parseFeatureReply(def, resp.result)
         return BetaFeatureState(
             def = def,
-            value = parsed?.second,
-            key = parsed?.first,
-            raw = resp.result?.toString() ?: resp.error?.toString(),
+            value = parsed?.value,
+            key = parsed?.key,
+            // A field of a larger reply (get_status) keeps only that field, not the whole status.
+            raw = if (def.readKey != null && parsed != null) parsed.value.toString() else resp.result?.toString() ?: resp.error?.toString(),
             answered = resp.error == null,
+            reply = parsed?.reply,
         )
     }
 
@@ -1004,37 +1006,33 @@ class VacuumRepository(
      * last time, then reads the option back so the screen shows what the robot holds. Throws the robot's
      * refusal, if any, after that.
      */
-    suspend fun setBetaFeature(id: String, on: Boolean) {
+    suspend fun setBetaFeature(id: String, on: Boolean) = writeBetaFeature(id, if (on) 1 else 0)
+
+    /** Writes one value of a multi-choice option, then reads it back so the screen shows what the robot holds. */
+    suspend fun setBetaChoice(id: String, value: Int) = writeBetaFeature(id, value)
+
+    private suspend fun writeBetaFeature(id: String, value: Int) {
         val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
-        current.def.settingName?.let { name ->
-            val sent = session.setRobotSetting(name, on)
-            readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }?.let { updated ->
-                _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
+        val method: String
+        val sent: V1Response?
+        val name = current.def.settingName
+        if (name != null) {
+            method = "app_set_robot_setting"
+            sent = session.setRobotSetting(name, value)
+        } else {
+            method = current.def.setMethod
+            val candidates = featureSetParamCandidates(current, value)
+            var last: V1Response? = null
+            for (i in betaSetTryOrder(candidates.size, betaSetAcceptedShape[id])) {
+                last = session.sendCommandRaw(method, candidates[i])
+                if (last.error == null) betaSetAcceptedShape[id] = i
+                if (last.error?.get("code")?.jsonPrimitive?.intOrNull !in BetaShapeRefusalCodes) break
             }
-            sent.requireOk("app_set_robot_setting")
-            return
-        }
-        val candidates = betaSetParamCandidates(current.key, on)
-        var last: V1Response? = null
-        for (i in betaSetTryOrder(candidates.size, betaSetAcceptedShape[id])) {
-            last = session.sendCommandRaw(current.def.setMethod, candidates[i])
-            if (last.error == null) betaSetAcceptedShape[id] = i
-            if (last.error?.get("code")?.jsonPrimitive?.intOrNull !in BetaShapeRefusalCodes) break
+            sent = last
         }
         val updated = readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }
         if (updated != null) _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
-        last?.requireOk(current.def.setMethod)
-    }
-
-    /** Writes one value of a multi-choice option, then reads it back so the screen shows what the robot holds. */
-    suspend fun setBetaChoice(id: String, value: Int) {
-        val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
-        val name = current.def.settingName ?: return
-        val sent = session.setRobotSetting(name, value)
-        readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }?.let { updated ->
-            _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
-        }
-        sent.requireOk("app_set_robot_setting")
+        sent?.requireOk(method)
     }
 
     suspend fun fetchDockSettings() {
