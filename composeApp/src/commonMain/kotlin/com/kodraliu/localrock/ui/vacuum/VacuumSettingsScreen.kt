@@ -168,10 +168,17 @@ fun VacuumSettingsScreen(
     val firmwareUpdate by viewModel.firmwareUpdate.collectAsState()
     val betaFeatures by repository.betaFeatures.collectAsState()
     val betaFeaturesLoading by repository.betaFeaturesLoading.collectAsState()
+    val betaFeatureDefs by viewModel.betaFeatureDefs.collectAsState()
+    val unlistedFeatures by viewModel.unlistedFeatures.collectAsState()
+    val showsBetaFeatures by viewModel.showsBetaFeatures.collectAsState()
+    val dockCapabilities by viewModel.dockCapabilities.collectAsState()
 
-    // Every feature the robot reports is read once, so a page with none is not offered.
-    LaunchedEffect(Unit) {
-        if (betaFeatures.isEmpty()) runCatching { repository.fetchBetaFeatures(viewModel.betaFeatureDefs) }
+    // Every feature the robot reports is read once, so a page with none is not offered. The list
+    // grows when the robot's own flags arrive after the server's, and is read again then.
+    LaunchedEffect(betaFeatureDefs) {
+        if (repository.betaFeaturesNeedReading(betaFeatureDefs)) {
+            runCatching { repository.fetchBetaFeatures(betaFeatureDefs) }
+        }
     }
 
     when (route) {
@@ -207,7 +214,7 @@ fun VacuumSettingsScreen(
                 scope.launch { runCatching { repository.fetchDndSettings() } }
                 route = SettingsRoute.DndMode
             },
-            onBetaFeatures = if (!viewModel.showsBetaFeatures) null else ({
+            onBetaFeatures = if (!showsBetaFeatures) null else ({
                 route = SettingsRoute.BetaFeatures
             }),
         )
@@ -233,7 +240,7 @@ fun VacuumSettingsScreen(
         SettingsRoute.BetaFeatures -> BetaFeaturesScreen(
             features = betaFeatures.inSection(FeatureSection.BETA),
             loading = betaFeaturesLoading,
-            unlisted = viewModel.unlistedFeatures,
+            unlisted = unlistedFeatures,
             onToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
             onBack = { route = SettingsRoute.Root },
         )
@@ -245,7 +252,7 @@ fun VacuumSettingsScreen(
         )
         SettingsRoute.DockSettings -> DockSettingsScreen(
             dockSettings = dockSettings,
-            dockCapabilities = viewModel.dockCapabilities,
+            dockCapabilities = dockCapabilities,
             dockType = status.dockType,
             dockStatus = status.dockStatus,
             busy = busy,
