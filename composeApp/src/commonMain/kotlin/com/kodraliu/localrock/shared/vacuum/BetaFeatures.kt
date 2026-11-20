@@ -158,6 +158,10 @@ val BetaFeatureDefs = listOf(
 fun supportedBetaFeatures(newFeatureSet: String?): List<BetaFeatureDef> =
     BetaFeatureDefs.filter { it.bit == null || newFeatureBit(newFeatureSet, it.bit) }
 
+/** Whether the Beta page has anything to show: a flag-gated switch of its own, or flags with no switch here. */
+fun showsBetaPage(defs: List<BetaFeatureDef>, unlisted: List<AdvertisedFeature>): Boolean =
+    defs.any { it.section == FeatureSection.BETA && it.bit != null } || unlisted.isNotEmpty()
+
 /** The reads of [features] that belong on [section], in the order the definitions list them. */
 fun List<BetaFeatureState>.inSection(section: FeatureSection): List<BetaFeatureState> =
     filter { it.def.section == section }
