@@ -235,6 +235,7 @@ fun VacuumDetailScreen(
     val mopMode by viewModel.repository.mopMode.collectAsState()
     val roomCleanModes by viewModel.repository.roomCleanModes.collectAsState()
     val dockSettings by viewModel.repository.dockSettings.collectAsState()
+    val dockCapabilities by viewModel.dockCapabilities.collectAsState()
     var selectedRoomIds by remember { mutableStateOf(emptyList<Int>()) }
 
     var sessionRoomIds by remember { mutableStateOf(emptyList<Int>()) }
@@ -389,7 +390,7 @@ fun VacuumDetailScreen(
                 status = status,
                 busy = busy,
                 dockSettings = dockSettings,
-                dockCapabilities = viewModel.dockCapabilities,
+                dockCapabilities = dockCapabilities,
                 onEmptyDustbin = { panel = null; viewModel.run { it.collectDust() } },
                 onWashMop = { panel = null; viewModel.run { it.washMop() } },
                 // Dry keeps the sheet open so the drying status row appears in place.

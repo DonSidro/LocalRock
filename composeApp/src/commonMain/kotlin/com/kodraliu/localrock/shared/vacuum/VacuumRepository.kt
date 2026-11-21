@@ -985,16 +985,32 @@ class VacuumRepository(
         )
     }
 
+    /** The definitions the last read went through to the end; null until one has. */
+    private var betaFeatureDefsRead: List<BetaFeatureDef>? = null
+
+    /**
+     * Whether [defs] still has to be read: nothing answered yet, or the list changed since the last
+     * full read, as it does when the robot's own feature flags arrive after the server's.
+     */
+    fun betaFeaturesNeedReading(defs: List<BetaFeatureDef>): Boolean =
+        _betaFeatures.value.isEmpty() || defs != betaFeatureDefsRead
+
     /** Stops at the first option the robot does not reply to, so an offline robot costs one timeout, not one per option. */
     suspend fun fetchBetaFeatures(defs: List<BetaFeatureDef>) {
         _betaFeaturesLoading.value = true
         try {
             val states = mutableListOf<BetaFeatureState>()
+            var complete = true
             for (def in defs) {
-                val state = readBetaFeature(def) ?: break
+                val state = readBetaFeature(def)
+                if (state == null) {
+                    complete = false
+                    break
+                }
                 if (state.answered && state.toggleable) states += state
             }
             _betaFeatures.value = states
+            if (complete) betaFeatureDefsRead = defs
         } finally {
             _betaFeaturesLoading.value = false
         }
