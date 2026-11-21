@@ -80,7 +80,7 @@ class DeviceRepository(
         if (isDemo()) {
             val home = DemoData.home
             _home.value = home
-            _devicesFlow.value = home.devices
+            _devicesFlow.value = home.devices.sortedForList()
             val productsByDeviceId = home.products.associateBy { it.id }
             _products.value = home.devices.associate { it.duid to productsByDeviceId[it.productId]!! }
             return
@@ -94,7 +94,7 @@ class DeviceRepository(
         val homeId = detail.resolvedHomeId ?: error("Server did not return a home id")
         val home = deviceApi.getHome(homeId)
         _home.value = home
-        _devicesFlow.value = home.devices
+        _devicesFlow.value = home.devices.sortedForList()
         val productsByDeviceId = home.products.associateBy { it.id }
         _products.value = home.devices.associate { it.duid to productsByDeviceId[it.productId]!! }
     }
