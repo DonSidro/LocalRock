@@ -40,6 +40,27 @@ class MqttClientStartTest {
         }
     }
 
+    /** Never answers the first [silent] opens, like a broker that accepts the socket and stalls. */
+    private class StallingTransport(private val silent: Int) : MqttNativeTransport {
+        var opens = 0
+        override fun open(
+            host: String,
+            port: Int,
+            tls: Boolean,
+            username: String,
+            password: String,
+            clientId: String,
+            keepAliveSeconds: Int,
+            onConnected: () -> Unit,
+            onFailed: (reason: String) -> Unit,
+            onMessage: (topic: String, payload: ByteArray) -> Unit,
+            onDisconnected: () -> Unit,
+        ): MqttNativeConnection {
+            if (++opens > silent) onConnected()
+            return FakeConnection()
+        }
+    }
+
     private val creds = MqttCreds(host = "localhost", port = 8883, tls = true, username = "u", password = "p")
 
     @Test
@@ -83,6 +104,20 @@ class MqttClientStartTest {
             client.start(creds, clientId = "second")
             client.connected.first { it }
             assertTrue(client.connected.value)
+            assertEquals(2, transport.opens)
+        } finally {
+            client.disconnect()
+        }
+    }
+
+    @Test
+    fun a_connect_that_times_out_is_retried() = runTest {
+        val transport = StallingTransport(silent = 1)
+        val client = MqttClient(transport)
+        try {
+            // A timed-out attempt used to end the supervisor, leaving the app offline until restarted.
+            client.start(creds, clientId = "test", connectTimeoutMs = 200)
+            client.connected.first { it }
             assertEquals(2, transport.opens)
         } finally {
             client.disconnect()
