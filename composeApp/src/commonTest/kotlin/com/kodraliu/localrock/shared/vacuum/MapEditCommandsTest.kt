@@ -204,6 +204,19 @@ class MapEditCommandsTest {
         assertNull(parseSegmentTable(Json.parseToJsonElement("""["ok"]""")))
         // One row this app can't write back makes the whole table unsafe to send.
         assertNull(parseSegmentTable(Json.parseToJsonElement("""[[16,"33499526",14],[17,"12916427"]]""")))
+        assertNull(parseSegmentTable(Json.parseToJsonElement("""[[17,"12916427"],[16,"33499526",14]]""")))
+    }
+
+    @Test
+    fun a_table_without_tags_is_read_and_written_back_with_the_default_tag() {
+        // An S7 (a15, 02.16.12) after one room was named, 2026-11-15: no tag column.
+        val table = parseSegmentTable(Json.parseToJsonElement("""[[16,"7600617"]]"""))
+        assertEquals(listOf(SegmentEntry(16, "7600617", null)), table)
+        assertEquals(
+            """[{"iotRoomId":"7600617","robotRoomId":16,"robotTagId":12},""" +
+                """{"iotRoomId":"8626902","robotRoomId":20,"robotTagId":12}]""",
+            nameSegmentData(table!! + SegmentEntry(20, "8626902", NEW_SEGMENT_TAG)).toString(),
+        )
     }
 
     @Test

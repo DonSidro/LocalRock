@@ -540,6 +540,8 @@ fun MapEditScreen(
                 segment = room,
                 working = working,
                 enabled = blockedReason == null,
+                // The sheet covers the notice at the bottom of the map, so it shows errors itself.
+                error = notice?.takeIf { it.isError }?.text,
                 onRename = { name ->
                     runEdit("Room renamed.") {
                         viewModel.renameRoom(room, name)
@@ -1144,6 +1146,7 @@ private fun RoomSheet(
     segment: Int,
     working: Boolean,
     enabled: Boolean,
+    error: String?,
     onRoomType: (RoomType) -> Unit,
     onRename: (String) -> Unit,
     onFloor: (FloorChoice) -> Unit,
@@ -1169,6 +1172,9 @@ private fun RoomSheet(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(currentName, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             if (working) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        }
+        if (error != null) {
+            Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
         }
 
         Text("Room type", style = MaterialTheme.typography.titleSmall)
