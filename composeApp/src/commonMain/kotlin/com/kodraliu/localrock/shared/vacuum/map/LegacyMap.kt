@@ -27,6 +27,8 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     var segmentMaterialDirections: Map<Int, Int> = emptyMap()
     val unmodeledRestrictionBlocks = mutableSetOf<Int>()
     val obstacles = mutableListOf<MapObstacle>()
+    var patrolPoints: List<PatrolPoint> = emptyList()
+    var patrolTaskId: Long? = null
 
     var off = headerLen
     while (off + 8 <= bytes.size) {
@@ -119,6 +121,10 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
                     }
                 }
             }
+            BLOCK_PATROL -> {
+                patrolTaskId = u32(bytes, off + 8).toLong() and 0xFFFFFFFFL
+                patrolPoints = parsePatrolPoints(bytes, off + blockHeaderLen, u32(bytes, off + 12), blockDataLen)
+            }
             in UNMODELED_RESTRICTION_BLOCKS ->
                 if (entryCount(bytes, off, blockHeaderLen, blockDataLen) > 0) unmodeledRestrictionBlocks += type
         }
@@ -183,6 +189,8 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         thresholds = thresholds,
         obstacles = obstacles,
         originalGrid = pixels,
+        patrolPoints = patrolPoints,
+        patrolTaskId = patrolTaskId,
     )
 }
 
@@ -238,6 +246,31 @@ private fun parseWalls(bytes: ByteArray, off: Int, headerLen: Int, dataLen: Int)
         )
     }
 }
+
+/**
+ * A PATROL (37) block of a Cruise record: the header carries the task id and the point count, each
+ * record is u16 x, u16 y, u8 result, u8 photo count, then 32-byte NUL-padded photo ids (8 slots) and a
+ * 16-byte tail. Checked against a real Curv 2 Flow record map (3 points of 278 bytes).
+ */
+private fun parsePatrolPoints(bytes: ByteArray, body: Int, count: Int, dataLen: Int): List<PatrolPoint> {
+    if (count <= 0 || dataLen / count < PATROL_FIXED_BYTES) return emptyList()
+    val recordLen = dataLen / count
+    return List(count) { i ->
+        val p = body + i * recordLen
+        val slots = minOf(bytes[p + 5].toInt() and 0xff, (recordLen - PATROL_FIXED_BYTES) / PATROL_ID_BYTES)
+        PatrolPoint(
+            x = u16(bytes, p), y = u16(bytes, p + 2), result = bytes[p + 4].toInt() and 0xff,
+            photoIds = List(slots) { j ->
+                val start = p + PATROL_FIXED_BYTES + j * PATROL_ID_BYTES
+                bytes.decodeToString(start, start + PATROL_ID_BYTES).trimEnd(Char(0))
+            },
+        )
+    }
+}
+
+private const val BLOCK_PATROL = 37
+private const val PATROL_FIXED_BYTES = 6
+private const val PATROL_ID_BYTES = 32
 
 private const val MAGIC_0 = 0x72.toByte()
 private const val MAGIC_1 = 0x72.toByte()

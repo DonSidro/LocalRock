@@ -74,6 +74,7 @@ data class CleanSummary(
     val totalTimeSec: Long,
     val totalAreaMm2: Long,
     val totalCount: Int,
+    val patrolCount: Int = 0,
 )
 
 data class DndSettings(

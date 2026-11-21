@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -33,6 +34,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import com.kodraliu.localrock.shared.vacuum.ObstaclePhotoData
+import com.kodraliu.localrock.shared.vacuum.PhotoBox
 import com.kodraliu.localrock.shared.vacuum.map.MapObstacle
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import kotlin.math.roundToInt
@@ -84,19 +87,17 @@ private val OBSTACLE_HALO = Color.Black.copy(alpha = 0.35f)
 private val OBSTACLE_RING = Color(0xFFA7E3DB)
 private val OBSTACLE_FILL = Color(0xFF2A7F86)
 
-/** What a tapped obstacle is, and its photo when the robot kept one. */
+/** What a tapped obstacle is, and its photo when the robot kept one, with the box the robot drew around it. */
 @Composable
-internal fun ObstacleSheetContent(obstacle: MapObstacle, loadPhoto: suspend (String) -> ByteArray) {
-    var photo by remember(obstacle) { mutableStateOf<ImageBitmap?>(null) }
+internal fun ObstacleSheetContent(obstacle: MapObstacle, loadPhoto: suspend (String) -> ObstaclePhotoData) {
+    var photo by remember(obstacle) { mutableStateOf<Pair<ImageBitmap, PhotoBox?>?>(null) }
     var failure by remember(obstacle) { mutableStateOf<String?>(null) }
     LaunchedEffect(obstacle) {
         val id = obstacle.photoId ?: return@LaunchedEffect
-        runCatching { loadPhoto(id).decodeToImageBitmap() }
+        runCatching { loadPhoto(id).let { it.image.decodeToImageBitmap() to it.box } }
             .onSuccess { photo = it }
             .onFailure { failure = it.message ?: "The robot didn't send it" }
     }
-    // The photo is capped so it fits a half-open sheet on a phone, and the sheet scrolls for the rest.
-    val photoFrame = Modifier.heightIn(max = 320.dp).aspectRatio(1f, matchHeightConstraintsFirst = true)
     Column(
         Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
     ) {
@@ -114,26 +115,58 @@ internal fun ObstacleSheetContent(obstacle: MapObstacle, loadPhoto: suspend (Str
         }
         Spacer(Modifier.height(16.dp))
         val current = photo
+        // The full frame is 4:3; capped so it fits a half-open sheet, and the sheet scrolls for the rest.
+        val frame = Modifier.fillMaxWidth().heightIn(max = 360.dp)
         when {
             obstacle.photoId == null -> Text(
                 "The robot kept no photo of this obstacle.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            current != null -> Image(
-                bitmap = current,
-                contentDescription = "Photo of the obstacle",
-                modifier = photoFrame.align(Alignment.CenterHorizontally).clip(MaterialTheme.shapes.medium),
-                contentScale = ContentScale.Fit,
-            )
+            current != null -> {
+                val (bitmap, box) = current
+                val boxColor = MaterialTheme.colorScheme.primary
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = "Photo of the obstacle",
+                    modifier = frame.aspectRatio(bitmap.width.toFloat() / bitmap.height, matchHeightConstraintsFirst = true)
+                        .align(Alignment.CenterHorizontally)
+                        .clip(MaterialTheme.shapes.large)
+                        .drawWithContent {
+                            drawContent()
+                            if (box != null) drawBoxCorners(box, bitmap.width, bitmap.height, boxColor)
+                        },
+                    contentScale = ContentScale.Fit,
+                )
+            }
             failure != null -> Text(
                 "Couldn't load the photo: $failure",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,
             )
-            else -> Box(photoFrame.align(Alignment.CenterHorizontally), contentAlignment = Alignment.Center) {
+            else -> Box(frame.aspectRatio(4f / 3f).align(Alignment.CenterHorizontally), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         }
+    }
+}
+
+/** The official corner brackets around the boxed obstacle, scaled from image pixels to the drawn photo. */
+private fun DrawScope.drawBoxCorners(box: PhotoBox, imageWidth: Int, imageHeight: Int, color: Color) {
+    val sx = size.width / imageWidth
+    val sy = size.height / imageHeight
+    val l = box.left * sx
+    val t = box.top * sy
+    val r = box.right * sx
+    val b = box.bottom * sy
+    val arm = minOf(r - l, b - t) * 0.22f
+    val stroke = 2.dp.toPx()
+    drawRect(color.copy(alpha = 0.12f), topLeft = Offset(l, t), size = Size(r - l, b - t))
+    drawRect(color, topLeft = Offset(l, t), size = Size(r - l, b - t), style = Stroke(stroke / 2))
+    for ((x, y, dx, dy) in listOf(
+        listOf(l, t, 1f, 1f), listOf(r, t, -1f, 1f), listOf(l, b, 1f, -1f), listOf(r, b, -1f, -1f),
+    )) {
+        drawLine(color, Offset(x, y), Offset(x + dx * arm, y), stroke * 1.5f)
+        drawLine(color, Offset(x, y), Offset(x, y + dy * arm), stroke * 1.5f)
     }
 }
