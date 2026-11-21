@@ -117,6 +117,7 @@ import com.kodraliu.localrock.shared.vacuum.RobotSettings
 import com.kodraliu.localrock.shared.vacuum.VolumeLevels
 import com.kodraliu.localrock.shared.vacuum.volumeLabel
 import com.kodraliu.localrock.shared.vacuum.volumeLevelIndex
+import com.kodraliu.localrock.shared.vacuum.VacuumStateCodes
 import com.kodraliu.localrock.shared.vacuum.washFrequencyLabel
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.ui.AppColors
@@ -249,6 +250,8 @@ fun VacuumSettingsScreen(
             dockType = status.dockType,
             dockStatus = status.dockStatus,
             busy = busy,
+            robotDockedAndIdle = status.inCleaning == 0 &&
+                status.state in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE),
             onWashModeChange = { mode -> viewModel.run { it.setWashMode(mode) } },
             onWashFrequencyChange = { mode, minutes -> viewModel.run { it.setWashFrequency(mode, minutes) } },
             onAutoEmptyModeChange = { mode -> viewModel.run { it.setAutoEmptyMode(mode) } },
@@ -1006,6 +1009,7 @@ private fun DockSettingsScreen(
     dockType: Int?,
     dockStatus: Int?,
     busy: Boolean,
+    robotDockedAndIdle: Boolean,
     onWashModeChange: (Int) -> Unit,
     onWashFrequencyChange: (Int, Int?) -> Unit,
     onAutoEmptyModeChange: (Int) -> Unit,
@@ -1034,6 +1038,7 @@ private fun DockSettingsScreen(
     val washFrequencyEnabled = !busy && dockKnown && smartWash != null && washFrequencyOptions.isNotEmpty()
     val washModeEnabled = !busy && dockKnown && dockSettings.washMode != null && washModes.isNotEmpty()
     val autoEmptyEnabled = !busy && dockSettings.autoEmptyMode != null && autoEmptyModes.isNotEmpty()
+    val emptyWaterTankEnabled = !busy && robotDockedAndIdle
 
     Scaffold(
         topBar = {
@@ -1139,7 +1144,7 @@ private fun DockSettingsScreen(
                         iconTint = AppColors.Water,
                         title = "Internal water tank",
                         subtitle = "Empty through the dock",
-                        enabled = !busy,
+                        enabled = emptyWaterTankEnabled,
                         onClick = { confirmEmptyTank = true },
                     )
                 }
@@ -1155,9 +1160,12 @@ private fun DockSettingsScreen(
         AlertDialog(
             onDismissRequest = { confirmEmptyTank = false },
             title = { Text("Empty the water tank?") },
-            text = { Text("The dock pumps the water out of the robot's built-in tank. Make sure the robot is on the dock.") },
+            text = { Text("Remove both mop holders with their pads, then place the robot back in the dock before starting.") },
             confirmButton = {
-                TextButton(onClick = { confirmEmptyTank = false; onEmptyWaterTank() }) { Text("Empty") }
+                TextButton(
+                    enabled = emptyWaterTankEnabled,
+                    onClick = { confirmEmptyTank = false; onEmptyWaterTank() },
+                ) { Text("Mops removed, start") }
             },
             dismissButton = { TextButton(onClick = { confirmEmptyTank = false }) { Text("Cancel") } },
         )
