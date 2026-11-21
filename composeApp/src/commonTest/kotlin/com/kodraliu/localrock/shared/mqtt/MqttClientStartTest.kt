@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.TimeSource
 
 /** The supervisor's own clock is real time, so these wait on [MqttClient.connected], not on delays. */
 class MqttClientStartTest {
@@ -35,6 +36,29 @@ class MqttClientStartTest {
             onDisconnected: () -> Unit,
         ): MqttNativeConnection {
             if (++opens <= failures) throw RuntimeException("Unable to resolve host")
+            onConnected()
+            return FakeConnection()
+        }
+    }
+
+    /** Like [FlakyTransport], and also notes when each open happened. */
+    private class TimedFlakyTransport(private val failures: Int) : MqttNativeTransport {
+        val opens = mutableListOf<TimeSource.Monotonic.ValueTimeMark>()
+        override fun open(
+            host: String,
+            port: Int,
+            tls: Boolean,
+            username: String,
+            password: String,
+            clientId: String,
+            keepAliveSeconds: Int,
+            onConnected: () -> Unit,
+            onFailed: (reason: String) -> Unit,
+            onMessage: (topic: String, payload: ByteArray) -> Unit,
+            onDisconnected: () -> Unit,
+        ): MqttNativeConnection {
+            opens += TimeSource.Monotonic.markNow()
+            if (opens.size <= failures) throw RuntimeException("Connection refused")
             onConnected()
             return FakeConnection()
         }
@@ -119,6 +143,27 @@ class MqttClientStartTest {
             client.start(creds, clientId = "test", connectTimeoutMs = 200)
             client.connected.first { it }
             assertEquals(2, transport.opens)
+        } finally {
+            client.disconnect()
+        }
+    }
+
+    @Test
+    fun a_fresh_login_does_not_restart_the_wait_from_the_shortest_step() = runTest {
+        // Waits of 20, 40 and 80 ms. After the third failure the client signs in again; the wait
+        // before the fourth attempt used to drop back to 20 ms, so an unreachable broker caused a
+        // new login every few seconds (#131).
+        val transport = TimedFlakyTransport(failures = 3)
+        val client = MqttClient(transport, initialBackoffMs = 20)
+        var refreshes = 0
+        client.credentialRefresher = { _, _ -> refreshes++; creds.copy(password = "fresh") }
+        try {
+            client.start(creds, clientId = "test")
+            client.connected.first { it }
+            assertEquals(4, transport.opens.size)
+            assertEquals(1, refreshes)
+            val waitAfterLogin = transport.opens[3] - transport.opens[2]
+            assertTrue(waitAfterLogin.inWholeMilliseconds >= 70, "waited only $waitAfterLogin after the re-login")
         } finally {
             client.disconnect()
         }

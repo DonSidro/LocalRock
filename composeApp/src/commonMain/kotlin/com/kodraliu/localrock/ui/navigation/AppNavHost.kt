@@ -48,15 +48,18 @@ fun AppNavHost() {
     val demoMode by container.appSettings.demoMode.collectAsState()
     val lastSeenVersion by container.appSettings.lastSeenVersion.collectAsState()
     var splashDone by remember { mutableStateOf(false) }
+    // Keyed on signing in or out, not on the session itself: a silent re-login after MQTT trouble
+    // replaces userData with a new session, and that must not send the app back to its first screen (#131).
+    val loggedIn = userData != null
 
 
-    LaunchedEffect(splashDone, introSeen, userData, serverUrl, demoMode) {
+    LaunchedEffect(splashDone, introSeen, loggedIn, serverUrl, demoMode) {
         if (!splashDone) return@LaunchedEffect
         val destination: Any = when {
             !introSeen -> Welcome
             demoMode -> DeviceList
             serverUrl.isNullOrBlank() -> ServerSetup
-            userData == null -> Login
+            !loggedIn -> Login
             else -> DeviceList
         }
         navController.navigate(destination) {
@@ -68,9 +71,9 @@ fun AppNavHost() {
     // the list that robot lives in is loaded, replacing whatever was open above the list.
     val pendingOpen by container.pendingOpenDuid.collectAsState()
     val devices by container.deviceRepository.devices.collectAsState()
-    LaunchedEffect(splashDone, userData, pendingOpen, devices) {
+    LaunchedEffect(splashDone, loggedIn, pendingOpen, devices) {
         val duid = pendingOpen ?: return@LaunchedEffect
-        if (!splashDone || userData == null) return@LaunchedEffect
+        if (!splashDone || !loggedIn) return@LaunchedEffect
         if (devices.none { it.duid == duid && it.localKey != null }) return@LaunchedEffect
         container.consumePendingOpen()
         navController.navigate(VacuumGraph(duid)) { popUpTo<DeviceList>() }
