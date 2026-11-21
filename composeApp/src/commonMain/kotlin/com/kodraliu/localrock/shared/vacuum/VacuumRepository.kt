@@ -11,6 +11,7 @@ import com.kodraliu.localrock.shared.vacuum.map.MapZone
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
 import com.kodraliu.localrock.shared.vacuum.map.VirtualWall
+import com.kodraliu.localrock.shared.vacuum.map.ZoneKind
 import com.kodraliu.localrock.shared.vacuum.map.parseB01Map
 import com.kodraliu.localrock.shared.vacuum.map.parseLegacyMap
 import kotlinx.coroutines.CancellationException
@@ -112,9 +113,16 @@ class VacuumRepository(
     /** The feature flags the robot reports itself; null until it has answered. */
     val robotFeatureSet: StateFlow<String?> = _robotFeatureSet
 
+    private val _robotNewFeatureInfo = MutableStateFlow<Long?>(null)
+
+    /** The robot's `new_feature_info` number from the same answer; null until it has answered. */
+    val robotNewFeatureInfo: StateFlow<Long?> = _robotNewFeatureInfo
+
     suspend fun fetchRobotFeatureSet() {
-        if (_robotFeatureSet.value != null) return
-        _robotFeatureSet.value = featureSetFromInitStatus(session.getInitStatus().requireOk("app_get_init_status").result)
+        if (_robotFeatureSet.value != null && _robotNewFeatureInfo.value != null) return
+        val result = session.getInitStatus().requireOk("app_get_init_status").result
+        _robotFeatureSet.value = featureSetFromInitStatus(result)
+        _robotNewFeatureInfo.value = newFeatureInfoFromInitStatus(result)
     }
 
     private val _dockSettings = MutableStateFlow(DockSettings())
@@ -501,6 +509,13 @@ class VacuumRepository(
 
     private val mapEditMutex = Mutex()
 
+    /**
+     * Map edit kinds (carpet areas, thresholds) this robot answered with unknown_method since the
+     * app started. The editor greys out their tools.
+     */
+    private val _unsupportedMapEdits = MutableStateFlow<Set<ZoneKind>>(emptySet())
+    val unsupportedMapEdits: StateFlow<Set<ZoneKind>> = _unsupportedMapEdits
+
     /** Why the map can't be edited right now, or null when it can. */
     fun editBlockedReason(map: ParsedMap? = _parsedMap.value, state: Int? = _status.value.state): String? = when {
         demo -> "Map editing is not available in demo mode"
@@ -536,6 +551,10 @@ class VacuumRepository(
      * category changed: whatever a command leaves out is deleted. save_map is refused when the map
      * holds restrictions this app can't write back ([restrictionSaveBlocker]). Succeeds only when a
      * fresh map shows every category as sent.
+     *
+     * A robot without carpet areas or thresholds answers their command with unknown_method (S7).
+     * The other categories are still saved and read back, the kind joins [unsupportedMapEdits], and
+     * [UnsupportedMapEditException] says what was not saved.
      */
     suspend fun saveMapEdits(
         noGoZones: List<MapZone>,
@@ -556,17 +575,27 @@ class VacuumRepository(
         val thresholdsChanged = !sameZones(thresholds, map.thresholds)
         if (!restrictionsChanged && !carpetsChanged && !thresholdsChanged) return@withLock
         if (restrictionsChanged) restrictionSaveBlocker(map, mapIndex)?.let { throw MapEditException(it) }
-        session.inEditSession {
-            if (restrictionsChanged) session.saveMap(noGoZones, walls, index)
-            if (carpetsChanged) session.setCarpetAreas(carpets, index, map.carpetFlagsPresent)
-            if (thresholdsChanged) session.setThresholds(thresholds, index)
+        val refused = session.inEditSession {
+            sendMapEditCategories(
+                restrictions = if (restrictionsChanged) suspend { session.saveMap(noGoZones, walls, index) } else null,
+                carpets = if (carpetsChanged) suspend { session.setCarpetAreas(carpets, index, map.carpetFlagsPresent) } else null,
+                thresholds = if (thresholdsChanged) suspend { session.setThresholds(thresholds, index) } else null,
+            )
         }
+        if (refused.isNotEmpty()) _unsupportedMapEdits.value = _unsupportedMapEdits.value + refused
         awaitMap { m ->
+            val carpetsShown = sameZones(carpets, m.carpetAreas) &&
+                m.carpetAreas.count { it.isRoundCarpet } == carpets.count { it.isRoundCarpet }
             restrictionsMatch(m, noGoZones, map.noMopZones, walls) &&
-                sameZones(carpets, m.carpetAreas) &&
-                m.carpetAreas.count { it.isRoundCarpet } == carpets.count { it.isRoundCarpet } &&
-                sameZones(thresholds, m.thresholds)
+                (ZoneKind.CARPET in refused || carpetsShown) &&
+                (ZoneKind.THRESHOLD in refused || sameZones(thresholds, m.thresholds))
         } ?: throw MapEditException(NOT_CONFIRMED)
+        if (refused.isNotEmpty()) {
+            val savedOther = restrictionsChanged ||
+                (carpetsChanged && ZoneKind.CARPET !in refused) ||
+                (thresholdsChanged && ZoneKind.THRESHOLD !in refused)
+            throw UnsupportedMapEditException(refused, savedOther)
+        }
     }
 
     /**
