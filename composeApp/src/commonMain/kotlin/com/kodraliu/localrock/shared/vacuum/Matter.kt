@@ -14,6 +14,11 @@ const val MATTER_FEATURE_BIT = 67
 const val VIDEO_PATROL_FEATURE_BIT = 48
 const val PET_SNAPSHOT_FEATURE_BIT = 50
 
+fun isMatterSupported(newFeatureSet: String?): Boolean = newFeatureBit(newFeatureSet, MATTER_FEATURE_BIT)
+
+fun isPetSearchSupported(newFeatureSet: String?): Boolean =
+    newFeatureBit(newFeatureSet, VIDEO_PATROL_FEATURE_BIT) || newFeatureBit(newFeatureSet, PET_SNAPSHOT_FEATURE_BIT)
+
 /** The `status` values the official app reads from `matter.get_status`. */
 enum class MatterState {
     KeyNotExit, KeyCorrupt, KeyDownloading, KeyDownloadSuccess, KeyDownloadFailure, Preparing, Ready, Joined, RPCError;
@@ -23,6 +28,7 @@ enum class MatterState {
 
     /** A setup code and QR payload are on offer. */
     val hasCodes: Boolean get() = this == Ready || this == Joined
+
 }
 
 data class MatterInfo(val state: MatterState?, val manualCode: String?, val qrPayload: String?)

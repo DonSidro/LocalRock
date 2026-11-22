@@ -229,6 +229,7 @@ fun VacuumDetailScreen(
     val busy by viewModel.busy.collectAsState()
     val supportsSmartPlan by viewModel.supportsSmartPlan.collectAsState()
     val supportsWaterSlide by viewModel.supportsWaterSlide.collectAsState()
+    val supportsPetSearch by viewModel.supportsPetSearch.collectAsState()
     val parsedMap by viewModel.repository.parsedMap.collectAsState()
     val floorMaps by viewModel.repository.floorMaps.collectAsState()
     val currentFloorFlag by viewModel.repository.currentFloorFlag.collectAsState()
@@ -338,7 +339,7 @@ fun VacuumDetailScreen(
 
     val PanelBody: @Composable (DetailPanel) -> Unit = { currentPanel ->
         when (currentPanel) {
-            DetailPanel.More -> MoreActionsSheetContent(showFindPet = viewModel.supportsPetSearch, onAction = onMoreAction)
+            DetailPanel.More -> MoreActionsSheetContent(showFindPet = supportsPetSearch, onAction = onMoreAction)
 
             DetailPanel.Routines -> RoutinesSheetContent(
                 state = routines,
@@ -601,7 +602,7 @@ fun VacuumDetailScreen(
                             }
                             PanelBody(headed)
                         } else {
-                            MoreActionsSheetContent(showFindPet = viewModel.supportsPetSearch, onAction = onMoreAction)
+                            MoreActionsSheetContent(showFindPet = supportsPetSearch, onAction = onMoreAction)
                         }
                     }
 

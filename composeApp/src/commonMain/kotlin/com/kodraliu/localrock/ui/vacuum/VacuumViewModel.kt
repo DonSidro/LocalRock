@@ -9,17 +9,15 @@ import com.kodraliu.localrock.shared.model.SceneRunResult
 import com.kodraliu.localrock.shared.vacuum.AdvertisedFeature
 import com.kodraliu.localrock.shared.vacuum.BetaFeatureDef
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
-import com.kodraliu.localrock.shared.vacuum.MATTER_FEATURE_BIT
-import com.kodraliu.localrock.shared.vacuum.PET_SNAPSHOT_FEATURE_BIT
-import com.kodraliu.localrock.shared.vacuum.VIDEO_PATROL_FEATURE_BIT
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.RoomType
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
+import com.kodraliu.localrock.shared.vacuum.isMatterSupported
+import com.kodraliu.localrock.shared.vacuum.isPetSearchSupported
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
 import com.kodraliu.localrock.shared.vacuum.showsBetaPage
-import com.kodraliu.localrock.shared.vacuum.newFeatureBit
 import com.kodraliu.localrock.shared.vacuum.supportedBetaFeatures
 import com.kodraliu.localrock.shared.vacuum.unlistedAdvertisedFeatures
 import kotlinx.coroutines.TimeoutCancellationException
@@ -68,11 +66,11 @@ class VacuumViewModel(
         .map { unlistedAdvertisedFeatures(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, unlistedAdvertisedFeatures(serverFeatureSet))
     val supportsPetSearch: StateFlow<Boolean> = newFeatureSet
-        .map { newFeatureBit(it, VIDEO_PATROL_FEATURE_BIT) || newFeatureBit(it, PET_SNAPSHOT_FEATURE_BIT) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, newFeatureBit(serverFeatureSet, VIDEO_PATROL_FEATURE_BIT) || newFeatureBit(serverFeatureSet, PET_SNAPSHOT_FEATURE_BIT))
+        .map { isPetSearchSupported(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, isPetSearchSupported(serverFeatureSet))
     val supportsMatter: StateFlow<Boolean> = newFeatureSet
-        .map { newFeatureBit(it, MATTER_FEATURE_BIT) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, newFeatureBit(serverFeatureSet, MATTER_FEATURE_BIT))
+        .map { isMatterSupported(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, isMatterSupported(serverFeatureSet))
     val showsBetaFeatures: StateFlow<Boolean> = combine(betaFeatureDefs, unlistedFeatures, ::showsBetaPage)
         .stateIn(viewModelScope, SharingStarted.Eagerly, showsBetaPage(betaFeatureDefs.value, unlistedFeatures.value))
 
