@@ -18,6 +18,7 @@ class DockedRobotTest {
         assertTrue(isDocked(8))
         assertTrue(isDocked(22))
         assertTrue(isDocked(23))
+        assertTrue(isDocked(25))
         assertTrue(isDocked(27))
         assertTrue(isDocked(100))
     }

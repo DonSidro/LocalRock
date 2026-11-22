@@ -16,7 +16,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.coroutineContext
@@ -32,7 +31,11 @@ data class MqttMessage(val topic: String, val payload: ByteArray) {
 class MqttClientException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
 
 
-class MqttClient(private val transport: MqttNativeTransport) {
+class MqttClient(
+    private val transport: MqttNativeTransport,
+    /** The first wait between attempts; tests shorten it so retries take milliseconds. */
+    private val initialBackoffMs: Long = INITIAL_BACKOFF_MS,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _messages = MutableSharedFlow<MqttMessage>(extraBufferCapacity = 64)
     val messages: SharedFlow<MqttMessage> = _messages
@@ -105,7 +108,8 @@ class MqttClient(private val transport: MqttNativeTransport) {
         keepAliveSeconds: Int = 30,
     ) {
         mutex.withLock {
-            if (superviseJob != null) return
+            // A supervisor that ended on an unexpected error must not keep a new one from starting.
+            if (superviseJob?.isActive == true) return
             closed = false
             params = Params(creds, clientId, keepAliveSeconds, connectTimeoutMs)
             superviseJob = scope.launch { superviseLoop() }
@@ -192,7 +196,7 @@ class MqttClient(private val transport: MqttNativeTransport) {
     }
 
     private suspend fun superviseLoop() {
-        var backoffMs = INITIAL_BACKOFF_MS
+        var backoffMs = initialBackoffMs
         var failedAttempts = 0
         while (coroutineContext.isActive && !isClosed()) {
             // Re-read every iteration: credentials can be swapped out between attempts, and the
@@ -233,10 +237,12 @@ class MqttClient(private val transport: MqttNativeTransport) {
                     conn = c
                     currentDisconnect = disconnected
                 }
-                withTimeout(p.connectTimeoutMs) { connectResult.await() }
+                // withTimeout's exception is a CancellationException and would end this loop for good.
+                withTimeoutOrNull(p.connectTimeoutMs) { connectResult.await() }
+                    ?: throw MqttClientException("MQTT connect timed out after ${p.connectTimeoutMs} ms")
 
                 _connected.value = true
-                backoffMs = INITIAL_BACKOFF_MS
+                backoffMs = initialBackoffMs
                 failedAttempts = 0
                 println("[VacLocal] MQTT connected host=${p.creds.host}:${p.creds.port} user=${p.creds.username}")
                 resubscribeAll(c)
@@ -259,7 +265,9 @@ class MqttClient(private val transport: MqttNativeTransport) {
                     if (refreshed != null) {
                         println("[VacLocal] MQTT credentials refreshed — retrying as user=${refreshed.username}")
                         mutex.withLock { params = params?.copy(creds = refreshed) }
-                        backoffMs = INITIAL_BACKOFF_MS
+                        // The wait keeps growing: a broker that stays unreachable after a fresh login
+                        // would otherwise get a new login every few seconds, and every login replaces
+                        // the app's session (#131).
                         failedAttempts = 0
                     }
                 }
@@ -276,7 +284,7 @@ class MqttClient(private val transport: MqttNativeTransport) {
             // A signal left over from before this attempt must not skip the wait.
             retrySignal.tryReceive()
             val hurried = withTimeoutOrNull(backoffMs) { retrySignal.receive() } != null
-            backoffMs = if (hurried) INITIAL_BACKOFF_MS else (backoffMs * 2).coerceAtMost(MAX_BACKOFF_MS)
+            backoffMs = if (hurried) initialBackoffMs else (backoffMs * 2).coerceAtMost(MAX_BACKOFF_MS)
         }
     }
 

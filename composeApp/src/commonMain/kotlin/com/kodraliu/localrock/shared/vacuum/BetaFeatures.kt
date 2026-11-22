@@ -272,7 +272,7 @@ val BetaFeatureDefs = listOf(
         id = "uncleaned_area_reminder",
         title = "Uncleaned area reminder",
         description = "Tells you about any uncleaned area after each clean, with a one-tap option to clean it",
-        bit = null,
+        bit = 154,
         getMethod = "app_get_robot_setting",
         setMethod = "app_set_robot_setting",
         section = FeatureSection.ROBOT,
@@ -302,7 +302,7 @@ val BetaFeatureDefs = listOf(
         id = "climbing_arms_high_sill",
         title = "Climbing arms on high thresholds",
         description = "Uses the climbing arms to cross high door thresholds and carpet",
-        bit = null,
+        bit = 147,
         getMethod = "app_get_robot_setting",
         setMethod = "app_set_robot_setting",
         section = FeatureSection.FLOOR,
@@ -339,15 +339,22 @@ val BetaFeatureDefs = listOf(
 fun supportedBetaFeatures(newFeatureSet: String?): List<BetaFeatureDef> =
     BetaFeatureDefs.filter { it.bit == null || newFeatureBit(newFeatureSet, it.bit) }
 
+/**
+ * The order to read [defs] in: options gated on a feature bit first, then the ones every robot is
+ * asked. A read stops at the first option with no reply, so a robot that ignores one of the
+ * ungated commands then hides only the ungated options, not the ones its flags advertise.
+ */
+fun betaReadOrder(defs: List<BetaFeatureDef>): List<BetaFeatureDef> = defs.sortedBy { it.bit == null }
+
+/** Whether the Beta page has anything to show: a flag-gated switch of its own, or flags with no switch here. */
+fun showsBetaPage(defs: List<BetaFeatureDef>, unlisted: List<AdvertisedFeature>): Boolean =
+    defs.any { it.section == FeatureSection.BETA && it.bit != null } || unlisted.isNotEmpty()
+
 /** Drops an older option once the option that replaces it has answered, so a failed read keeps the old one. */
 fun List<BetaFeatureState>.withoutReplaced(): List<BetaFeatureState> {
     val replaced = mapNotNull { it.def.replaces }.toSet()
     return filter { it.def.id !in replaced }
 }
-
-/** Whether the Beta page has anything to show: a flag-gated switch of its own, or flags with no switch here. */
-fun showsBetaPage(defs: List<BetaFeatureDef>, unlisted: List<AdvertisedFeature>): Boolean =
-    defs.any { it.section == FeatureSection.BETA && it.bit != null } || unlisted.isNotEmpty()
 
 /** The reads of [features] that belong on [section], in the order the definitions list them. */
 fun List<BetaFeatureState>.inSection(section: FeatureSection): List<BetaFeatureState> =
@@ -428,12 +435,7 @@ private val AdvertisedFeatureNames = mapOf(
     128 to "Roller mop",
 )
 
-/**
- * Bits that have their own place in the app (SmartPlan, water slide, wash, empty and carpet modes), or that
- * name no setting: 42 is the get/set_clean_follow_ground_material_status pair listed above, 57 means the
- * robot has no carpet pressure setting, 38 is the cloud endpoint a robot uses, 52 only changes how the app reads
- * its AI recognition state from the camera, and 62 lowers the battery needed to start building a map from 20% to 15%.
- */
+/** Bits with their own place in the app or that name no setting; the per-bit reasons are in the tests. */
 private val HandledElsewhereBits = setOf(35, 38, 41, 42, 47, 49, 51, 52, 53, 55, 57, 62, 106)
 
 /** A `newFeatureSet` bit the robot advertises that has no switch here; [name] is null when python-roborock has none. */
@@ -442,7 +444,7 @@ data class AdvertisedFeature(val bit: Int, val name: String?)
 /** What the robot advertises in `newFeatureSet` (bit 32 and up) that has no switch here, in bit order. */
 fun unlistedAdvertisedFeatures(newFeatureSet: String?): List<AdvertisedFeature> {
     val s = newFeatureSet ?: return emptyList()
-    val covered = BetaFeatureDefs.mapNotNull { it.bit }.toSet() + HandledElsewhereBits
+    val covered = BetaFeatureDefs.mapNotNull { it.bit }.toSet() + HandledElsewhereBits + VOICE_ASSISTANT_BIT
     return (32 until s.length * 4)
         .filter { it !in covered && newFeatureBit(s, it) }
         .map { AdvertisedFeature(it, AdvertisedFeatureNames[it]) }

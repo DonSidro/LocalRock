@@ -85,7 +85,7 @@ object DockErrorCodes {
         DIRTY_TANK_LATCH_OPEN -> "Dirty water tank latch open"
         NO_DUSTBIN -> "Dock dust bag missing"
         CLEANING_TANK_FULL_OR_BLOCKED -> "Dock cleaning tray full or blocked"
-        else -> "Dock error $code"
+        else -> VacuumErrorCodes.describe(code).takeIf { !it.startsWith("Error code") } ?: "Dock error $code"
     }
 }
 
@@ -112,24 +112,39 @@ object VacuumStateCodes {
     const val EMPTYING_BIN = 22
     const val NOT_CHARGING = 24
     const val WASHING_MOP = 23
+
+    /** A second code for washing the mop; the official app names both the same. */
+    const val WASHING_MOP_ALT = 25
     const val GOING_TO_WASH_MOP = 26
     const val DRYING_MOP = 27
-    const val RETURNING_TO_DOCK_FOR_DRYING = 28
+
+    /** The official Roborock app and python-roborock both name 28 "in call" (a live video call is open). */
+    const val IN_CALL = 28
     /** Captured 2026-09-29: the robot reports 29 for the whole app_start_build_map run. */
     const val MAPPING = 29
+
+    /** Reported while the robot patrols with its camera: the pet search and Cruise. */
+    const val PATROLLING = 32
+    const val EGG_ATTACK = 30
+    const val SETUP_MOP = 33
+    const val TEARDOWN_MOP = 34
     const val CHARGING_COMPLETE = 100
+    const val OFFLINE = 101
+    const val LOCKED = 103
 
     fun describe(state: Int): String = when (state) {
+        0 -> "Getting info"
         STARTING -> "Starting"
-        CHARGER_DISCONNECTED -> "Charger disconnected"
+        CHARGER_DISCONNECTED -> "Sleeping"
         IDLE -> "Idle"
         REMOTE_CONTROL_ACTIVE -> "Remote control"
         CLEANING -> "Cleaning"
         RETURNING_HOME -> "Returning home"
-        MANUAL_MODE -> "Manual mode"
+        MANUAL_MODE -> "Remote controlling"
         CHARGING -> "Charging"
         CHARGING_ERROR -> "Charging error"
         PAUSED -> "Paused"
+        PATROLLING -> "On cruise"
         SPOT_CLEANING -> "Spot cleaning"
         ERROR -> "Error"
         SHUTTING_DOWN -> "Shutting down"
@@ -140,50 +155,112 @@ object VacuumStateCodes {
         SEGMENT_CLEANING -> "Room cleaning"
         MAPPING -> "Mapping"
         NOT_CHARGING -> "Idle"
-        WASHING_MOP -> "Washing mop"
+        WASHING_MOP, WASHING_MOP_ALT -> "Washing mop"
         GOING_TO_WASH_MOP -> "Going to wash mop"
         DRYING_MOP -> "Drying mop"
-        RETURNING_TO_DOCK_FOR_DRYING -> "Returning to dock"
+        IN_CALL -> "In call"
+        EGG_ATTACK -> "Scanning"
+        SETUP_MOP -> "Reinstalling mop cloth mounts"
+        TEARDOWN_MOP -> "Detaching mop cloth mounts"
+        36 -> "Demo mode"
+        37 -> "Boogie mode"
+        38 -> "Sorting"
+        39 -> "Remote control to pick up"
+        40 -> "Emergency stopped"
+        41 -> "Resetting"
+        42 -> "Programming mode"
+        43 -> "Changing the mop"
         EMPTYING_BIN -> "Emptying the bin"
         CHARGING_COMPLETE -> "Fully charged"
+        OFFLINE -> "Offline"
+        LOCKED -> "Saving map"
         else -> "State $state"
     }
 }
 
 object VacuumErrorCodes {
+    /** The official app's titles; the same numbering covers robot and dock errors. */
     fun describe(code: Int): String = when (code) {
         0 -> ""
-        1 -> "Laser sensor fault"
-        2 -> "Collision sensor fault"
-        3 -> "Wheel floating"
-        4 -> "Cliff sensor fault"
-        5 -> "Main brush blocked"
-        6 -> "Side brush blocked"
-        7 -> "Wheel blocked"
-        8 -> "Robot stuck"
-        9 -> "Dustbin missing"
-        10 -> "Filter blocked"
-        11 -> "Magnetic field detected"
+        1 -> "LiDAR sensor error"
+        2 -> "Bumper stuck"
+        3 -> "Wheels suspended"
+        4 -> "Cliff sensor error"
+        5 -> "Main brush jammed"
+        6 -> "Side brush jammed"
+        7 -> "The robot is stuck, or main wheels are jammed"
+        8 -> "The robot is trapped or stuck"
+        9 -> "Dustbin not installed"
+        10 -> "Filter is wet or blocked"
+        11 -> "Strong magnetic field detected"
         12 -> "Low battery"
-        13 -> "Charging problem"
-        14 -> "Battery failure"
-        15 -> "Wall sensor fault"
-        16 -> "Uneven surface"
-        17 -> "Side brush failure"
-        18 -> "Suction fan failure"
-        19 -> "Unpowered dock"
-        21 -> "Laser pressure sensor problem"
-        22 -> "Charge sensor problem"
-        23 -> "Dock problem"
+        13 -> "Charging error"
+        14 -> "Temperature protection"
+        15 -> "The wall sensor is dirty"
+        16 -> "Robot is tilted"
+        17 -> "Side brush error"
+        18 -> "Vacuum fan error"
+        19 -> "Dock not connected to power"
+        20 -> "The optical flow sensor is dirty"
+        21 -> "Vertical bumper error"
+        22 -> "Dock locator error"
+        23 -> "Unable to return to dock"
         24 -> "No-go zone or invisible wall detected"
-        25 -> "Mop pad dirty"
-        26 -> "Mop wash tank empty"
-        27 -> "Dirty water tank full"
-        28 -> "Mop pad not installed"
-        29 -> "Battery overheating"
-        30 -> "Mop pad blocked"
-        31 -> "Mop pad not installed"
-        32 -> "Dustbin not installed"
+        25 -> "Camera error"
+        26 -> "Wall sensor error"
+        27 -> "Jammed mop module"
+        28 -> "The robot may be on a carpet"
+        29 -> "Unable to cross the carpet"
+        31 -> "Front and rear sensors error"
+        32 -> "No dustbin or filter installed"
+        34 -> "Clean the auto-empty dock bin"
+        35 -> "Auto-empty dock voltage error"
+        36 -> "Front sensor dirty"
+        37 -> "Rear sensor dirty"
+        38 -> "Check the clean water tank"
+        39 -> "Check the dirty water tank"
+        40 -> "Water filter not installed"
+        41 -> "Unable to open the electric hatch"
+        42 -> "Check that the water filter is correctly installed"
+        43 -> "Positioning button error"
+        44 -> "Check and secure the dirty water tank cover"
+        45 -> "Unable to close the electric hatch"
+        46 -> "Check that the dust bag is properly installed"
+        48 -> "Refill error"
+        49 -> "Drain error"
+        51 -> "Unit temperature protection"
+        52 -> "Please check the cleaning tray"
+        53 -> "Cleaning tray full"
+        54 -> "The mop mount fell off"
+        55 -> "Please check the cleaning tray"
+        56 -> "Jammed mop module"
+        57 -> "Cleaning tank maintenance brush error"
+        59 -> "Main wheels jammed"
+        60 -> "Omnidirectional wheel jammed"
+        61 -> "Check whether the LiDAR sensor can lift and lower freely"
+        62 -> "Check the water filter of the cleaning sink"
+        76 -> "Roller mop not installed"
+        77 -> "Dirty water channel not installed"
+        78 -> "On-board dirty water tank not installed"
+        79 -> "Roller mop fell off"
+        80 -> "Dirty water channel fell off"
+        81 -> "On-board dirty water tank fell off"
+        82 -> "Roller mop cover error"
+        83 -> "Drain actuator error"
+        84 -> "On-board dirty water tank drain error"
+        85 -> "Mop cloth mount not installed"
+        86 -> "Climbing arm jammed"
+        95 -> "Mop cloth mount installation failed"
+        97 -> "Check the cleaning solution level"
+        98 -> "LiDAR sensor dirty"
+        99 -> "Please check the cleaning tray"
+        141 -> "The robot is stuck, or main wheels are jammed"
+        143 -> "The robot is stuck, or main wheels are jammed"
+        154 -> "Side brush error"
+        155 -> "Vacuum fan error"
+        644 -> "Empty the dustbin"
+        100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 128, 129, 164, 165, 166, 167, 169, 171, 172, 253, 254, 255 -> "Internal error. Reset the robot."
+        126, 127, 130, 131, 134, 145, 147, 148, 149, 150, 151, 152, 153, 156, 157, 158, 159, 160, 163 -> "Dock error. Unplug the dock and plug it back in."
         else -> "Error code $code"
     }
 }

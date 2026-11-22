@@ -74,6 +74,7 @@ data class CleanSummary(
     val totalTimeSec: Long,
     val totalAreaMm2: Long,
     val totalCount: Int,
+    val patrolCount: Int = 0,
 )
 
 data class DndSettings(
@@ -119,11 +120,7 @@ data class FloorMap(val name: String, val mapFlag: Int, val savedAt: Long? = nul
 /** Dynamic lift is a robot-side value some models report; the official app lists it only when it is the current mode. */
 const val CARPET_MODE_DYNAMIC_LIFT = 3
 
-/**
- * The labels for `set_carpet_clean_mode`, in value order, as the official app names them: 0 avoid, 1 rise (the
- * mop lifts and only the vacuum runs), 2 vacuum and mop (the mop runs over the carpet and can wet it).
- * [current] adds dynamic lift when the robot is already in it.
- */
+/** Labels for `set_carpet_clean_mode` in value order (0 avoid, 1 rise, 2 vacuum and mop), as the official app names them. */
 fun carpetModeOptions(current: Int): List<String> {
     val base = listOf("Avoid carpet", "Rise (vacuum only)", "Vacuum and mop (can wet carpet)")
     return if (current == CARPET_MODE_DYNAMIC_LIFT) base + "Dynamic lift" else base

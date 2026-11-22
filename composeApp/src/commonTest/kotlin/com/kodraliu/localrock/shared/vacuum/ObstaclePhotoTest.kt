@@ -45,20 +45,41 @@ class ObstaclePhotoTest {
     }
 
     @Test
-    fun get_photo_params_follow_python_roborock() {
+    fun get_photo_params_ask_for_the_full_frame_like_the_official_sheet() {
         val security = SecurityData(endpoint = "kG5Y4GcU", nonce = ByteArray(16) { it.toByte() })
         val key = JsonObject(mapOf("n" to JsonPrimitive("abc"), "e" to JsonPrimitive("010001")))
         assertEquals(
             Json.parseToJsonElement(
                 """{"security":{"pub_key":{"n":"abc","e":"010001"},"cipher_suite":0},"endpoint":"kG5Y4GcU",""" +
-                    """"nonce":"000102030405060708090a0b0c0d0e0f","data_filter":{"img_id":"002OP8DjMLKGBRnX","type":1}}""",
+                    """"nonce":"000102030405060708090a0b0c0d0e0f","data_filter":{"img_id":"002OP8DjMLKGBRnX","type":0}}""",
             ),
             getPhotoParams(key, security, "002OP8DjMLKGBRnX"),
         )
     }
 
-    private fun block(type: Int, payload: ByteArray): ByteArray =
-        le16(type) + le16(8) + le32(payload.size) + payload
+    @Test
+    fun the_box_block_gives_the_obstacle_rectangle() {
+        val data = block(2, le16(310) + le16(260) + le16(420) + le16(390)) + block(3, jpeg)
+        val photo = obstaclePhotoFromData(data)
+        assertEquals(PhotoBox(310, 260, 420, 390), photo.box)
+        assertContentEquals(jpeg, photo.image)
+        assertNull(obstaclePhotoFromData(block(3, jpeg)).box)
+    }
+
+    @Test
+    fun a_full_frame_starts_on_protocol_300_with_only_part_of_its_body() {
+        // Measured on a Curv 2 Flow: 65176 of 82760 body bytes in the 300 frame, the rest in one headerless 301 frame.
+        val body = ByteArray(100) { it.toByte() }
+        val header = "ROBOROCK".encodeToByteArray() + le32(4242) + ByteArray(4) + le16(24) + ByteArray(2) + le32(body.size)
+        val first = RoborockMessage(BLOB_FIRST_PART_PROTOCOL, header + body.copyOf(60), 1, 1, 1)
+        val start = decodeBlobStart(first)!!
+        assertEquals(4242, start.requestId)
+        assertEquals(100, start.bodyLength)
+        assertContentEquals(body.copyOf(60), start.body)
+        assertNull(decodeBlobStart(RoborockMessage(RoborockProtocol.MAP_RESPONSE, body.copyOfRange(60, 100), 1, 1, 1)))
+    }
+
+    private fun block(type: Int, payload: ByteArray): ByteArray =        le16(type) + le16(8) + le32(payload.size) + payload
 
     private fun frame(requestId: Int, gzipped: ByteArray): RoborockMessage {
         val header = "ROBOROCK".encodeToByteArray() + le32(requestId) + ByteArray(4) + le16(24) + ByteArray(2) + le32(gzipped.size)

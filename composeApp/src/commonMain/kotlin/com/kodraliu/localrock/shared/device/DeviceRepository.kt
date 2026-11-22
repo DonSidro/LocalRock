@@ -5,6 +5,7 @@ import com.kodraliu.localrock.shared.demo.DemoData
 import com.kodraliu.localrock.shared.model.Device
 import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
+import com.kodraliu.localrock.shared.model.LastKnown
 import com.kodraliu.localrock.shared.model.Product
 import com.kodraliu.localrock.shared.model.Room
 import com.kodraliu.localrock.shared.model.Scene
@@ -15,10 +16,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonElement
 
 class DeviceRepository(
     private val deviceApi: DeviceApi,
@@ -42,6 +47,14 @@ class DeviceRepository(
     /** Per duid; a robot with no entry has not been asked, so its server `online` flag is all there is. */
     private val _reachability = MutableStateFlow<Map<String, Reachability>>(emptyMap())
     val reachability: StateFlow<Map<String, Reachability>> = _reachability.asStateFlow()
+
+    /** Robots the server knows from the cloud import but has never paired; they open Add vacuum when tapped. */
+    private val neverHeard = NeverHeard(scope) { duid -> deviceApi.lastKnown(duid, false).known }
+
+    /** Never heard from, and (for a robot we can probe) the probe has said offline; see [unpairedDuids]. */
+    val unpaired: StateFlow<Set<String>> = combine(neverHeard.duids, _reachability, _devicesFlow) { never, reach, devices ->
+        unpairedDuids(never, reach, devices)
+    }.stateIn(scope, SharingStarted.Eagerly, emptySet())
 
     private var probeJob: Job? = null
 
@@ -80,7 +93,7 @@ class DeviceRepository(
         if (isDemo()) {
             val home = DemoData.home
             _home.value = home
-            _devicesFlow.value = home.devices
+            _devicesFlow.value = home.devices.sortedForList()
             val productsByDeviceId = home.products.associateBy { it.id }
             _products.value = home.devices.associate { it.duid to productsByDeviceId[it.productId]!! }
             return
@@ -94,9 +107,10 @@ class DeviceRepository(
         val homeId = detail.resolvedHomeId ?: error("Server did not return a home id")
         val home = deviceApi.getHome(homeId)
         _home.value = home
-        _devicesFlow.value = home.devices
+        _devicesFlow.value = home.devices.sortedForList()
         val productsByDeviceId = home.products.associateBy { it.id }
         _products.value = home.devices.associate { it.duid to productsByDeviceId[it.productId]!! }
+        neverHeard.refresh(home.devices)
     }
 
     /** Create (or look up by name) a cloud room in the current home. */
@@ -104,6 +118,11 @@ class DeviceRepository(
         if (isDemo()) error("Rooms can't be renamed in demo mode")
         val homeId = _home.value?.id ?: error("Home not loaded")
         return deviceApi.createRoom(homeId, name)
+    }
+
+    suspend fun voicePackages(model: String): JsonElement {
+        if (isDemo()) error("Voice packs are not available in demo mode")
+        return deviceApi.voicePackages(model)
     }
 
     /** Routines saved for [duid] (made in the official app; local_roborock_server keeps them). */
@@ -115,6 +134,12 @@ class DeviceRepository(
     suspend fun runScene(sceneId: Long): SceneRunResult {
         if (isDemo()) error("Routines can't be run in demo mode")
         return deviceApi.executeScene(sceneId)
+    }
+
+    /** What the server last heard from [duid], or null in demo mode or when it has heard nothing. */
+    suspend fun lastKnown(duid: String, includeMap: Boolean = true): LastKnown? {
+        if (isDemo()) return null
+        return deviceApi.lastKnown(duid, includeMap).takeIf { it.known }
     }
 
     suspend fun checkFirmwareUpdate(duid: String): FirmwareUpdateInfo? {

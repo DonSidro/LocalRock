@@ -116,9 +116,37 @@ data class ParsedMap(
     val obstacles: List<MapObstacle> = emptyList(),
 
     val originalGrid: ByteArray? = null,
+    /** The cruise points of a Cruise run record (legacy block 37), in visiting order. */
+    val patrolPoints: List<PatrolPoint> = emptyList(),
+    /** The `task_id` that `get_patrol_photo` takes for [patrolPoints], from the same block. */
+    val patrolTaskId: Long? = null,
+    /** Per path point: bit 1 is a trip to wash the mop. Empty if unknown. */
+    val pathFlags: List<Int> = emptyList(),
+    /** One byte per grid cell, 1 where the robot has seen carpet; null if the map has none. */
+    val carpetMask: ByteArray? = null,
+    /** Room polygons of the floor-plan look (legacy block 55), in the image's own cell frame; empty if the map has none. */
+    val zoneLines: List<FloorPlanZone> = emptyList(),
+    /** Areas the user removed with the official Remove tool (legacy block 47), in robot millimetres; nothing is drawn inside them. */
+    val eraserZones: List<MapZone> = emptyList(),
 ) {
     val floorCells: Int by lazy { grid.count { (it.toInt() and 0xff) == 128 } }
     val wallCells: Int by lazy { grid.count { (it.toInt() and 0xff) == 127 } }
+
+    /** One flag per grid cell, true where an eraser zone covers the cell's centre; null when the map has no eraser zone. */
+    val erasedCells: BooleanArray? by lazy { if (eraserZones.isEmpty()) null else erasedCellMask(this) }
+
+    /** Rooms whose every cell is erased: they are not drawn, labelled or picked. */
+    val erasedRoomIds: Set<Int> by lazy {
+        val erased = erasedCells ?: return@lazy emptySet()
+        val total = HashMap<Int, Int>()
+        val gone = HashMap<Int, Int>()
+        for (i in grid.indices) {
+            val id = rawRoomIdAtCell(i) ?: continue
+            total[id] = (total[id] ?: 0) + 1
+            if (erased[i]) gone[id] = (gone[id] ?: 0) + 1
+        }
+        total.filter { (id, n) -> gone[id] == n }.keys
+    }
 
     override fun equals(other: Any?): Boolean =
         other is ParsedMap && other.width == width && other.height == height &&
@@ -133,7 +161,11 @@ data class ParsedMap(
             other.format == format &&
             other.carpetAreas == carpetAreas &&
             other.thresholds == thresholds &&
-            other.obstacles == obstacles
+            other.pathFlags == pathFlags &&
+            other.obstacles == obstacles &&
+            other.patrolPoints == patrolPoints && other.patrolTaskId == patrolTaskId &&
+            other.zoneLines == zoneLines && other.eraserZones == eraserZones &&
+            (carpetMask?.contentEquals(other.carpetMask ?: ByteArray(0)) ?: (other.carpetMask == null))
 
     override fun hashCode(): Int {
         var r = width
@@ -152,7 +184,11 @@ data class ParsedMap(
         r = 31 * r + format.hashCode()
         r = 31 * r + carpetAreas.hashCode()
         r = 31 * r + thresholds.hashCode()
+        r = 31 * r + pathFlags.hashCode()
         r = 31 * r + obstacles.hashCode()
+        r = 31 * r + zoneLines.hashCode()
+        r = 31 * r + eraserZones.hashCode()
+        r = 31 * r + (carpetMask?.contentHashCode() ?: 0)
         return r
     }
 }
@@ -184,7 +220,7 @@ data class VirtualWall(
     val x1: Int, val y1: Int,
 )
 
-enum class ZoneKind { NO_GO, NO_MOP, CARPET, THRESHOLD }
+enum class ZoneKind { NO_GO, NO_MOP, CARPET, THRESHOLD, ERASER }
 
 /*
  * Carpet flags, captured 2026-09-29 on an S8 Pro Ultra: the official app sent 0x06338000 for a new
@@ -247,7 +283,23 @@ data class ParsedMapRoom(
     val name: String,
     val labelNormX: Float? = null,
     val labelNormY: Float? = null,
+    /** How many cells of the room run across the map at its label, so a name can be fitted inside it. */
+    val labelSpanCells: Int? = null,
+    val labelSpanCellsY: Int? = null,
+    /** The room type the robot keeps for this room (see RoomType); null when its table has no tag column or no entry. */
+    val tag: Int? = null,
+    /** The robot's room table has an entry for this room, so it counts as named even without a tag column. */
+    val inRoomTable: Boolean = false,
 )
+
+/** One cruise point: where the robot stopped (robot mm), its result code and the ids of the photos it took there. */
+data class PatrolPoint(val x: Int, val y: Int, val result: Int, val photoIds: List<String>)
+
+/** One vertex of a floor-plan polygon in whole cells of the image frame (col = x/50 - left, row = y/50 - top); [type] 1 outer wall, 2 inner edge, 3 door. */
+data class FloorPlanPoint(val x: Int, val y: Int, val type: Int)
+
+/** One room's closed rectilinear outline (legacy block 55); [segment] is the room id, the last point joins the first. */
+data class FloorPlanZone(val segment: Int, val points: List<FloorPlanPoint>)
 
 data class ParsedMapPoint(
     val x: Int,
@@ -274,6 +326,7 @@ fun ParsedMap.roomAtNorm(normX: Float, normY: Float): ParsedMapRoom? {
     // Undo the renderer Y-flip: normY=0 (canvas top) → grid row (height-1).
     val row = ((1f - normY) * height).toInt().coerceIn(0, height - 1)
     val idx = row * width + col
+    if (erasedCells?.get(idx) == true) return null
 
     if (originalGrid != null) {
         // Legacy: (byte >> 3) & 0x1f encodes room ID per pixel.
@@ -290,12 +343,35 @@ fun ParsedMap.roomAtNorm(normX: Float, normY: Float): ParsedMapRoom? {
 
     // Unassigned floor or unmatched segment — fall back to nearest labelled room.
     return rooms
-        .filter { it.labelNormX != null && it.labelNormY != null }
+        .filter { it.labelNormX != null && it.labelNormY != null && it.id !in erasedRoomIds }
         .minByOrNull { r ->
             val dx = r.labelNormX!! - normX
             val dy = r.labelNormY!! - normY
             dx * dx + dy * dy
         }
+}
+
+/**
+ * The room id stored for one grid cell, or null where the cell belongs to no room's floor (outside,
+ * a wall, or floor the robot hasn't assigned to a room). It reads the cell the same way
+ * [roomAtNorm] does for each map format, minus that function's nearest-label fallback, so a room
+ * lit up on selection covers exactly the cells a tap on it would pick.
+ */
+fun ParsedMap.roomIdAtCell(idx: Int): Int? {
+    if (idx !in grid.indices || erasedCells?.get(idx) == true) return null
+    return rawRoomIdAtCell(idx)
+}
+
+private fun ParsedMap.rawRoomIdAtCell(idx: Int): Int? {
+    if (idx !in grid.indices) return null
+    if (originalGrid != null) {
+        val v = originalGrid[idx].toInt() and 0xff
+        if ((v and 0x07) != 7) return null
+        return ((v ushr 3) and 0x1f).takeIf { it > 0 }
+    }
+    val v = grid[idx].toInt() and 0xff
+    if (v == 0 || v == 127 || v == 128) return null
+    return v
 }
 
 
@@ -370,4 +446,44 @@ fun parseB01Map(bytes: ByteArray): ParsedMap {
         resolution = head.resolution,
         format = MapFormat.B01,
     )
+}
+
+private fun erasedCellMask(map: ParsedMap): BooleanArray {
+    val mask = BooleanArray(map.width * map.height)
+    for (zone in map.eraserZones) {
+        val xs = intArrayOf(zone.x0, zone.x1, zone.x2, zone.x3)
+        val ys = intArrayOf(zone.y0, zone.y1, zone.y2, zone.y3)
+        // Cell indices cover this zone's bounding box only; each is tested at its centre in millimetres.
+        val colLo = (zone.minXmm / 50 - map.pixelOffsetLeft - 1).coerceIn(0, map.width)
+        val colHi = (zone.maxXmm / 50 - map.pixelOffsetLeft + 2).coerceIn(0, map.width)
+        val rowLo = (zone.minYmm / 50 - map.pixelOffsetTop - 1).coerceIn(0, map.height)
+        val rowHi = (zone.maxYmm / 50 - map.pixelOffsetTop + 2).coerceIn(0, map.height)
+        for (row in rowLo until rowHi) {
+            val cy = (row + map.pixelOffsetTop) * 50 + 25
+            for (col in colLo until colHi) {
+                val cx = (col + map.pixelOffsetLeft) * 50 + 25
+                if (insideQuad(cx, cy, xs, ys)) mask[row * map.width + col] = true
+            }
+        }
+    }
+    return mask
+}
+
+/** True when the point, in robot millimetres, lies inside any eraser zone. */
+fun ParsedMap.isErasedMm(xMm: Int, yMm: Int): Boolean = eraserZones.any {
+    insideQuad(xMm, yMm, intArrayOf(it.x0, it.x1, it.x2, it.x3), intArrayOf(it.y0, it.y1, it.y2, it.y3))
+}
+
+private fun insideQuad(px: Int, py: Int, xs: IntArray, ys: IntArray): Boolean {
+    var inside = false
+    var j = xs.size - 1
+    for (i in xs.indices) {
+        if ((ys[i] > py) != (ys[j] > py) &&
+            px < (xs[j] - xs[i]).toLong() * (py - ys[i]) / (ys[j] - ys[i]) + xs[i]
+        ) {
+            inside = !inside
+        }
+        j = i
+    }
+    return inside
 }

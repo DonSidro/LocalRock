@@ -36,12 +36,39 @@ class BetaFeaturesTest {
     @Test
     fun features_without_a_known_bit_are_always_probed() {
         assertEquals(
-            listOf(
-                "carpet_boost", "climbing_arms_high_sill", "dust_collection_switch", "follow_ground_material", "identify_furniture",
-                "identify_ground_material", "uncleaned_area_reminder",
-            ),
+            listOf("carpet_boost", "dust_collection_switch", "follow_ground_material", "identify_furniture", "identify_ground_material"),
             supportedBetaFeatures(null).map { it.id }.sorted(),
         )
+    }
+
+    @Test
+    fun options_without_a_feature_bit_are_read_last() {
+        val defs = supportedBetaFeatures("f".repeat(40))
+        val order = betaReadOrder(defs)
+        val firstUngated = order.indexOfFirst { it.bit == null }
+        assertTrue(firstUngated > 0)
+        assertTrue(order.drop(firstUngated).all { it.bit == null })
+        assertTrue("carpet_boost" in order.drop(firstUngated).map { it.id })
+        // Within each group the list's own order is kept.
+        assertEquals(defs.filter { it.bit != null }, order.take(firstUngated))
+        assertEquals(defs.filter { it.bit == null }, order.drop(firstUngated))
+    }
+
+    @Test
+    fun uncleaned_area_reminder_needs_bit_154_and_climbing_arms_need_bit_147() {
+        val bit154 = "4" + "0".repeat(38)
+        val bit147 = "8" + "0".repeat(36)
+        fun ids(set: String) = supportedBetaFeatures(set).map { it.id }
+        assertTrue("uncleaned_area_reminder" in ids(bit154))
+        assertFalse("climbing_arms_high_sill" in ids(bit154))
+        assertTrue("climbing_arms_high_sill" in ids(bit147))
+        assertFalse("uncleaned_area_reminder" in ids(bit147))
+        assertFalse("uncleaned_area_reminder" in ids("0") || "climbing_arms_high_sill" in ids("0"))
+    }
+
+    @Test
+    fun named_robot_settings_are_only_read_from_robots_that_advertise_them() {
+        assertTrue(BetaFeatureDefs.filter { it.settingName != null }.all { it.bit != null })
     }
 
     @Test

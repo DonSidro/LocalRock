@@ -68,6 +68,8 @@ actual class VacuumPairingTransport internal constructor(
             )
         }
 
+    actual suspend fun joinedSsid(): String? = null
+
     actual suspend fun sendUdp(host: String, port: Int, data: ByteArray): Unit =
         suspendCancellableCoroutine { cont ->
             native.send(

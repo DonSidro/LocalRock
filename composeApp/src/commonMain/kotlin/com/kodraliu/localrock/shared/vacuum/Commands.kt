@@ -60,6 +60,12 @@ suspend fun VacuumSession.getCleanRecord(recordId: Long): V1Response =
 
 suspend fun VacuumSession.getCleanSummary(): V1Response = sendCommand("get_clean_summary")
 
+// The Curv 2 Flow answers a page of timeline events; the Qrevo Pro does not recognise the method.
+suspend fun VacuumSession.getCleanDetail(begin: Long, from: Int): V1Response = sendCommandRaw(
+    "get_clean_detail",
+    JsonObject(mapOf("begin" to JsonPrimitive(begin), "type" to JsonPrimitive(0), "id" to JsonPrimitive(0), "from" to JsonPrimitive(from))),
+)
+
 suspend fun VacuumSession.resetConsumable(field: String): V1Response =
     sendCommand("reset_consumable", listOf(JsonPrimitive(field)))
 
