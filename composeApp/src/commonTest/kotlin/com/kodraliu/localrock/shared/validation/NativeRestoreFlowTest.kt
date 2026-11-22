@@ -148,6 +148,7 @@ class NativeRestoreFlowTest {
             delay(100)
             repo.fetchTimers()
             loaded = repo.timers.value.single()
+            robot.calls.clear() // the list read also probes the robot; only the restore's own traffic counts
         }
         suspend fun stop() { repo.session.close(); mqtt.disconnect() }
         suspend fun restore() = repo.restoreNativeTimer(loaded)

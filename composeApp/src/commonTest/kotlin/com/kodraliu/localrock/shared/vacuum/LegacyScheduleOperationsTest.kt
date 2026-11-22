@@ -72,4 +72,19 @@ class LegacyScheduleOperationsTest {
         }
         assertEquals(false, restored)
     }
+
+    @Test fun robot_only_timers_are_added_after_server_jobs() {
+        val job = CleanTimer("100", true, 7, 0, emptySet())
+        val shared = CleanTimer("100", false, 7, 0, emptySet())
+        val robotOnly = CleanTimer("200", true, 9, 30, setOf(1))
+        val merged = mergeRobotOnlyTimers(listOf(job), listOf(shared, robotOnly))
+        assertEquals(listOf(job, robotOnly), merged)
+        assertEquals(null, merged.last().serverJob)
+    }
+
+    @Test fun nothing_is_added_when_the_robot_has_no_extra_timers() {
+        val job = CleanTimer("100", true, 7, 0, emptySet())
+        assertEquals(listOf(job), mergeRobotOnlyTimers(listOf(job), listOf(job.copy(enabled = false))))
+        assertEquals(emptyList(), mergeRobotOnlyTimers(emptyList(), emptyList()))
+    }
 }

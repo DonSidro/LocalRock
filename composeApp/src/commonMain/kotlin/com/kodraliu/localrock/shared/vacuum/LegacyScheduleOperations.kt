@@ -34,3 +34,9 @@ internal suspend fun replaceLegacySchedule(
         throw ScheduleException("The schedule edit failed (${e.message}). The old schedule was restored.")
     }
 }
+
+/** Robot get_timer entries the server has no job for (the robot's own legacy timers), appended after the jobs. */
+internal fun mergeRobotOnlyTimers(jobs: List<CleanTimer>, robot: List<CleanTimer>): List<CleanTimer> {
+    val known = jobs.map { it.id }.toSet()
+    return jobs + robot.filter { it.id !in known }
+}

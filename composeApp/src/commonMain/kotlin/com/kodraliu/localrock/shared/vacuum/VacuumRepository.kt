@@ -1005,7 +1005,12 @@ class VacuumRepository(
     suspend fun fetchTimers() {
         _timers.value = loadScheduleList(
             readJobs = if (scheduleMirror != null && !demo) ({
-                scheduleMirror.list(duid).map { it.toCleanTimer() }
+                val jobs = scheduleMirror.list(duid).map { it.toCleanTimer() }
+                // A legacy-protocol robot keeps its own timers that no server job mirrors; list them too.
+                val robotOnly = if (prefersServerTimer()) emptyList() else runCatching {
+                    session.getTimer().takeIf { it.error == null }?.let { parseTimerList(it.result) }
+                }.getOrNull().orEmpty()
+                mergeRobotOnlyTimers(jobs, robotOnly)
                     .sortedWith(compareBy<CleanTimer> { it.hour }.thenBy { it.minute }.thenBy { it.id })
             }) else null,
             readLegacy = {
