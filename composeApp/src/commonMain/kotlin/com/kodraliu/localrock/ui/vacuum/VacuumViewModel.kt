@@ -8,6 +8,7 @@ import com.kodraliu.localrock.shared.model.Scene
 import com.kodraliu.localrock.shared.model.SceneRunResult
 import com.kodraliu.localrock.shared.vacuum.AdvertisedFeature
 import com.kodraliu.localrock.shared.vacuum.BetaFeatureDef
+import com.kodraliu.localrock.shared.model.LastKnown
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.ProductCatalog
@@ -27,6 +28,11 @@ import com.kodraliu.localrock.shared.vacuum.productDisplayName
 import com.kodraliu.localrock.shared.vacuum.showsBetaPage
 import com.kodraliu.localrock.shared.vacuum.supportedBetaFeatures
 import com.kodraliu.localrock.shared.vacuum.unlistedAdvertisedFeatures
+import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
+import com.kodraliu.localrock.shared.vacuum.map.parseB01Map
+import com.kodraliu.localrock.shared.vacuum.map.parseLegacyMap
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
@@ -97,6 +103,16 @@ class VacuumViewModel(
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
     private val actionMutex = Mutex()
     private var pendingActions = 0
+
+    private val _lastKnown = MutableStateFlow<LastKnown?>(null)
+
+    /** What the server last heard from the robot; only set while the robot is not answering. */
+    val lastKnown: StateFlow<LastKnown?> = _lastKnown.asStateFlow()
+
+    private val _lastKnownMap = MutableStateFlow<ParsedMap?>(null)
+
+    /** The last map the robot sent, to draw while it cannot be asked for a live one. */
+    val lastKnownMap: StateFlow<ParsedMap?> = _lastKnownMap.asStateFlow()
 
     // The map's rotation and 2D/3D view are a purely local rendering choice: the robot has no
     // concept of either, so these live in this device's app settings rather than any RPC.
@@ -210,10 +226,31 @@ class VacuumViewModel(
                     runCatching { voice.fetchSettings() }
                 }
             }
+            // A robot that never answers (dead battery, lost Wi-Fi, stuck) leaves the screen empty;
+            // the server still holds where it was last seen and what it last reported.
+            launch {
+                delay(LAST_KNOWN_AFTER_MS)
+                if (status.value.state == null && status.value.battery == null) loadLastKnown()
+            }
+        }
+
+        viewModelScope.launch {
+            repository.unresponsive.collect { quiet ->
+                if (quiet) {
+                    loadLastKnown()
+                } else if (status.value.state != null || status.value.battery != null) {
+                    _lastKnown.value = null
+                    _lastKnownMap.value = null
+                }
+            }
         }
 
         viewModelScope.launch {
             status.collect { s ->
+                if ((s.state != null || s.battery != null) && !repository.unresponsive.value) {
+                    _lastKnown.value = null
+                    _lastKnownMap.value = null
+                }
                 val code = s.errorCode ?: 0
                 if (code != 0) {
                     container.messages.showBanner(
@@ -225,6 +262,23 @@ class VacuumViewModel(
                     container.messages.dismissBanner(errorBannerKey)
                 }
             }
+        }
+    }
+
+    @OptIn(ExperimentalEncodingApi::class)
+    fun loadLastKnown() {
+        viewModelScope.launch {
+            val snapshot = runCatching { container.deviceRepository.lastKnown(device.duid) }.getOrNull() ?: return@launch
+            if ((status.value.state != null || status.value.battery != null) && !repository.unresponsive.value) return@launch
+            _lastKnown.value = snapshot
+            _lastKnownMap.value = snapshot.map
+                ?.let { encoded ->
+                    runCatching {
+                        val bytes = Base64.decode(encoded)
+                        runCatching { parseB01Map(bytes) }.getOrNull() ?: parseLegacyMap(bytes)
+                    }.getOrNull()
+                }
+                ?.withRoomTable(snapshot.rooms)
         }
     }
 
@@ -451,6 +505,9 @@ internal fun routineRunMessage(name: String, result: SceneRunResult): String {
  * is unknown; 23 keeps names short enough for the room labels on the map.
  */
 const val MAX_ROOM_NAME_LENGTH = 23
+
+/** How long a robot may stay silent before the server's last-known state is fetched. */
+private const val LAST_KNOWN_AFTER_MS = 10_000L
 
 /**
  * Trimmed name, or [MapEditException] if unusable. A leading `{` or `[` makes the server treat

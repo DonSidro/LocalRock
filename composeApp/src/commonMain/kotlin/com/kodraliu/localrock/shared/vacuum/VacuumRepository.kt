@@ -167,6 +167,11 @@ class VacuumRepository(
     /** True while the robot holds a newly built map that has not been saved yet. */
     val unsavedMapPresent: StateFlow<Boolean> = _status.map { it.unsavedMapPresent }
         .stateIn(scope, SharingStarted.Eagerly, false)
+    private val unansweredPolls = UnansweredPolls(STALE_LINK_FAILURE_THRESHOLD)
+
+    /** True once several status polls in a row got no answer; false again as soon as the robot replies or pushes. */
+    val unresponsive: StateFlow<Boolean> = unansweredPolls.unresponsive
+
     private var pollJob: Job? = null
     private var dpsJob: Job? = null
     private var mapPollJob: Job? = null
@@ -183,6 +188,7 @@ class VacuumRepository(
         dpsJob = scope.launch {
             session.dpsUpdates.collect { dps ->
                 println("[VacLocal] dps push: ${dps.keys}")
+                unansweredPolls.heardFromRobot()
                 _status.update { it.applyDpsPush(dps) }
             }
         }
@@ -197,6 +203,7 @@ class VacuumRepository(
                 runCatching { session.getStatus() }
                     .onSuccess { fresh ->
                         consecutiveFailures = 0
+                        unansweredPolls.heardFromRobot()
                         if (fresh != null) {
                             println("[VacLocal] get_status ok: state=${fresh.state} battery=${fresh.battery}")
                             _status.update { it.merge(fresh) }
@@ -206,6 +213,7 @@ class VacuumRepository(
                     }
                     .onFailure { e ->
                         consecutiveFailures++
+                        unansweredPolls.pollFailed()
                         println("[VacLocal] get_status FAILED (#$consecutiveFailures): ${e::class.simpleName}: ${e.message}")
                         if (consecutiveFailures >= STALE_LINK_FAILURE_THRESHOLD) {
                             // A timed-out RPC is not proof of a dead socket: a slow response or a
@@ -254,7 +262,10 @@ class VacuumRepository(
 
     suspend fun refreshStatus() {
         runCatching { session.getStatus() }.getOrNull()
-            ?.let { fresh -> _status.update { it.merge(fresh) } }
+            ?.let { fresh ->
+                unansweredPolls.heardFromRobot()
+                _status.update { it.merge(fresh) }
+            }
     }
 
     fun detach() {

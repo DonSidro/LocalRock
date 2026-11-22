@@ -7,6 +7,7 @@ private val DOCK_STATES = setOf(
     VacuumStateCodes.CHARGING,
     VacuumStateCodes.EMPTYING_BIN,
     VacuumStateCodes.WASHING_MOP,
+    VacuumStateCodes.WASHING_MOP_ALT,
     VacuumStateCodes.DRYING_MOP,
     VacuumStateCodes.CHARGING_COMPLETE,
 )

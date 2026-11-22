@@ -69,8 +69,10 @@ fun DeviceListScreen(
     onSettings: () -> Unit,
     onDeviceClick: (Device) -> Unit,
     onAddVacuum: () -> Unit,
+    onPairDevice: (String) -> Unit = {},
 ) {
     val devices by viewModel.devices.collectAsState()
+    val unpaired by viewModel.unpaired.collectAsState()
     val products by viewModel.productsByDuid.collectAsState()
     val reachability by viewModel.reachability.collectAsState()
     val refreshing by viewModel.refreshing.collectAsState()
@@ -160,7 +162,8 @@ fun DeviceListScreen(
                                 device = device,
                                 model = productDisplayName(products[device.duid]).orEmpty(),
                                 reachability = reachability[device.duid],
-                                onClick = { onDeviceClick(device) },
+                                unpaired = device.duid in unpaired && vacuumPairingSupported,
+                                onClick = { if (device.duid in unpaired && vacuumPairingSupported) onPairDevice(device.duid) else onDeviceClick(device) },
                             )
                         }
                         item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(80.dp)) }
@@ -259,7 +262,7 @@ private fun ErrorCard(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun DeviceCard(device: Device, model: String, reachability: Reachability?, onClick: () -> Unit) {
+private fun DeviceCard(device: Device, model: String, reachability: Reachability?, unpaired: Boolean, onClick: () -> Unit) {
     // Without a local key there is nothing to talk to, so say that instead of silently ignoring taps.
     val notPaired = device.localKey == null
     // The robot's own answer wins; the server's flag is only used when the robot could not be asked.
@@ -269,11 +272,13 @@ private fun DeviceCard(device: Device, model: String, reachability: Reachability
         null -> device.online
     }
     val statusColor = when {
+        unpaired -> MaterialTheme.colorScheme.tertiary
         notPaired -> MaterialTheme.colorScheme.error
         online -> AppColors.Good
         else -> MaterialTheme.colorScheme.outline
     }
     val statusText = when {
+        unpaired -> "Not paired yet"
         notPaired -> "Setup incomplete"
         reachability == Reachability.CHECKING -> "Checking…"
         online -> "Online"
@@ -282,7 +287,7 @@ private fun DeviceCard(device: Device, model: String, reachability: Reachability
 
     Surface(
         onClick = onClick,
-        enabled = !notPaired,
+        enabled = !notPaired || unpaired,
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -296,7 +301,7 @@ private fun DeviceCard(device: Device, model: String, reachability: Reachability
             // A per-robot state badge is more useful here than repeating the app icon on every row.
             Surface(
                 shape = RoundedCornerShape(14.dp),
-                color = if (online && !notPaired) MaterialTheme.colorScheme.primaryContainer
+                color = if (online && !notPaired && !unpaired) MaterialTheme.colorScheme.primaryContainer
                 else MaterialTheme.colorScheme.surfaceContainerHighest,
                 modifier = Modifier.size(48.dp),
             ) {
@@ -305,7 +310,7 @@ private fun DeviceCard(device: Device, model: String, reachability: Reachability
                         RobotVacuum,
                         contentDescription = null,
                         modifier = Modifier.size(26.dp),
-                        tint = if (online && !notPaired) MaterialTheme.colorScheme.onPrimaryContainer
+                        tint = if (online && !notPaired && !unpaired) MaterialTheme.colorScheme.onPrimaryContainer
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -335,7 +340,13 @@ private fun DeviceCard(device: Device, model: String, reachability: Reachability
                         color = statusColor,
                     )
                 }
-                if (notPaired) {
+                if (unpaired) {
+                    Text(
+                        "This robot has never connected to your server. Tap to pair it.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (notPaired) {
                     Text(
                         "This robot has no local key yet. Re-run pairing on your server to control it.",
                         style = MaterialTheme.typography.labelSmall,
@@ -343,7 +354,7 @@ private fun DeviceCard(device: Device, model: String, reachability: Reachability
                     )
                 }
             }
-            if (!notPaired) {
+            if (!notPaired || unpaired) {
                 Icon(
                     Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,

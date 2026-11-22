@@ -112,24 +112,39 @@ object VacuumStateCodes {
     const val EMPTYING_BIN = 22
     const val NOT_CHARGING = 24
     const val WASHING_MOP = 23
+
+    /** A second code for washing the mop; the official app names both the same. */
+    const val WASHING_MOP_ALT = 25
     const val GOING_TO_WASH_MOP = 26
     const val DRYING_MOP = 27
-    const val RETURNING_TO_DOCK_FOR_DRYING = 28
+
+    /** The official Roborock app and python-roborock both name 28 "in call" (a live video call is open). */
+    const val IN_CALL = 28
     /** Captured 2026-09-29: the robot reports 29 for the whole app_start_build_map run. */
     const val MAPPING = 29
+
+    /** Reported while the robot patrols with its camera: the pet search and Cruise. */
+    const val PATROLLING = 32
+    const val EGG_ATTACK = 30
+    const val SETUP_MOP = 33
+    const val TEARDOWN_MOP = 34
     const val CHARGING_COMPLETE = 100
+    const val OFFLINE = 101
+    const val LOCKED = 103
 
     fun describe(state: Int): String = when (state) {
+        0 -> "Getting info"
         STARTING -> "Starting"
-        CHARGER_DISCONNECTED -> "Charger disconnected"
+        CHARGER_DISCONNECTED -> "Sleeping"
         IDLE -> "Idle"
         REMOTE_CONTROL_ACTIVE -> "Remote control"
         CLEANING -> "Cleaning"
         RETURNING_HOME -> "Returning home"
-        MANUAL_MODE -> "Manual mode"
+        MANUAL_MODE -> "Remote controlling"
         CHARGING -> "Charging"
         CHARGING_ERROR -> "Charging error"
         PAUSED -> "Paused"
+        PATROLLING -> "On cruise"
         SPOT_CLEANING -> "Spot cleaning"
         ERROR -> "Error"
         SHUTTING_DOWN -> "Shutting down"
@@ -140,12 +155,25 @@ object VacuumStateCodes {
         SEGMENT_CLEANING -> "Room cleaning"
         MAPPING -> "Mapping"
         NOT_CHARGING -> "Idle"
-        WASHING_MOP -> "Washing mop"
+        WASHING_MOP, WASHING_MOP_ALT -> "Washing mop"
         GOING_TO_WASH_MOP -> "Going to wash mop"
         DRYING_MOP -> "Drying mop"
-        RETURNING_TO_DOCK_FOR_DRYING -> "Returning to dock"
+        IN_CALL -> "In call"
+        EGG_ATTACK -> "Scanning"
+        SETUP_MOP -> "Reinstalling mop cloth mounts"
+        TEARDOWN_MOP -> "Detaching mop cloth mounts"
+        36 -> "Demo mode"
+        37 -> "Boogie mode"
+        38 -> "Sorting"
+        39 -> "Remote control to pick up"
+        40 -> "Emergency stopped"
+        41 -> "Resetting"
+        42 -> "Programming mode"
+        43 -> "Changing the mop"
         EMPTYING_BIN -> "Emptying the bin"
         CHARGING_COMPLETE -> "Fully charged"
+        OFFLINE -> "Offline"
+        LOCKED -> "Saving map"
         else -> "State $state"
     }
 }
