@@ -412,7 +412,8 @@ private fun TimerDialog(
                         ScheduleRow("Cleaning Mode", if (initial != null && !settingsChanged) start.kind.label() else kind.label()) { sheet = "mode" }
                         ScheduleRow("Map", mapName) { sheet = "rooms" }
                         if (map != null) VacuumMapImage(map, if (wholeHome) emptyList() else selected,
-                            onRoomTap = { sheet = "rooms" }, onObstacleTap = {}, modifier = Modifier.fillMaxWidth().height(220.dp))
+                            onRoomTap = { sheet = "rooms" }, onObstacleTap = {},
+                            is3D = false, yawDegrees = 0f, onYawBy = {}, tiltDegrees = 0f, onTiltBy = {}, modifier = Modifier.fillMaxWidth().height(220.dp))
                         Text(if (wholeHome) "Entire map" else selected.joinToString(", ") { id -> rooms.firstOrNull { it.id == id }?.name ?: "Room $id" },
                             modifier = Modifier.align(Alignment.CenterHorizontally), style = MaterialTheme.typography.bodyMedium)
                         Text("Preview: currently loaded map", style = MaterialTheme.typography.labelSmall)
@@ -576,7 +577,8 @@ private fun TimerDialog(
                             }
                             if (map != null) VacuumMapImage(map, draftRooms, onRoomTap = { id ->
                                 if (rooms.any { it.id == id }) draftRooms = if (id in draftRooms) draftRooms - id else draftRooms + id
-                            }, onObstacleTap = {}, modifier = Modifier.fillMaxWidth().height(220.dp))
+                            }, onObstacleTap = {},
+                            is3D = false, yawDegrees = 0f, onYawBy = {}, tiltDegrees = 0f, onTiltBy = {}, modifier = Modifier.fillMaxWidth().height(220.dp))
                             if (rooms.isEmpty()) Text("No rooms loaded. Open the vacuum map, then return here.")
                             rooms.forEach { room ->
                                 Row(Modifier.fillMaxWidth().clickable { draftRooms = if (room.id in draftRooms) draftRooms - room.id else draftRooms + room.id }, verticalAlignment = Alignment.CenterVertically) {
