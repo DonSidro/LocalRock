@@ -485,7 +485,14 @@ class VacuumRepository(
 
     suspend fun findMe() { session.findMe() }
 
-    suspend fun startPetSearch() { session.startPetSearch().requireOk("app_start_pet_patrol") }
+    suspend fun startPetSearch() {
+        val fresh = session.getStatus() ?: throw IllegalStateException("The robot's current status is unavailable")
+        _status.update { it.merge(fresh) }
+        if (!fresh.isDockedAndIdle()) {
+            throw IllegalStateException("Dock the robot and finish its current task before looking for your pet")
+        }
+        session.startPetSearch().requireOk("app_start_pet_patrol")
+    }
 
     suspend fun fetchMatterStatus(): MatterInfo? =
         parseMatterStatus(session.getMatterStatus().requireOk("matter.get_status").result)

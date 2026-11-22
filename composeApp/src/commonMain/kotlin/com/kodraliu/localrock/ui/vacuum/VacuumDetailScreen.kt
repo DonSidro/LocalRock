@@ -311,6 +311,7 @@ fun VacuumDetailScreen(
         }
     }
 
+    var confirmFindPet by remember { mutableStateOf(false) }
     val onMoreAction: (MoreAction) -> Unit = { action ->
         when (action) {
             MoreAction.ROOMS -> panel = DetailPanel.Rooms
@@ -324,8 +325,23 @@ fun VacuumDetailScreen(
             MoreAction.CAMERA -> { panel = null; onCamera() }
             MoreAction.HISTORY -> { panel = null; onHistory() }
             MoreAction.EDIT_MAP -> { panel = null; onMapEdit() }
-            MoreAction.FIND_PET -> { panel = null; viewModel.run("Looking for your pet") { it.startPetSearch() } }
+            MoreAction.FIND_PET -> { panel = null; confirmFindPet = true }
         }
+    }
+
+    if (confirmFindPet) {
+        AlertDialog(
+            onDismissRequest = { confirmFindPet = false },
+            title = { Text("Find my pet?") },
+            text = { Text("The robot leaves its dock and patrols the home with its camera. It can only start while docked and not cleaning.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmFindPet = false
+                    viewModel.run("Looking for your pet") { it.startPetSearch() }
+                }) { Text("Start") }
+            },
+            dismissButton = { TextButton(onClick = { confirmFindPet = false }) { Text("Cancel") } },
+        )
     }
 
     val onLoadMap: () -> Unit = { viewModel.refreshMap() }
