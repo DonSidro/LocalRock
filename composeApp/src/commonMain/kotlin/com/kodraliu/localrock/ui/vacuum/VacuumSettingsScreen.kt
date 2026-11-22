@@ -1755,7 +1755,7 @@ private fun ChoicePickerDialog(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        RadioButton(selected = choice.value == selected, onClick = { onSelect(choice.value) })
+                        RadioButton(selected = choice.value == selected, onClick = { if (choice.value != selected) onSelect(choice.value) })
                         Spacer(Modifier.width(8.dp))
                         Column {
                             Text(choice.label, style = MaterialTheme.typography.bodyMedium)
