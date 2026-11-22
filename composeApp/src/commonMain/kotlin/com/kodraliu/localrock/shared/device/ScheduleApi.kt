@@ -50,7 +50,7 @@ class ScheduleApi(private val client: HttpClient) : ScheduleMirror {
 
     override suspend fun create(duid: String, job: JsonObject): String {
         val body = checked(client.post(collection(duid)) { setBody(json(job)) })
-        return ((body["result"] ?: body["data"]) as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull
+        return createdJobId(body)
             ?: throw DeviceApiException(0, "The server saved the schedule but did not return its id")
     }
 
@@ -76,4 +76,15 @@ class ScheduleApi(private val client: HttpClient) : ScheduleMirror {
         }
         return body
     }
+}
+
+// POST /jobs answers the new id as a plain string, or (older servers) the job object with an id.
+internal fun createdJobId(body: JsonObject): String? {
+    val result = (body["result"]?.takeUnless { it is JsonNull }) ?: body["data"]
+    val id = when (result) {
+        is JsonObject -> (result["id"] as? JsonPrimitive)?.contentOrNull
+        is JsonPrimitive -> result.contentOrNull
+        else -> null
+    }
+    return id?.takeUnless { it.isBlank() }
 }
