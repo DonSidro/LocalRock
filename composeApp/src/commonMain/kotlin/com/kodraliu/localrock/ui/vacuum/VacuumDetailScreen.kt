@@ -1176,10 +1176,11 @@ private fun VacuumMapImage(
             }
         }
 
-        // Zoom is shown relative to the framed view, which is the resting state.
+        // Zoom is shown relative to the framed view, which is the resting state. It sits at the bottom
+        // centre because the floor switcher and the session rooms badge use the top left.
         if (mapViewport.zoom > 1.05f) {
             Surface(
-                modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
                 color = Color.Black.copy(alpha = 0.6f),
                 shape = MaterialTheme.shapes.small,
             ) {
