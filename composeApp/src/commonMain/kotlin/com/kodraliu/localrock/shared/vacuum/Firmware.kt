@@ -43,7 +43,7 @@ sealed interface FirmwareProgress {
 
 /** Charging (8), fully charged (100), or asleep on the charger (state 2 with charge_status 1). */
 private val DockedStates = setOf(8, 100)
-const val FIRMWARE_MIN_BATTERY = 80
+const val FIRMWARE_MIN_BATTERY = 20
 
 /**
  * Why an install should not start now, or null when it may. The same rule the server applies, so the screen

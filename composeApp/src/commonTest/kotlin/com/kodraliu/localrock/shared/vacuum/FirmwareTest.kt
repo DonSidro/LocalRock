@@ -27,7 +27,8 @@ class FirmwareTest {
 
     @Test
     fun theBatteryAndErrorsBlockToo() {
-        assertTrue("80%" in firmwareInstallBlocker(8, 70, 1, 0, 0)!!)
+        assertTrue("20%" in firmwareInstallBlocker(8, 19, 1, 0, 0)!!)
+        assertNull(firmwareInstallBlocker(8, 20, 1, 0, 0))
         assertNotNull(firmwareInstallBlocker(8, 100, 1, 0, 12))
         assertNotNull(firmwareInstallBlocker(null, null, null, null, null))
     }
