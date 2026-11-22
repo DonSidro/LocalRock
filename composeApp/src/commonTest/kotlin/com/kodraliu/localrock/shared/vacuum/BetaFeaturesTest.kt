@@ -41,6 +41,18 @@ class BetaFeaturesTest {
     }
 
     @Test
+    fun uncleaned_area_reminder_needs_bit_154_and_climbing_arms_need_bit_147() {
+        val bit154 = "4" + "0".repeat(38)
+        val bit147 = "8" + "0".repeat(36)
+        fun ids(set: String) = supportedBetaFeatures(set).map { it.id }
+        assertTrue("uncleaned_area_reminder" in ids(bit154))
+        assertFalse("climbing_arms_high_sill" in ids(bit154))
+        assertTrue("climbing_arms_high_sill" in ids(bit147))
+        assertFalse("uncleaned_area_reminder" in ids(bit147))
+        assertFalse("uncleaned_area_reminder" in ids("0") || "climbing_arms_high_sill" in ids("0"))
+    }
+
+    @Test
     fun named_robot_settings_are_only_read_from_robots_that_advertise_them() {
         assertTrue(BetaFeatureDefs.filter { it.settingName != null }.all { it.bit != null })
     }
