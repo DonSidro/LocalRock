@@ -350,7 +350,7 @@ data class AdvertisedFeature(val bit: Int, val name: String?)
 /** What the robot advertises in `newFeatureSet` (bit 32 and up) that has no switch here, in bit order. */
 fun unlistedAdvertisedFeatures(newFeatureSet: String?): List<AdvertisedFeature> {
     val s = newFeatureSet ?: return emptyList()
-    val covered = BetaFeatureDefs.mapNotNull { it.bit }.toSet() + HandledElsewhereBits
+    val covered = BetaFeatureDefs.mapNotNull { it.bit }.toSet() + HandledElsewhereBits + VOICE_ASSISTANT_BIT
     return (32 until s.length * 4)
         .filter { it !in covered && newFeatureBit(s, it) }
         .map { AdvertisedFeature(it, AdvertisedFeatureNames[it]) }
