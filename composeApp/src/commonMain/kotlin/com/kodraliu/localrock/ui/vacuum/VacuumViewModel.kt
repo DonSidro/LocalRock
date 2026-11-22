@@ -209,24 +209,33 @@ class VacuumViewModel(
 
     /** Asks the server to install, then follows the robot through download, install and reboot. */
     fun startFirmwareUpdate() {
-        if (firmwareJob?.isActive == true) return
-        firmwareJob = viewModelScope.launch {
-            firmwareBlocker()?.let { _firmwareProgress.value = FirmwareProgress.Failed(it); return@launch }
-            val before = (_firmwareUpdate.value as? FirmwareUpdateState.Available)?.current ?: firmwareVersion
-            _firmwareProgress.value = FirmwareProgress.Starting
-            val started = try {
-                container.deviceRepository.startFirmwareUpdate(device.duid)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Throwable) {
-                _firmwareProgress.value = FirmwareProgress.Failed(describe(e)); return@launch
-            }
-            if (!started.started) {
-                _firmwareProgress.value = FirmwareProgress.Failed(started.reason ?: "The server did not start the update"); return@launch
-            }
-            followFirmwareUpdate(started.version, before)
+        if (firmwareJob?.isActive == true && !resumeReading) return
+        viewModelScope.launch {
+            // A tap during the page-open read waits for it; if it found a running update, that is already shown.
+            while (resumeReading) delay(50)
+            if (firmwareJob?.isActive == true) return@launch
+            firmwareJob = launch { runFirmwareStart() }
         }
     }
+
+    private suspend fun runFirmwareStart() {
+        firmwareBlocker()?.let { _firmwareProgress.value = FirmwareProgress.Failed(it); return }
+        val before = (_firmwareUpdate.value as? FirmwareUpdateState.Available)?.current ?: firmwareVersion
+        _firmwareProgress.value = FirmwareProgress.Starting
+        val started = try {
+            container.deviceRepository.startFirmwareUpdate(device.duid)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            _firmwareProgress.value = FirmwareProgress.Failed(describe(e)); return
+        }
+        if (!started.started) {
+            _firmwareProgress.value = FirmwareProgress.Failed(started.reason ?: "The server did not start the update"); return
+        }
+        followFirmwareUpdate(started.version, before)
+    }
+
+    private var resumeReading = false
 
     private suspend fun followFirmwareUpdate(target: String?, before: String?, startedWorking: Boolean = false) {
         val clock = TimeSource.Monotonic.markNow()
@@ -257,9 +266,16 @@ class VacuumViewModel(
     /** Picks the progress watch back up when the page opens while the robot is already downloading or installing. */
     fun resumeFirmwareWatch() {
         if (firmwareJob?.isActive == true) return
+        resumeReading = true
         firmwareJob = viewModelScope.launch {
-            val state = runCatching { repository.fetchOtaState() }.getOrNull()
-            val percent = if (state == "downloading") runCatching { repository.fetchOtaProgress() }.getOrNull() else null
+            val state: String?
+            val percent: Int?
+            try {
+                state = runCatching { repository.fetchOtaState() }.getOrNull()
+                percent = if (state == "downloading") runCatching { repository.fetchOtaProgress() }.getOrNull() else null
+            } finally {
+                resumeReading = false
+            }
             val step = nextFirmwareStep(FirmwareProgress.Idle, false, state != null, state, percent)
             if (!step.seenWorking) return@launch
             _firmwareProgress.value = step.progress
