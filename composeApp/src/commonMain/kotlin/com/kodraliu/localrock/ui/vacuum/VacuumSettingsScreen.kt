@@ -137,7 +137,7 @@ import com.kodraliu.localrock.shared.vacuum.RobotSettings
 import com.kodraliu.localrock.shared.vacuum.VolumeLevels
 import com.kodraliu.localrock.shared.vacuum.volumeLabel
 import com.kodraliu.localrock.shared.vacuum.volumeLevelIndex
-import com.kodraliu.localrock.shared.vacuum.VacuumStateCodes
+import com.kodraliu.localrock.shared.vacuum.isDockedAndIdle
 import com.kodraliu.localrock.shared.vacuum.washFrequencyLabel
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.ui.AppColors
@@ -282,8 +282,7 @@ fun VacuumSettingsScreen(
             dockType = status.dockType,
             dockStatus = status.dockStatus,
             busy = busy,
-            robotDockedAndIdle = status.inCleaning == 0 &&
-                status.state in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE),
+            robotDockedAndIdle = status.isDockedAndIdle(),
             onWashModeChange = { mode -> viewModel.run { it.setWashMode(mode) } },
             onWashFrequencyChange = { mode, minutes -> viewModel.run { it.setWashFrequency(mode, minutes) } },
             onAutoEmptyModeChange = { mode -> viewModel.run { it.setAutoEmptyMode(mode) } },
