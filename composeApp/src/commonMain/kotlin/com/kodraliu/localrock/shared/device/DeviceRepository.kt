@@ -15,8 +15,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -50,15 +48,14 @@ class DeviceRepository(
     val reachability: StateFlow<Map<String, Reachability>> = _reachability.asStateFlow()
 
     /** Robots the server knows from the cloud import but has never paired; they open Add vacuum when tapped. */
-    private val _neverHeard = MutableStateFlow<Set<String>>(emptySet())
+    private val neverHeard = NeverHeard(scope) { duid -> deviceApi.lastKnown(duid, false).known }
 
-    /** A robot that answers a probe is not shown as unpaired, whatever the server's log says. */
-    val unpaired: StateFlow<Set<String>> = combine(_neverHeard, _reachability) { never, reach ->
-        never.filterTo(mutableSetOf()) { reach[it] != Reachability.ONLINE }
+    /** Never heard from, and (for a robot we can probe) the probe has said offline; see [unpairedDuids]. */
+    val unpaired: StateFlow<Set<String>> = combine(neverHeard.duids, _reachability, _devicesFlow) { never, reach, devices ->
+        unpairedDuids(never, reach, devices)
     }.stateIn(scope, SharingStarted.Eagerly, emptySet())
 
     private var probeJob: Job? = null
-    private var neverHeardJob: Job? = null
 
     /**
      * Ask every paired robot directly whether it is reachable. Returns at once; verdicts land in
@@ -91,20 +88,6 @@ class DeviceRepository(
         }
     }
 
-    /** A robot the server has never heard from over MQTT was imported from the cloud but never paired to this server. */
-    private fun markNeverHeard(devices: List<Device>) {
-        neverHeardJob?.cancel()
-        neverHeardJob = scope.launch {
-            val never = devices.map { device ->
-                async {
-                    val unknown = try { !deviceApi.lastKnown(device.duid, false).known } catch (e: CancellationException) { throw e } catch (e: Throwable) { false }
-                    device.duid.takeIf { unknown }
-                }
-            }.awaitAll().filterNotNull().toSet()
-            _neverHeard.value = never
-        }
-    }
-
     suspend fun refresh() {
         if (isDemo()) {
             val home = DemoData.home
@@ -126,7 +109,7 @@ class DeviceRepository(
         _devicesFlow.value = home.devices.sortedForList()
         val productsByDeviceId = home.products.associateBy { it.id }
         _products.value = home.devices.associate { it.duid to productsByDeviceId[it.productId]!! }
-        markNeverHeard(home.devices)
+        neverHeard.refresh(home.devices)
     }
 
     /** Create (or look up by name) a cloud room in the current home. */
