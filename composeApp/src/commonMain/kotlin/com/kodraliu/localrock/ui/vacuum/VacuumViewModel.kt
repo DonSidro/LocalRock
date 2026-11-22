@@ -20,6 +20,7 @@ import com.kodraliu.localrock.shared.vacuum.showsBetaPage
 import com.kodraliu.localrock.shared.vacuum.supportedBetaFeatures
 import com.kodraliu.localrock.shared.vacuum.unlistedAdvertisedFeatures
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
+import com.kodraliu.localrock.shared.vacuum.map.parseB01Map
 import com.kodraliu.localrock.shared.vacuum.map.parseLegacyMap
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -188,7 +189,12 @@ class VacuumViewModel(
             if (status.value.state != null || status.value.battery != null) return@launch
             _lastKnown.value = snapshot
             _lastKnownMap.value = snapshot.map
-                ?.let { runCatching { parseLegacyMap(Base64.decode(it)) }.getOrNull() }
+                ?.let { encoded ->
+                    runCatching {
+                        val bytes = Base64.decode(encoded)
+                        runCatching { parseB01Map(bytes) }.getOrNull() ?: parseLegacyMap(bytes)
+                    }.getOrNull()
+                }
                 ?.withRoomTable(snapshot.rooms)
         }
     }
