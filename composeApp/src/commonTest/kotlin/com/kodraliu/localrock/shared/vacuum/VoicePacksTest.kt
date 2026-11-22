@@ -38,6 +38,7 @@ class VoicePacksTest {
         assertEquals(listOf(1), parseVoicePackList(json(info), "cn")!!.map { it.id })
         assertNull(parseVoicePackList(json("""{"code":502}"""), "us"))
         val cnLike = """{"voice_list":[{"voice_id":5,"applicable":["prc"],"voice_title":"Prc","voice_pkg_url":"u","voice_pkg_md5":"m"},{"voice_id":6,"applicable":["cncn"],"voice_title":"Other","voice_pkg_url":"u","voice_pkg_md5":"m"}]}"""
+        assertEquals(listOf(5), parseVoicePackList(json(cnLike), "CN")!!.map { it.id })
         assertEquals(listOf(6), parseVoicePackList(json(cnLike), "cncn")!!.map { it.id })
         val noApplicable = """{"voice_list":[{"voice_id":3,"applicable":null,"voice_title":"English","voice_pkg_url":"u","voice_pkg_md5":"m"}]}"""
         assertEquals(1, parseVoicePackList(json(noApplicable), "us")!!.size)
