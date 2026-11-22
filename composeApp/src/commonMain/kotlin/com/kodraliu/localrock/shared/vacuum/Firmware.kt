@@ -72,9 +72,14 @@ fun firmwareOutcome(before: String?, target: String?, after: String?): FirmwareP
 }
 
 /** One look at the robot's OTA state, turned into what to show next. [seenWorking] stays true once it has left idle. */
-data class FirmwareStep(val progress: FirmwareProgress, val seenWorking: Boolean, val finished: Boolean = false)
+data class FirmwareStep(val progress: FirmwareProgress, val seenWorking: Boolean, val finished: Boolean = false, val idleStreak: Int = 0)
 
-fun nextFirmwareStep(previous: FirmwareProgress, seenWorking: Boolean, answered: Boolean, otaState: String?, percent: Int?): FirmwareStep {
+/** Idle answers in a row, after the robot worked, that end the watch (the server waits the same way). */
+const val FIRMWARE_IDLE_POLLS = 3
+
+fun nextFirmwareStep(
+    previous: FirmwareProgress, seenWorking: Boolean, answered: Boolean, otaState: String?, percent: Int?, idleStreak: Int = 0,
+): FirmwareStep {
     if (!answered) {
         // Silence after the robot started working is the reboot; before that it says nothing yet.
         return if (seenWorking) FirmwareStep(FirmwareProgress.Restarting, true) else FirmwareStep(previous, false)
@@ -83,7 +88,8 @@ fun nextFirmwareStep(previous: FirmwareProgress, seenWorking: Boolean, answered:
         "downloading" -> FirmwareStep(FirmwareProgress.Downloading(percent?.takeIf { it in 0..100 }), true)
         "installing", "wait_install" -> FirmwareStep(FirmwareProgress.Installing, true)
         "failed" -> FirmwareStep(FirmwareProgress.Failed("The robot reported that the update failed."), seenWorking, finished = true)
-        "idle" -> if (seenWorking) FirmwareStep(previous, true, finished = true) else FirmwareStep(previous, false)
+        // A single idle can sit between download and install, so only a run of them means the robot is done.
+        "idle" -> if (!seenWorking) FirmwareStep(previous, false) else FirmwareStep(previous, true, finished = idleStreak + 1 >= FIRMWARE_IDLE_POLLS, idleStreak = idleStreak + 1)
         else -> FirmwareStep(previous, seenWorking)
     }
 }

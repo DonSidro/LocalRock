@@ -231,12 +231,14 @@ class VacuumViewModel(
     private suspend fun followFirmwareUpdate(target: String?, before: String?, startedWorking: Boolean = false) {
         val clock = TimeSource.Monotonic.markNow()
         var seenWorking = startedWorking
+        var idleStreak = 0
         while (clock.elapsedNow() < FIRMWARE_WATCH_LIMIT) {
             delay(FIRMWARE_POLL_MS)
             val ota = runCatching { repository.fetchOtaState() }
             val percent = if (ota.isSuccess) runCatching { repository.fetchOtaProgress() }.getOrNull() else null
-            val step = nextFirmwareStep(_firmwareProgress.value, seenWorking, ota.isSuccess, ota.getOrNull(), percent)
+            val step = nextFirmwareStep(_firmwareProgress.value, seenWorking, ota.isSuccess, ota.getOrNull(), percent, idleStreak)
             seenWorking = step.seenWorking
+            idleStreak = step.idleStreak
             _firmwareProgress.value = step.progress
             if (step.finished) {
                 if (step.progress is FirmwareProgress.Failed) return

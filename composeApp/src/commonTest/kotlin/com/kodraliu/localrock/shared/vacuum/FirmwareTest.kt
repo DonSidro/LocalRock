@@ -47,8 +47,42 @@ class FirmwareTest {
         step = nextFirmwareStep(step.progress, step.seenWorking, false, null, null)
         assertEquals(FirmwareProgress.Restarting, step.progress)
 
-        step = nextFirmwareStep(step.progress, step.seenWorking, true, "idle", 100)
+        repeat(FIRMWARE_IDLE_POLLS - 1) {
+            step = nextFirmwareStep(step.progress, step.seenWorking, true, "idle", 100, step.idleStreak)
+            assertTrue(!step.finished)
+        }
+        step = nextFirmwareStep(step.progress, step.seenWorking, true, "idle", 100, step.idleStreak)
         assertTrue(step.finished && step.progress !is FirmwareProgress.Failed)
+    }
+
+    // Each entry is one poll: the robot's OTA state, or null when it did not answer.
+    private fun watch(vararg polls: String?): FirmwareStep {
+        var step = FirmwareStep(FirmwareProgress.Starting, false)
+        for (state in polls) {
+            step = nextFirmwareStep(step.progress, step.seenWorking, state != null, state, null, step.idleStreak)
+            if (step.finished) break
+        }
+        return step
+    }
+
+    @Test
+    fun anIdleBetweenDownloadAndInstallDoesNotEndTheWatch() {
+        assertTrue(!watch("downloading", "idle", "installing").finished)
+        assertEquals(FirmwareProgress.Installing, watch("downloading", "idle", "installing").progress)
+        assertTrue(!watch("downloading", "idle", "idle", "installing", "idle").finished)
+    }
+
+    @Test
+    fun theWatchEndsAfterIdleHoldsThroughTheRebootGap() {
+        assertTrue(!watch("installing", null, "idle", null, "idle").finished)
+        assertTrue(watch("installing", null, "idle", "idle", "idle").finished)
+        assertTrue(watch("downloading", "installing", null, null, "idle", "idle", "idle").finished)
+    }
+
+    @Test
+    fun aFailedStateEndsTheWatchAtOnce() {
+        val step = watch("downloading", "failed")
+        assertTrue(step.finished && step.progress is FirmwareProgress.Failed)
     }
 
     @Test
