@@ -39,13 +39,13 @@ class ScheduleJobsApiTest {
         }
     }
     @Test fun create_accepts_a_string_id_or_the_old_job_object() = runTest {
-        for ((reply, expected) in listOf("\"result\":\"77\"" to "77", "\"result\":{\"id\":78,\"cron\":\"x\"}" to "78", "\"data\":{\"id\":\"79\"}" to "79")) {
+        for ((reply, expected) in listOf("\"result\":\"77\"" to "77", "\"result\":{\"id\":78,\"cron\":\"x\"}" to "78", "\"data\":{\"id\":\"79\"}" to "79", "\"result\":{},\"data\":{\"id\":80}" to "80")) {
             val client = HttpClient(MockEngine { respond("{\"code\":200,$reply}", headers = headersOf(HttpHeaders.ContentType, "application/json")) })
             try { assertEquals(expected, ScheduleApi(client).create("robot", JsonObject(emptyMap()))) } finally { client.close() }
         }
     }
     @Test fun create_without_a_usable_id_is_still_an_error() = runTest {
-        for (reply in listOf("\"result\":{}", "\"result\":\"\"", "\"result\":null", "\"result\":[1]", "\"x\":1")) {
+        for (reply in listOf("\"result\":{}", "\"result\":\"\"", "\"result\":null", "\"result\":\"ok\"", "\"result\":\"done\"", "\"result\":true", "\"result\":{\"id\":\"ok\"}", "\"result\":[1]", "\"x\":1")) {
             val client = HttpClient(MockEngine { respond("{\"code\":200,$reply}", headers = headersOf(HttpHeaders.ContentType, "application/json")) })
             try { assertFailsWith<DeviceApiException> { ScheduleApi(client).create("robot", JsonObject(emptyMap())) } } finally { client.close() }
         }

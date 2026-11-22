@@ -15,6 +15,7 @@ import io.ktor.http.content.TextContent
 import io.ktor.http.isSuccess
 import io.ktor.http.encodeURLPathPart
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
@@ -80,11 +81,18 @@ class ScheduleApi(private val client: HttpClient) : ScheduleMirror {
 
 // POST /jobs answers the new id as a plain string, or (older servers) the job object with an id.
 internal fun createdJobId(body: JsonObject): String? {
-    val result = (body["result"]?.takeUnless { it is JsonNull }) ?: body["data"]
-    val id = when (result) {
-        is JsonObject -> (result["id"] as? JsonPrimitive)?.contentOrNull
-        is JsonPrimitive -> result.contentOrNull
-        else -> null
+    fun idOf(value: JsonElement?): String? {
+        val primitive = when (value) {
+            is JsonObject -> value["id"] as? JsonPrimitive
+            is JsonPrimitive -> value
+            else -> null
+        } ?: return null
+        val text = primitive.contentOrNull?.trim()?.takeUnless { it.isEmpty() } ?: return null
+        if (!primitive.isString) return text.takeIf { it.toDoubleOrNull() != null }
+        return text.takeUnless { it.lowercase() in NOT_AN_ID }
     }
-    return id?.takeUnless { it.isBlank() }
+    val result = body["result"]?.takeUnless { it is JsonNull }
+    return idOf(result) ?: idOf(body["data"])
 }
+
+private val NOT_AN_ID = setOf("ok", "done", "true", "false", "success", "null")
