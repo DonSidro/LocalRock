@@ -426,6 +426,8 @@ class VacuumRepository(
     /** Switches suction, water and route in one command, the only way in or out of SmartPlan. */
     suspend fun setCleanMotorMode(fanPower: Int, waterBoxMode: Int, mopMode: Int) {
         session.setCleanMotorMode(fanPower, waterBoxMode, mopMode).requireOk("set_clean_motor_mode")
+        // All three go out together, so the next change must start from these, not wait for a status poll.
+        _status.update { it.copy(fanPower = fanPower, waterBoxCustomMode = waterBoxMode) }
         _mopMode.value = mopMode
     }
 
