@@ -98,13 +98,16 @@ class DeviceApi(private val client: HttpClient) {
     suspend fun startFirmwareUpdate(duid: String): FirmwareStartResult {
         val resp = client.post("/ota/device/$duid/upgrade") { header(HttpHeaders.Accept, "application/json") }
         if (!resp.status.isSuccess()) {
-            throw DeviceApiException(resp.status.value, "The server did not accept the update request (HTTP ${resp.status.value})")
+            throw DeviceApiException(resp.status.value, firmwareStartRefusal(resp.status.value))
         }
         val root = resp.body<kotlinx.serialization.json.JsonObject>()
         val data = (root["data"] ?: root["result"]) as? kotlinx.serialization.json.JsonObject
         fun text(key: String) = (data?.get(key) as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
         val started = (data?.get("started") as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
-        val message = text("reason") ?: text("error") ?: (root["msg"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+        // The server answers its own refusals with HTTP 200 and the status in `code`.
+        val code = (root["code"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull()
+        val message = if (!started && (code == 404 || code == 501)) firmwareStartRefusal(code) else
+            text("reason") ?: text("error") ?: (root["msg"] as? kotlinx.serialization.json.JsonPrimitive)?.content
         return FirmwareStartResult(started, text("version"), if (started) null else message)
     }
 
@@ -118,6 +121,12 @@ class DeviceApi(private val client: HttpClient) {
         }
         return resp.body<FirmwareOtaResponse>().result
     }
+}
+
+/** A server without install support answers HTTP 404 (older) or code 501 in the body (install option off). */
+internal fun firmwareStartRefusal(status: Int): String = when (status) {
+    404, 501 -> "This server cannot install firmware. Turn on its install option (enable_install in the [ota] section, server PR #255), then try again."
+    else -> "The server did not accept the update request (HTTP $status)"
 }
 
 /** Only `code`/`msg` are guaranteed; `data` is absent or shaped differently on error replies. */

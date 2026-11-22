@@ -1,5 +1,6 @@
 package com.kodraliu.localrock.shared.vacuum
 
+import com.kodraliu.localrock.shared.device.firmwareStartRefusal
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -73,6 +74,13 @@ class FirmwareTest {
     @Test
     fun anUnreadableVersionIsNotDone() {
         assertTrue(firmwareOutcome("02.33.48", "02.35.52", null) is FirmwareProgress.Failed)
+    }
+
+    @Test
+    fun aServerWithoutInstallSupportIsExplainedAndOtherRefusalsKeepTheirCode() {
+        assertTrue("enable_install" in firmwareStartRefusal(404))
+        assertTrue("enable_install" in firmwareStartRefusal(501))
+        assertTrue("HTTP 500" in firmwareStartRefusal(500))
     }
 
     @Test
