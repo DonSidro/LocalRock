@@ -386,7 +386,8 @@ class VacuumSession(
                         request?.answer?.complete(resp)
                     }
                 }
-                println("[VacLocal] rpc response id=${resp.id} result=${resp.result} error=${resp.error}")
+                // Responses can contain camera credentials or SDP, including unsolicited/late replies.
+                println("[VacLocal] rpc response id=${resp.id} error=${resp.error != null}")
             }
             val dps = V1Envelope.decodeDpsPush(m.payload)
             if (dps != null) {

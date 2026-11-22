@@ -242,7 +242,9 @@ fun VacuumDetailScreen(
     val map3D by viewModel.map3D.collectAsState()
     val supportsSmartPlan by viewModel.supportsSmartPlan.collectAsState()
     val supportsWaterSlide by viewModel.supportsWaterSlide.collectAsState()
-    val parsedMap by viewModel.repository.parsedMap.collectAsState()
+    val liveMap by viewModel.repository.parsedMap.collectAsState()
+    // A robot carried to its dock keeps its old map position until it re-localizes, so draw it at the charger.
+    val parsedMap = remember(liveMap, status.state) { liveMap?.withRobotOnDock(isDocked(status.state)) }
     val floorMaps by viewModel.repository.floorMaps.collectAsState()
     val currentFloorFlag by viewModel.repository.currentFloorFlag.collectAsState()
     val maxFloorMaps by viewModel.repository.maxFloorMaps.collectAsState()
