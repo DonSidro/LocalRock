@@ -49,6 +49,8 @@ private class MapPalette(
     val floor: Color,
     val rooms: List<Color>,
     val path: Color,
+    /** The wide faint band under the route, for the ground the robot has covered. */
+    val pathBand: Color,
     val charger: Color,
     val robot: Color,
     /** Drawn behind both markers so they stay readable on any room tint. */
@@ -67,11 +69,19 @@ private val LightPalette = MapPalette(
     wall = Color(0xFF3A4A52),
     floor = Color(0xFFE9EFEE),
     rooms = OfficialRoomColors,
-    // Deep enough to read as ink rather than neon against the pastels.
+    // White, for the black hero; rememberMapBitmap uses SurfaceLightPalette instead.
     path = Color(0x99FFFFFF),
+    pathBand = Color(0x4CE5E5E5), // the app's mopPathColor, #e5e5e54c
     charger = Color(0xFF1FB36A),
     robot = Color(0xFF1FB36A),
     markerRing = Color(0xFFFFFFFF),
+)
+
+// Map pictures on the themed surface (editors, zone clean, dialogs) need a dark route in light mode.
+private val SurfaceLightPalette = MapPalette(
+    wall = LightPalette.wall, floor = LightPalette.floor, rooms = LightPalette.rooms,
+    path = Color(0xCC1B2A30), pathBand = Color(0x331B2A30),
+    charger = LightPalette.charger, robot = LightPalette.robot, markerRing = LightPalette.markerRing,
 )
 
 private val DarkPalette = MapPalette(
@@ -79,6 +89,7 @@ private val DarkPalette = MapPalette(
     floor = Color(0xFF17201F),
     rooms = OfficialRoomColors,
     path = Color(0x99FFFFFF),
+    pathBand = Color(0x4CE5E5E5),
     charger = Color(0xFF2ED47E),
     robot = Color(0xFF2ED47E),
     markerRing = Color(0xFF0B1112),
@@ -92,7 +103,7 @@ private val DarkPalette = MapPalette(
 fun rememberMapBitmap(map: ParsedMap, drawRestrictions: Boolean = true, floorPlan: Boolean = true): ImageBitmap {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     return remember(map, dark, drawRestrictions, floorPlan) {
-        renderMap(map, if (dark) DarkPalette else LightPalette, drawRestrictions, floorPlan)
+        renderMap(map, if (dark) DarkPalette else SurfaceLightPalette, drawRestrictions, floorPlan)
     }
 }
 
@@ -566,7 +577,7 @@ private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette, faint:
     }
     // A wide faint band for the ground the robot has covered, under the thin line of its route.
     canvas.drawPath(main, Paint().apply {
-        color = Color(0x4CE5E5E5) // the app's mopPathColor, #e5e5e54c
+        color = palette.pathBand
         style = PaintingStyle.Stroke
         strokeWidth = 6.5f
         strokeCap = StrokeCap.Round
