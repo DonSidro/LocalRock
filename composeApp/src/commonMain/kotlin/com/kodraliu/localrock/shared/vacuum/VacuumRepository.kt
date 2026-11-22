@@ -304,17 +304,10 @@ class VacuumRepository(
         applyRoomNames()
     }
 
-    private fun resolveRoomName(room: ParsedMapRoom): String =
-        segmentToRoomId[room.id]?.let { homeRoomNames[it] } ?: room.name
-
-    private fun resolveRoomTag(room: ParsedMapRoom): Int? =
-        rawSegmentTable?.firstOrNull { it.segment == room.id }?.tagId
-
     private fun applyRoomNames() {
-        _parsedMap.update { pm ->
-            pm?.copy(rooms = pm.rooms.map { it.copy(name = resolveRoomName(it), tag = resolveRoomTag(it)) })
-        }
-        _rooms.update { list -> list.map { it.copy(name = resolveRoomName(it), tag = resolveRoomTag(it)) } }
+        fun ParsedMapRoom.resolved() = withRoomTable(segmentToRoomId, homeRoomNames, rawSegmentTable)
+        _parsedMap.update { pm -> pm?.copy(rooms = pm.rooms.map { it.resolved() }) }
+        _rooms.update { list -> list.map { it.resolved() } }
     }
 
     /**
@@ -1379,6 +1372,21 @@ private fun parseCronTimer(id: String, enabled: Boolean, cron: String): CleanTim
 }
 
 const val CONSUMABLE_UNSUPPORTED = "unsupported"
+
+/** A room with its home name, its type tag and whether the robot's room table lists it. */
+internal fun ParsedMapRoom.withRoomTable(
+    segmentToRoomId: Map<Int, Long>,
+    homeRoomNames: Map<Long, String>,
+    table: List<SegmentEntry>?,
+): ParsedMapRoom {
+    val tagId = table?.firstOrNull { it.segment == id }?.tagId
+    return copy(
+        name = segmentToRoomId[id]?.let { homeRoomNames[it] } ?: name,
+        tag = tagId,
+        // The segment mapping outlives the raw table, which is cleared on a floor switch or map save.
+        inRoomTable = id in segmentToRoomId || table?.any { it.segment == id } == true,
+    )
+}
 
 /**
  * Segment id -> Roborock room id from a `get_room_mapping` result (`[[segment, "roomId", tag], ...]`).

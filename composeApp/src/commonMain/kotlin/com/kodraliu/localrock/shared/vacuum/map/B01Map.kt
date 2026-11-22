@@ -286,8 +286,10 @@ data class ParsedMapRoom(
     /** How many cells of the room run across the map at its label, so a name can be fitted inside it. */
     val labelSpanCells: Int? = null,
     val labelSpanCellsY: Int? = null,
-    /** The room type the robot keeps for this room (see RoomType); null for a room with no entry in its table. */
+    /** The room type the robot keeps for this room (see RoomType); null when its table has no tag column or no entry. */
     val tag: Int? = null,
+    /** The robot's room table has an entry for this room, so it counts as named even without a tag column. */
+    val inRoomTable: Boolean = false,
 )
 
 /** One cruise point: where the robot stopped (robot mm), its result code and the ids of the photos it took there. */
