@@ -51,6 +51,31 @@ class FirmwareTest {
     }
 
     @Test
+    fun aChangedVersionIsDoneAndAnUnchangedOneIsAFailure() {
+        assertEquals(FirmwareProgress.Done("02.35.52"), firmwareOutcome("02.33.48", "02.35.52", "02.35.52"))
+        val rolledBack = firmwareOutcome("02.33.48", "02.35.52", "02.33.48")
+        assertTrue(rolledBack is FirmwareProgress.Failed && "rolled back or did not apply" in rolledBack.reason)
+        assertTrue(firmwareOutcome("02.33.48", "02.35.52", "02.34.00") is FirmwareProgress.Failed)
+    }
+
+    @Test
+    fun withoutAKnownTargetOnlyAChangeFromTheOldVersionCounts() {
+        assertEquals(FirmwareProgress.Done("02.35.52"), firmwareOutcome("02.33.48", null, "02.35.52"))
+        assertTrue(firmwareOutcome("02.33.48", null, "02.33.48") is FirmwareProgress.Failed)
+        assertTrue(firmwareOutcome(null, null, "02.35.52") is FirmwareProgress.Failed)
+    }
+
+    @Test
+    fun anOlderTargetIsDoneWhenTheRobotReportsIt() {
+        assertEquals(FirmwareProgress.Done("02.33.48"), firmwareOutcome("02.35.52", "02.33.48", "02.33.48"))
+    }
+
+    @Test
+    fun anUnreadableVersionIsNotDone() {
+        assertTrue(firmwareOutcome("02.33.48", "02.35.52", null) is FirmwareProgress.Failed)
+    }
+
+    @Test
     fun silenceBeforeTheRobotStartedIsNotARestartAndAFailureEnds() {
         assertEquals(FirmwareProgress.Starting, nextFirmwareStep(FirmwareProgress.Starting, false, false, null, null).progress)
         val failed = nextFirmwareStep(FirmwareProgress.Installing, true, true, "failed", null)

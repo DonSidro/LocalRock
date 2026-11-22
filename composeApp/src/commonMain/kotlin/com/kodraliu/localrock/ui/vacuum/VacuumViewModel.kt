@@ -12,6 +12,7 @@ import com.kodraliu.localrock.shared.model.LastKnown
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.FirmwareProgress
 import com.kodraliu.localrock.shared.vacuum.firmwareInstallBlocker
+import com.kodraliu.localrock.shared.vacuum.firmwareOutcome
 import com.kodraliu.localrock.shared.vacuum.nextFirmwareStep
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.TimeSource
@@ -211,6 +212,7 @@ class VacuumViewModel(
         if (firmwareJob?.isActive == true) return
         firmwareJob = viewModelScope.launch {
             firmwareBlocker()?.let { _firmwareProgress.value = FirmwareProgress.Failed(it); return@launch }
+            val before = (_firmwareUpdate.value as? FirmwareUpdateState.Available)?.current ?: firmwareVersion
             _firmwareProgress.value = FirmwareProgress.Starting
             val started = try {
                 container.deviceRepository.startFirmwareUpdate(device.duid)
@@ -222,11 +224,11 @@ class VacuumViewModel(
             if (!started.started) {
                 _firmwareProgress.value = FirmwareProgress.Failed(started.reason ?: "The server did not start the update"); return@launch
             }
-            followFirmwareUpdate(started.version)
+            followFirmwareUpdate(started.version, before)
         }
     }
 
-    private suspend fun followFirmwareUpdate(target: String?) {
+    private suspend fun followFirmwareUpdate(target: String?, before: String?) {
         val clock = TimeSource.Monotonic.markNow()
         var seenWorking = false
         while (clock.elapsedNow() < FIRMWARE_WATCH_LIMIT) {
@@ -238,8 +240,7 @@ class VacuumViewModel(
             _firmwareProgress.value = step.progress
             if (step.finished) {
                 if (step.progress is FirmwareProgress.Failed) return
-                val info = runCatching { container.deviceRepository.checkFirmwareUpdate(device.duid) }.getOrNull()
-                _firmwareProgress.value = FirmwareProgress.Done(info?.currentVersion ?: target)
+                _firmwareProgress.value = confirmFirmwareVersion(before, target)
                 checkFirmwareUpdate()
                 return
             }
@@ -249,6 +250,18 @@ class VacuumViewModel(
             }
         }
         _firmwareProgress.value = FirmwareProgress.Failed("The update is taking longer than expected. Check the robot and try again.")
+    }
+
+    // The server's version can lag the robot's reboot by a few polls, so ask again before calling it a failure.
+    private suspend fun confirmFirmwareVersion(before: String?, target: String?): FirmwareProgress {
+        var outcome: FirmwareProgress = firmwareOutcome(before, target, null)
+        repeat(FIRMWARE_CONFIRM_TRIES) { attempt ->
+            if (attempt > 0) delay(FIRMWARE_POLL_MS)
+            val info = runCatching { container.deviceRepository.checkFirmwareUpdate(device.duid) }.getOrNull()
+            outcome = firmwareOutcome(before, target, info?.currentVersion)
+            if (outcome is FirmwareProgress.Done) return outcome
+        }
+        return outcome
     }
 
     private val _routines = MutableStateFlow<RoutinesState>(RoutinesState.Loading)
@@ -549,6 +562,7 @@ class VacuumViewModel(
 }
 
 private val FIRMWARE_POLL_MS = 3_000L
+private const val FIRMWARE_CONFIRM_TRIES = 6
 private val FIRMWARE_START_LIMIT = 2.minutes
 private val FIRMWARE_WATCH_LIMIT = 25.minutes
 

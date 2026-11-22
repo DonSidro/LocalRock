@@ -59,6 +59,18 @@ fun firmwareInstallBlocker(state: Int?, battery: Int?, chargeStatus: Int?, inCle
     return null
 }
 
+/** Done only when the robot reports the target (or, with no target known, a version other than [before]); otherwise a failure. */
+fun firmwareOutcome(before: String?, target: String?, after: String?): FirmwareProgress {
+    val applied = when {
+        after == null -> return FirmwareProgress.Failed("The update finished, but the robot's firmware version could not be read to confirm it.")
+        target != null -> after == target
+        else -> before != null && after != before
+    }
+    if (applied) return FirmwareProgress.Done(after)
+    val expected = target?.let { ", not $it" } ?: ""
+    return FirmwareProgress.Failed("The robot still reports firmware $after$expected. The update was rolled back or did not apply.")
+}
+
 /** One look at the robot's OTA state, turned into what to show next. [seenWorking] stays true once it has left idle. */
 data class FirmwareStep(val progress: FirmwareProgress, val seenWorking: Boolean, val finished: Boolean = false)
 
