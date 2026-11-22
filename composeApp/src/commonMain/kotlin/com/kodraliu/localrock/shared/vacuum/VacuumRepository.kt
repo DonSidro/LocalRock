@@ -965,7 +965,9 @@ class VacuumRepository(
 
     /** Null when the robot did not reply at all, so a read that timed out is not mistaken for an answer. */
     private suspend fun readBetaFeature(def: BetaFeatureDef): BetaFeatureState? {
-        val resp = runCatching { session.sendCommand(def.getMethod) }.getOrNull() ?: return null
+        val resp = runCatching {
+            def.settingName?.let { session.getRobotSetting(it) } ?: session.sendCommand(def.getMethod)
+        }.getOrNull() ?: return null
         val parsed = parseBetaReply(resp.result)
         return BetaFeatureState(
             def = def,
@@ -1000,7 +1002,7 @@ class VacuumRepository(
                 }
                 if (state.answered && state.toggleable) states += state
             }
-            _betaFeatures.value = states
+            _betaFeatures.value = states.withoutReplaced()
             if (complete) betaFeatureDefsRead = defs
         } finally {
             _betaFeaturesLoading.value = false
@@ -1017,6 +1019,13 @@ class VacuumRepository(
      */
     suspend fun setBetaFeature(id: String, on: Boolean) {
         val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
+        current.def.settingName?.let { name ->
+            val sent = session.setRobotSetting(name, on)
+            // Read back before requireOk on purpose: a refused write still refreshes the row with the robot's real value.
+            refreshBetaFeature(current.def)
+            sent.requireOk("app_set_robot_setting")
+            return
+        }
         val candidates = betaSetParamCandidates(current.key, on)
         var last: V1Response? = null
         for (i in betaSetTryOrder(candidates.size, betaSetAcceptedShape[id])) {
@@ -1027,6 +1036,22 @@ class VacuumRepository(
         val updated = readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }
         if (updated != null) _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
         last?.requireOk(current.def.setMethod)
+    }
+
+    private suspend fun refreshBetaFeature(def: BetaFeatureDef) {
+        readBetaFeature(def)?.takeIf { it.answered && it.toggleable }?.let { updated ->
+            _betaFeatures.update { list -> list.map { if (it.def.id == def.id) updated else it } }
+        }
+    }
+
+    /** Writes one value of a multi-choice option, then reads it back so the screen shows what the robot holds. */
+    suspend fun setBetaChoice(id: String, value: Int) {
+        val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
+        val name = current.def.settingName ?: return
+        val sent = session.setRobotSetting(name, value)
+        // Read back before requireOk on purpose: a refused write still refreshes the row with the robot's real value.
+        refreshBetaFeature(current.def)
+        sent.requireOk("app_set_robot_setting")
     }
 
     suspend fun fetchDockSettings() {

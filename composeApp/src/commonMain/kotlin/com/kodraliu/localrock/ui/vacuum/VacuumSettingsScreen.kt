@@ -107,9 +107,12 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.vacuum.AdvertisedFeature
 import com.kodraliu.localrock.shared.vacuum.BetaFeatureState
+import com.kodraliu.localrock.shared.vacuum.FeatureChoice
+import com.kodraliu.localrock.shared.vacuum.choiceLabelFor
 import com.kodraliu.localrock.shared.vacuum.CleanRecord
 import com.kodraliu.localrock.shared.vacuum.CleanTimelineLabels
 import com.kodraliu.localrock.shared.vacuum.CleanTimelineStep
+import com.kodraliu.localrock.shared.vacuum.carpetModeOptions
 import com.kodraliu.localrock.shared.vacuum.CleanSummary
 import com.kodraliu.localrock.shared.vacuum.PatrolThumbnail
 import com.kodraliu.localrock.shared.vacuum.ConsumableStatus
@@ -251,6 +254,7 @@ fun VacuumSettingsScreen(
             title = "Floor cleaning",
             features = betaFeatures.inSection(FeatureSection.FLOOR),
             onToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            onChoice = { id, value -> viewModel.report { it.setBetaChoice(id, value) } },
             onBack = { route = SettingsRoute.Root },
         )
         SettingsRoute.Obstacle -> FeatureSectionScreen(
@@ -764,73 +768,103 @@ private fun MaintenanceScreen(
             } else {
                 LazyColumn(contentPadding = padding) {
                     item {
+                        val used = consumables.mainBrushWorkTime ?: 0L
                         ConsumableItem(
                             icon = Icons.Default.Cached,
                             iconTint = AppColors.Good,
                             title = "Main Brush",
-                            usedSeconds = consumables.mainBrushWorkTime ?: 0L,
-                            maxSeconds = ConsumableStatus.MAIN_BRUSH_LIFETIME_S,
+                            percent = ConsumableStatus.percentLeft(used, ConsumableStatus.MAIN_BRUSH_LIFETIME_S),
+                            detail = hoursLeft(used, ConsumableStatus.MAIN_BRUSH_LIFETIME_S),
                             onReset = { onReset("main_brush_work_time") },
                         )
                     }
                     item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
                     item {
+                        val used = consumables.sideBrushWorkTime ?: 0L
                         ConsumableItem(
                             icon = Icons.Default.Autorenew,
                             iconTint = AppColors.Water,
                             title = "Side Brush",
-                            usedSeconds = consumables.sideBrushWorkTime ?: 0L,
-                            maxSeconds = ConsumableStatus.SIDE_BRUSH_LIFETIME_S,
+                            percent = ConsumableStatus.percentLeft(used, ConsumableStatus.SIDE_BRUSH_LIFETIME_S),
+                            detail = hoursLeft(used, ConsumableStatus.SIDE_BRUSH_LIFETIME_S),
                             onReset = { onReset("side_brush_work_time") },
                         )
                     }
                     item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
                     item {
+                        val used = consumables.filterWorkTime ?: 0L
                         ConsumableItem(
                             icon = Icons.Default.Air,
                             iconTint = AppColors.AccentPurple,
                             title = "Filter",
-                            usedSeconds = consumables.filterWorkTime ?: 0L,
-                            maxSeconds = ConsumableStatus.FILTER_LIFETIME_S,
+                            percent = ConsumableStatus.percentLeft(used, ConsumableStatus.FILTER_LIFETIME_S),
+                            detail = hoursLeft(used, ConsumableStatus.FILTER_LIFETIME_S),
                             onReset = { onReset("filter_work_time") },
                         )
                     }
                     item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
                     item {
+                        val percent = ConsumableStatus.percentLeft(
+                            consumables.sensorDirtyTime ?: 0L,
+                            ConsumableStatus.SENSOR_LIFETIME_S,
+                        )
                         ConsumableItem(
                             icon = Icons.Default.Sensors,
                             iconTint = AppColors.Warn,
-                            title = "Sensor",
-                            usedSeconds = consumables.sensorDirtyTime ?: 0L,
-                            maxSeconds = ConsumableStatus.SENSOR_LIFETIME_S,
+                            title = "Sensors",
+                            percent = percent,
+                            detail = cleanState(percent),
+                            showPercent = false,
                             onReset = { onReset("sensor_dirty_time") },
                         )
                     }
-                    consumables.cleaningBrushWorkTime?.let { used ->
-                        item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
-                        item {
-                            ConsumableItem(
-                                icon = Icons.Default.CleaningServices,
-                                iconTint = AppColors.AccentCyan,
-                                title = "Maintenance Brush",
-                                usedSeconds = used,
-                                maxSeconds = ConsumableStatus.CLEANING_BRUSH_LIFETIME_S,
-                                onReset = { onReset("cleaning_brush_work_times") },
-                            )
-                        }
+                    item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
+                    item {
+                        ConsumableItem(
+                            icon = Icons.Default.Build,
+                            iconTint = AppColors.AccentCyan,
+                            title = "Mop",
+                            detail = "Replace as needed.",
+                        )
                     }
                     consumables.strainerWorkTime?.let { used ->
                         item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
                         item {
+                            val percent = ConsumableStatus.percentLeft(used, ConsumableStatus.STRAINER_LIFETIME_RUNS)
                             ConsumableItem(
                                 icon = Icons.Default.FilterAlt,
                                 iconTint = AppColors.AccentIndigo,
-                                title = "Strainer",
-                                usedSeconds = used,
-                                maxSeconds = ConsumableStatus.STRAINER_LIFETIME_S,
+                                title = "Cleaning Tray",
+                                percent = percent,
+                                detail = cleanState(percent),
+                                showPercent = false,
                                 onReset = { onReset("strainer_work_times") },
                             )
                         }
+                    }
+                    consumables.cleaningBrushWorkTime?.let { used ->
+                        item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
+                        item {
+                            val percent = ConsumableStatus.percentLeft(used, ConsumableStatus.CLEANING_BRUSH_LIFETIME_RUNS)
+                            ConsumableItem(
+                                icon = Icons.Default.CleaningServices,
+                                iconTint = AppColors.AccentCyan,
+                                title = "Maintenance Brush",
+                                percent = percent,
+                                detail = cleanState(percent),
+                                showPercent = false,
+                                onReset = { onReset("cleaning_brush_work_times") },
+                            )
+                        }
+                    }
+                    item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
+                    item {
+                        ConsumableItem(
+                            icon = Icons.Default.Delete,
+                            iconTint = AppColors.AccentCyan,
+                            title = "Dust Bag",
+                            detail = "Replace as needed.",
+                        )
                     }
                 }
             }
@@ -838,23 +872,33 @@ private fun MaintenanceScreen(
     }
 }
 
+private fun hoursLeft(usedSeconds: Long, maxSeconds: Long): String {
+    val remaining = (maxSeconds - usedSeconds).coerceAtLeast(0L)
+    val hours = remaining / 3600L
+    val minutes = (remaining % 3600L) / 60L
+    return if (hours > 0) "${hours}h ${minutes}m remaining" else "${minutes}m remaining"
+}
+
+private fun cleanState(percent: Int): String = when {
+    percent <= 0 -> "Must clean"
+    percent <= 20 -> "Clean soon"
+    else -> "Normal"
+}
+
 @Composable
 private fun ConsumableItem(
     icon: ImageVector,
     iconTint: Color,
     title: String,
-    usedSeconds: Long,
-    maxSeconds: Long,
-    onReset: () -> Unit,
+    detail: String,
+    percent: Int? = null,
+    showPercent: Boolean = true,
+    onReset: (() -> Unit)? = null,
 ) {
-    val remaining = (maxSeconds - usedSeconds).coerceAtLeast(0L)
-    val fraction = (remaining.toFloat() / maxSeconds).coerceIn(0f, 1f)
-    val remainingHours = remaining / 3600L
-    val remainingMinutes = (remaining % 3600L) / 60L
-    val percent = (fraction * 100).toInt()
     val progressColor = when {
-        fraction > 0.5f -> AppColors.Good
-        fraction > 0.2f -> AppColors.Warn
+        percent == null -> MaterialTheme.colorScheme.onSurfaceVariant
+        percent > 20 -> AppColors.Good
+        percent > 5 -> AppColors.Warn
         else -> MaterialTheme.colorScheme.error
     }
     Row(
@@ -880,27 +924,31 @@ private fun ConsumableItem(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                Text("$percent%", style = MaterialTheme.typography.labelMedium, color = progressColor, fontWeight = FontWeight.Bold)
+                if (percent != null && showPercent) {
+                    Text("$percent%", style = MaterialTheme.typography.labelMedium, color = progressColor, fontWeight = FontWeight.Bold)
+                }
             }
-            LinearProgressIndicator(
-                progress = { fraction },
-                modifier = Modifier.fillMaxWidth(),
-                color = progressColor,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            )
+            if (percent != null) {
+                LinearProgressIndicator(
+                    progress = { percent / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = progressColor,
+                    trackColor = if (percent <= 0) progressColor else MaterialTheme.colorScheme.surfaceVariant,
+                )
+            }
             Text(
-                if (remainingHours > 0) "${remainingHours}h ${remainingMinutes}m remaining"
-                else "${remainingMinutes}m remaining",
+                detail,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (percent != null && percent <= 0 && !showPercent) progressColor else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = onReset, modifier = Modifier.padding(top = 4.dp)) {
-            Text("Reset", color = MaterialTheme.colorScheme.error)
+        if (onReset != null) {
+            TextButton(onClick = onReset, modifier = Modifier.padding(top = 4.dp)) {
+                Text("Reset", color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1258,6 +1306,7 @@ private fun DockSettingsScreen(
     var confirmEmptyTank by remember { mutableStateOf(false) }
 
     val washFrequencyOptions = dockCapabilities.washFrequencyOptions
+    val dryTimeOptions = dockCapabilities.dryTimeOptions(dockSettings.dryTimeSeconds)
     val smartWash = dockSettings.smartWash
     val washFrequencyIndex = washFrequencyOptions.indexOfFirst {
         smartWash != null && it.mode == smartWash.mode && (it.mode != 0 || it.intervalMinutes?.times(60) == smartWash.intervalSeconds)
@@ -1433,9 +1482,9 @@ private fun DockSettingsScreen(
         )
         "dry_time" -> SimplePickerDialog(
             title = "Drying time",
-            options = DockOptions.dryTime.map { it.label },
-            selected = DockOptions.dryTime.indexOfFirst { it.code == dockSettings.dryTimeSeconds },
-            onSelect = { onDryTimeChange(DockOptions.dryTime[it].code); dialogTarget = null },
+            options = dryTimeOptions.map { it.label },
+            selected = dryTimeOptions.indexOfFirst { it.code == dockSettings.dryTimeSeconds },
+            onSelect = { onDryTimeChange(dryTimeOptions[it].code); dialogTarget = null },
             enabled = !busy,
             onDismiss = { dialogTarget = null },
         )
@@ -1642,7 +1691,11 @@ private fun RobotSettingsScreen(
 
 /** One feature the robot reports, as a switch under the page it belongs to. */
 @Composable
-private fun FeatureToggleRow(f: BetaFeatureState, onToggle: (String, Boolean) -> Unit) {
+private fun FeatureToggleRow(
+    f: BetaFeatureState,
+    onToggle: (String, Boolean) -> Unit,
+    onChoice: (String, Int) -> Unit = { _, _ -> },
+) {
     val icon = when (f.def.section) {
         FeatureSection.CARPET -> Icons.Default.GridView
         FeatureSection.FLOOR -> Icons.Default.CleaningServices
@@ -1650,6 +1703,27 @@ private fun FeatureToggleRow(f: BetaFeatureState, onToggle: (String, Boolean) ->
         FeatureSection.DOCK -> Icons.Default.Home
         FeatureSection.ROBOT -> Icons.Default.Settings
         FeatureSection.BETA -> Icons.Default.Science
+    }
+    val choices = f.def.choices
+    if (choices != null) {
+        var showPicker by remember { mutableStateOf(false) }
+        SettingRowClickable(
+            icon = icon,
+            iconTint = AppColors.AccentCyan,
+            title = f.def.title,
+            subtitle = f.choiceLabel ?: f.def.description,
+            onClick = { showPicker = true },
+        )
+        if (showPicker) {
+            ChoicePickerDialog(
+                title = f.def.title,
+                choices = choices,
+                selected = f.value,
+                onSelect = { onChoice(f.def.id, it); showPicker = false },
+                onDismiss = { showPicker = false },
+            )
+        }
+        return
     }
     SettingRowSwitch(
         icon = icon,
@@ -1661,6 +1735,50 @@ private fun FeatureToggleRow(f: BetaFeatureState, onToggle: (String, Boolean) ->
     )
 }
 
+/** Radio list of a multi-choice setting's values; a current value with no listed choice shows as an extra "Other (n)" line. */
+@Composable
+private fun ChoicePickerDialog(
+    title: String,
+    choices: List<FeatureChoice>,
+    selected: Int?,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val unknown = selected?.takeIf { v -> choices.none { it.value == v } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                choices.forEach { choice ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = choice.value == selected, onClick = { if (choice.value != selected) onSelect(choice.value) })
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(choice.label, style = MaterialTheme.typography.bodyMedium)
+                            choice.description?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+                if (unknown != null) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = true, enabled = false, onClick = {})
+                        Spacer(Modifier.width(8.dp))
+                        Text(choiceLabelFor(choices, unknown), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FeatureSectionScreen(
@@ -1668,6 +1786,7 @@ private fun FeatureSectionScreen(
     features: List<BetaFeatureState>,
     onToggle: (String, Boolean) -> Unit,
     onBack: () -> Unit,
+    onChoice: (String, Int) -> Unit = { _, _ -> },
 ) {
     Scaffold(
         topBar = {
@@ -1680,7 +1799,7 @@ private fun FeatureSectionScreen(
         CenteredContent {
             LazyColumn(contentPadding = padding) {
                 items(features, key = { it.def.id }) { f ->
-                    FeatureToggleRow(f, onToggle)
+                    FeatureToggleRow(f, onToggle, onChoice)
                     HorizontalDivider(Modifier.padding(start = 72.dp))
                 }
             }
@@ -1698,7 +1817,7 @@ private fun CarpetScreen(
     onBack: () -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
-    val options = listOf("Avoid carpet", "Standard", "Carpet boost")
+    val options = carpetModeOptions(carpetMode)
     Scaffold(
         topBar = {
             TopAppBar(
@@ -1714,7 +1833,7 @@ private fun CarpetScreen(
                         icon = Icons.Default.GridView,
                         iconTint = AppColors.Good,
                         title = "Carpet mode",
-                        subtitle = options.getOrElse(carpetMode) { "Standard" },
+                        subtitle = options.getOrElse(carpetMode) { "Mode $carpetMode" },
                         onClick = { showDialog = true },
                     )
                 }
