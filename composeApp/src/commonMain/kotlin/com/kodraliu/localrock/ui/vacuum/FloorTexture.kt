@@ -11,8 +11,7 @@ private const val PLANK_CELLS = 3
 private const val TILE_CELLS = 8
 
 /**
- * The robot reports wood grain as 0 or 90 degrees. Zero runs the planks left to right, ninety runs
- * them up and down; an unreported direction is drawn as zero.
+ * Wood grain is 0 (planks left to right) or 90 (up and down) degrees; unreported is drawn as 0.
  */
 internal fun floorPattern(materialId: Int?, direction: Int?): FloorPattern = when (materialId?.let { FloorMaterial.fromId(it) }) {
     FloorMaterial.WOOD -> if (direction == 90) FloorPattern.WOOD_ALONG_Y else FloorPattern.WOOD_ALONG_X
@@ -21,9 +20,7 @@ internal fun floorPattern(materialId: Int?, direction: Int?): FloorPattern = whe
 }
 
 /**
- * How much lighter (positive) or darker (negative) the grid cell at ([x], [y]) is than its room's
- * tint, between -1 and 1. Seams between planks and tiles are the darkest cells, and each plank or
- * tile gets its own small shift so the surface reads as separate boards rather than flat stripes.
+ * Shade of the cell at ([x], [y]) against its room's tint, -1 to 1: darkest at plank and tile seams, with a small shift per board.
  */
 internal fun textureShade(pattern: FloorPattern, x: Int, y: Int): Float = FLOOR_TEXTURE_STRENGTH * rawTextureShade(pattern, x, y)
 

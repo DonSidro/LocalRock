@@ -74,8 +74,7 @@ private fun continues(a: FloorPlanRun, b: FloorPlanRun): Boolean {
 }
 
 /**
- * The union of the cells' bounds (null if none) and the floor-plan polygons' bounds, grown by half a stroke of
- * [strokeCells] and kept inside the image, in the same normalised drawn space as [MapContentBounds].
+ * The cells' and floor-plan polygons' bounds, grown by half a stroke of [strokeCells] and kept inside the image.
  */
 internal fun floorPlanBoundsNorm(
     cells: MapContentBounds?,

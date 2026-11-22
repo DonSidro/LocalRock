@@ -8,13 +8,8 @@ import kotlin.math.floor
 internal const val NO_COLOUR_SLOT = 4
 
 /**
- * Palette slot per room id: 0 blue, 1 salmon, 2 teal, 3 yellow, [NO_COLOUR_SLOT] grey.
- *
- * A legacy map is coloured the way the Roborock app does it (its `getNeighboursInfo` and
- * `getColorData`): rooms are visited by how many rooms touch them, most first, and each takes the
- * lowest of four colours that no already coloured neighbour has, the biggest room taking the first.
- * Colours left unused are then shared out so all four appear. Walls carry their room's id in the
- * map, so two rooms touch where their floor or wall cells do.
+ * Palette slot per room id (0 blue, 1 salmon, 2 teal, 3 yellow, [NO_COLOUR_SLOT] grey), assigned as the Roborock app does:
+ * most-touching rooms first, each the lowest of four colours its coloured neighbours lack.
  */
 internal fun roomColorSlots(map: ParsedMap, slots: Int): Map<Int, Int> {
     val raw = map.originalGrid ?: return lookAcrossColorSlots(map, slots)

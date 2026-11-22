@@ -337,9 +337,8 @@ private const val PATROL_FIXED_BYTES = 6
 private const val PATROL_ID_BYTES = 32
 
 /**
- * Block 55: the header's u32 at `off+8` is the zone count and the payload starts directly with zone 1.
- * Each zone is u16 segment, u16 point count, u16 point size (6), then points of u16 x, u16 y, i16 type
- * (x and y in mm, whole cells of 50). A zone that overruns the payload ends the block; the zones before it are kept.
+ * Block 55: u32 zone count at `off+8`, then per zone u16 segment, u16 point count, u16 point size and points of
+ * u16 x, u16 y, i16 type (mm); a zone that overruns the payload ends the block.
  */
 private fun parseZoneLines(bytes: ByteArray, off: Int, headerLen: Int, dataLen: Int, left: Int, top: Int): List<FloorPlanZone> {
     if (headerLen < 12) return emptyList()

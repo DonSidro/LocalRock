@@ -498,8 +498,7 @@ private inline fun upright(canvas: Canvas, map: ParsedMap, point: ParsedMapPoint
 }
 
 /**
- * The route and the two markers, drawn straight to the screen through the map's transform instead of
- * into a bitmap, so they stay sharp at any zoom. [scale] is how many layer pixels make one cell.
+ * The route and the two markers, drawn straight to the screen so they stay sharp at any zoom; [scale] is layer pixels per cell.
  */
 internal fun DrawScope.drawRouteAndMarkers(map: ParsedMap, view: MapView, scale: Int, dark: Boolean, faintRoute: Boolean = false) {
     val palette = if (dark) DarkPalette else LightPalette
@@ -639,8 +638,7 @@ private fun drawMarker(
 }
 
 /**
- * The robot seen from above, turned to its heading: a disc with an inner ring, the bin cover across its back,
- * the lidar turret ahead of centre and the button ahead of that. Proportions are python-roborock's.
+ * The robot seen from above, turned to its heading, with proportions from python-roborock.
  */
 private fun drawRobotBody(canvas: Canvas, c: Offset, r: Float, headingDegrees: Float) {
     // A white shell with slate detail, as the robot looks from above, whatever the palette.

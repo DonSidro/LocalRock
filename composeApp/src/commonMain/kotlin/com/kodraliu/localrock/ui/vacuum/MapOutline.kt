@@ -6,8 +6,7 @@ import androidx.compose.ui.graphics.PathFillType
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 
 /**
- * The outline of every floor or wall cell, in drawn (Y-flipped) cell coordinates, as closed loops
- * with the stair steps rounded off. Gaps inside the plan come out as loops of their own.
+ * The outline of every floor or wall cell as closed loops in drawn cell coordinates, with stair steps rounded off.
  */
 internal fun mapOutlineLoops(map: ParsedMap, smoothing: Int = 2): List<List<Offset>> {
     val w = map.width
@@ -63,9 +62,7 @@ private fun dropCollinear(points: List<Long>, h: Int): List<Offset> {
 }
 
 /**
- * Corner cutting: each pass replaces a corner with two points part of the way along its sides, up
- * to halfway, which turns a staircase of one-cell steps into a diagonal. A cut is never more than
- * [MAX_CUT_CELLS] from the corner, so a long straight wall keeps its square ends.
+ * Corner cutting: each pass turns a corner into two points up to halfway along its sides, never more than [MAX_CUT_CELLS] away.
  */
 private fun smooth(points: List<Offset>, passes: Int): List<Offset> {
     var cur = points

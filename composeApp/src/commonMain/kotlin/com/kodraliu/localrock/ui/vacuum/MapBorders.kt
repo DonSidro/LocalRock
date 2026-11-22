@@ -48,9 +48,7 @@ private fun roomOf(grid: ByteArray, rawIds: ByteArray, i: Int): Int {
 }
 
 /**
- * Edges between adjacent filled cells that belong to different rooms, merged into straight runs in
- * drawn coordinates. Cells with no room id and empty space never produce an edge: the plan's
- * outer boundary is drawn by the outline, not here.
+ * Edges between adjacent cells of different rooms, merged into straight runs; the plan's outer boundary is the outline's job.
  */
 internal fun roomBorderEdges(grid: ByteArray, rawIds: ByteArray, width: Int, height: Int): List<BorderRun> {
     val runs = ArrayList<BorderRun>()
@@ -97,8 +95,7 @@ internal fun roomBorderPath(runs: List<BorderRun>): Path = Path().apply {
 }
 
 /**
- * The room a wall cell is painted as on the flat map: its own room id when the map gives it one,
- * else the room of a floor cell next to it, else null (not painted).
+ * The room a wall cell is painted as: its own room id, else a neighbouring floor cell's room, else null.
  */
 internal fun flatWallRoom(grid: ByteArray, rawIds: ByteArray, width: Int, height: Int, x: Int, y: Int): Int? {
     val own = (rawIds[y * width + x].toInt() ushr 3) and 0x1f
