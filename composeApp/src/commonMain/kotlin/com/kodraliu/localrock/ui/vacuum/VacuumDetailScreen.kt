@@ -1043,13 +1043,8 @@ private fun VacuumMapImage(
                             // The same transform that drew the map, run backwards, so a tap lands on
                             // the room under the finger at any heading, zoom or tilt.
                             roomAtLabel(tap, labelHits)?.let { currentOnRoomTap(it); return@detectTapGestures }
-                            val at = tapView.toBitmap(tap.x, tap.y)
-                            val normX = at.x / currentBitmap.width
-                            val normY = at.y / currentBitmap.height
-                            // The canvas is larger than the map; a tap beside it is not on a room.
-                            if (normX in 0f..1f && normY in 0f..1f) {
-                                currentMap.roomAtNorm(normX, normY)?.let { currentOnRoomTap(it.id) }
-                            }
+                            currentMap.roomIdAtTap(tapView, tap, currentBitmap.width, currentBitmap.height)
+                                ?.let { currentOnRoomTap(it) }
                         },
                     )
                 },

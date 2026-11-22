@@ -1,17 +1,21 @@
 package com.kodraliu.localrock.ui.vacuum
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
+import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class MapViewTest {
 
-    private fun view(yaw: Float, squash: Float, k: Float = 2f, pan: Offset = Offset(15f, -9f)) =
+    private fun view(yaw: Float, squash: Float, k: Float = 2f, pan: Offset = Offset(15f, -9f), cx: Float = 120f, cy: Float = 90f) =
         MapView(
             canvasW = 400f, canvasH = 600f,
-            centerX = 120f, centerY = 90f,
+            centerX = cx, centerY = cy,
             k = k, pan = pan, yawDegrees = yaw, squash = squash,
         )
 
@@ -131,5 +135,46 @@ class MapViewTest {
         assertEquals(flat, drawn.forHitTest { flat })
         drawn.view = tilted
         assertEquals(tilted, drawn.forHitTest { flat })
+    }
+
+    // A plan filling the whole grid, so the room reaches every edge and roomAtNorm would clamp to it.
+    private val fullGridMap = ParsedMap(
+        width = 8, height = 8, grid = ByteArray(64) { 16 },
+        rooms = listOf(ParsedMapRoom(16, "Room 16")), resolution = 0.05f,
+    )
+
+    @Test
+    fun a_tap_on_the_plan_selects_its_room_at_any_heading_and_tilt() {
+        for (yaw in listOf(0f, 90f, 137f)) {
+            for (squash in listOf(1f, 0.6f)) {
+                val v = view(yaw, squash, k = 1f, pan = Offset.Zero, cx = 4f, cy = 4f)
+                val tap = v.toScreen(4f, 4f)
+                assertEquals(16, fullGridMap.roomIdAtTap(v, tap, 8, 8))
+            }
+        }
+    }
+
+    @Test
+    fun a_tap_beside_the_plan_selects_nothing_even_when_the_plan_reaches_the_grid_edge() {
+        for (yaw in listOf(0f, 90f, 137f)) {
+            for (squash in listOf(1f, 0.6f)) {
+                val v = view(yaw, squash, k = 1f, pan = Offset.Zero, cx = 4f, cy = 4f)
+                // Well off the 8 x 8 layer in each direction.
+                for (p in listOf(Offset(-20f, 4f), Offset(30f, 4f), Offset(4f, -20f), Offset(4f, 30f))) {
+                    val tap = v.toScreen(p.x, p.y)
+                    assertNull(fullGridMap.roomIdAtTap(v, tap, 8, 8), "yaw=$yaw squash=$squash point=$p")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun a_name_drawn_at_its_room_is_hit_by_a_tap_on_it_in_a_turned_and_tilted_view() {
+        // Labels are placed with toScreen and hit-tested in screen space, so they follow the view.
+        val v = view(137f, 0.6f)
+        val at = v.toScreen(60f, 30f)
+        val labels = listOf(RoomLabelHit(16, Rect(at.x - 40f, at.y - 10f, at.x + 40f, at.y + 10f)))
+        assertEquals(16, roomAtLabel(at, labels))
+        assertNull(roomAtLabel(Offset(at.x + 200f, at.y), labels))
     }
 }

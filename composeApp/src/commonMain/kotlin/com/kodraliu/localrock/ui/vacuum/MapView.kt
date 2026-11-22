@@ -2,6 +2,8 @@ package com.kodraliu.localrock.ui.vacuum
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Matrix
+import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
+import com.kodraliu.localrock.shared.vacuum.map.roomAtNorm
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -116,4 +118,14 @@ internal class DrawnView {
     var view: MapView? = null
 
     fun forHitTest(fallback: () -> MapView): MapView = view ?: fallback()
+}
+
+/** The room id under a screen tap, or null when the tap is on the empty canvas beside the map. */
+internal fun ParsedMap.roomIdAtTap(view: MapView, tap: Offset, layerW: Int, layerH: Int): Int? {
+    val at = view.toBitmap(tap.x, tap.y)
+    val normX = at.x / layerW
+    val normY = at.y / layerH
+    // roomAtNorm clamps to the grid, so a tap beside a plan that reaches the edge must be dropped here.
+    if (normX !in 0f..1f || normY !in 0f..1f) return null
+    return roomAtNorm(normX, normY)?.id
 }
