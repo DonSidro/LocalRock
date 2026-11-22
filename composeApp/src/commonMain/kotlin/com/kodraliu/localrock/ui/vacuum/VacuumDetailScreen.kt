@@ -933,6 +933,11 @@ private fun DrawScope.drawMapLayer(image: ImageBitmap, view: MapView, height: Fl
 }
 
 private val MIN_LABEL_WIDTH = 36.dp
+
+/** The widest a name may be: the whole view when the room's width is unknown, else its room's, at least [minPx]. */
+internal fun labelTextWidth(spanKnown: Boolean, roomPx: Float, minPx: Int, viewPx: Int): Int =
+    if (!spanKnown) viewPx else roomPx.toInt().coerceAtLeast(minPx).coerceAtMost(viewPx)
+
 private val LABEL_PILL_FLAT = Color.White.copy(alpha = 0.8f)
 private val LABEL_PILL_3D = Color.Black.copy(alpha = 0.6f)
 
@@ -1120,7 +1125,7 @@ private fun VacuumMapImage(
                 // robot's room table has no entry for shows the badge alone. A selected room keeps its numbered pill.
                 val badge = if (selected) 0f else 16.dp.toPx()
                 val badgeGap = if (selected) 0f else 3.dp.toPx()
-                val unnamed = !room.inRoomTable && !selected
+                val unnamed = !(room.inRoomTable || room.name != "Room ${room.id}") && !selected
                 val padX = 6.dp.toPx()
                 val padY = 3.dp.toPx()
                 val edge = 4.dp.toPx()
@@ -1130,7 +1135,8 @@ private fun VacuumMapImage(
                 val spanCells = abs(cos(yawRad)) * (room.labelSpanCells ?: 0) + abs(sin(yawRad)) * (room.labelSpanCellsY ?: room.labelSpanCells ?: 0)
                 val roomWidthPx = spanCells.toFloat() * view.k * scale
                 val viewRoom = (size.width - 2 * (padX + edge) - badge - badgeGap).toInt().coerceAtLeast(1)
-                val textRoom = (roomWidthPx - badge - badgeGap).toInt().coerceAtLeast(MIN_LABEL_WIDTH.roundToPx()).coerceAtMost(viewRoom)
+                // A room with no known width (a B01 map) gets the whole view; the others are fitted to their room.
+                val textRoom = labelTextWidth(room.labelSpanCells != null, roomWidthPx - badge - badgeGap, MIN_LABEL_WIDTH.roundToPx(), viewRoom)
                 val measured = textMeasurer.measure(
                     text, style,
                     overflow = TextOverflow.Ellipsis, softWrap = false, maxLines = 1,
