@@ -15,9 +15,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -45,10 +50,15 @@ class DeviceRepository(
     val reachability: StateFlow<Map<String, Reachability>> = _reachability.asStateFlow()
 
     /** Robots the server knows from the cloud import but has never paired; they open Add vacuum when tapped. */
-    private val _unpaired = MutableStateFlow<Set<String>>(emptySet())
-    val unpaired: StateFlow<Set<String>> = _unpaired.asStateFlow()
+    private val _neverHeard = MutableStateFlow<Set<String>>(emptySet())
+
+    /** A robot that answers a probe is not shown as unpaired, whatever the server's log says. */
+    val unpaired: StateFlow<Set<String>> = combine(_neverHeard, _reachability) { never, reach ->
+        never.filterTo(mutableSetOf()) { reach[it] != Reachability.ONLINE }
+    }.stateIn(scope, SharingStarted.Eagerly, emptySet())
 
     private var probeJob: Job? = null
+    private var neverHeardJob: Job? = null
 
     /**
      * Ask every paired robot directly whether it is reachable. Returns at once; verdicts land in
@@ -83,11 +93,15 @@ class DeviceRepository(
 
     /** A robot the server has never heard from over MQTT was imported from the cloud but never paired to this server. */
     private fun markNeverHeard(devices: List<Device>) {
-        scope.launch {
-            val never = devices.filter { device ->
-                try { !deviceApi.lastKnown(device.duid, false).known } catch (e: CancellationException) { throw e } catch (e: Throwable) { false }
-            }.map { it.duid }.toSet()
-            _unpaired.value = never
+        neverHeardJob?.cancel()
+        neverHeardJob = scope.launch {
+            val never = devices.map { device ->
+                async {
+                    val unknown = try { !deviceApi.lastKnown(device.duid, false).known } catch (e: CancellationException) { throw e } catch (e: Throwable) { false }
+                    device.duid.takeIf { unknown }
+                }
+            }.awaitAll().filterNotNull().toSet()
+            _neverHeard.value = never
         }
     }
 
