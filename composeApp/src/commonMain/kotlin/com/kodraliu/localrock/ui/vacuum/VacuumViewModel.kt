@@ -14,6 +14,7 @@ import com.kodraliu.localrock.shared.vacuum.FirmwareProgress
 import com.kodraliu.localrock.shared.vacuum.firmwareInstallBlocker
 import com.kodraliu.localrock.shared.vacuum.nextFirmwareStep
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.TimeSource
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.ProductCatalog
 import com.kodraliu.localrock.shared.vacuum.RoomType
@@ -40,6 +41,7 @@ import com.kodraliu.localrock.shared.vacuum.map.parseB01Map
 import com.kodraliu.localrock.shared.vacuum.map.parseLegacyMap
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
@@ -196,7 +198,7 @@ class VacuumViewModel(
 
     private val _firmwareProgress = MutableStateFlow<FirmwareProgress>(FirmwareProgress.Idle)
     val firmwareProgress: StateFlow<FirmwareProgress> = _firmwareProgress.asStateFlow()
-    private var firmwareJob: kotlinx.coroutines.Job? = null
+    private var firmwareJob: Job? = null
 
     /** Why an install cannot start right now (null when it can), from the robot's last status. */
     fun firmwareBlocker(): String? {
@@ -212,7 +214,7 @@ class VacuumViewModel(
             _firmwareProgress.value = FirmwareProgress.Starting
             val started = try {
                 container.deviceRepository.startFirmwareUpdate(device.duid)
-            } catch (e: kotlinx.coroutines.CancellationException) {
+            } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
                 _firmwareProgress.value = FirmwareProgress.Failed(describe(e)); return@launch
@@ -225,10 +227,10 @@ class VacuumViewModel(
     }
 
     private suspend fun followFirmwareUpdate(target: String?) {
-        val clock = kotlin.time.TimeSource.Monotonic.markNow()
+        val clock = TimeSource.Monotonic.markNow()
         var seenWorking = false
         while (clock.elapsedNow() < FIRMWARE_WATCH_LIMIT) {
-            kotlinx.coroutines.delay(FIRMWARE_POLL_MS)
+            delay(FIRMWARE_POLL_MS)
             val ota = runCatching { repository.fetchOtaState() }
             val percent = if (ota.isSuccess) runCatching { repository.fetchOtaProgress() }.getOrNull() else null
             val step = nextFirmwareStep(_firmwareProgress.value, seenWorking, ota.isSuccess, ota.getOrNull(), percent)
