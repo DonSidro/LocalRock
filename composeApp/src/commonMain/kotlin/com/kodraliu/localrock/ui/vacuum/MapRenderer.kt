@@ -590,7 +590,7 @@ private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette, faint:
     })
     // The trips to the dock to wash the mop are dashed.
     canvas.drawPath(wash, Paint().apply {
-        color = Color(0x33FFFFFF) // the app's backWashPathColor, #FFFFFF33
+        color = palette.path.copy(alpha = 0.2f) // white at #33 on the hero, the app's backWashPathColor
         style = PaintingStyle.Stroke
         strokeWidth = 0.9f
         pathEffect = PathEffect.dashPathEffect(floatArrayOf(2f, 3f))
