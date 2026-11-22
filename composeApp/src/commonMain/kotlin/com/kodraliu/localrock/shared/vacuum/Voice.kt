@@ -82,6 +82,23 @@ fun voiceHistoryWindows(summary: VoiceHistorySummary): List<Pair<Int, Int>> {
     return (summary.minId..summary.maxId step VOICE_HISTORY_WINDOW).map { it to it + VOICE_HISTORY_WINDOW }
 }
 
+/** Reads the newest windows first and retries a failed one once, so a dropped reply costs older lines, not the newest. */
+suspend fun readVoiceHistory(
+    windows: List<Pair<Int, Int>>,
+    maxWindows: Int = 10,
+    fetch: suspend (Int, Int) -> List<VoiceMessage>?,
+): List<VoiceMessage>? {
+    val out = mutableListOf<VoiceMessage>()
+    var failed = false
+    for ((min, max) in windows.takeLast(maxWindows).asReversed()) {
+        val page = fetch(min, max) ?: fetch(min, max)
+        if (page == null) { failed = true; break }
+        out += page
+    }
+    if (failed && out.isEmpty()) return null
+    return out.distinctBy { it.id }.sortedBy { it.id }
+}
+
 /** The `language` code from `get_current_sound`, e.g. `[{"sid_in_use":3,...,"language":"en"}]`. */
 fun parseCurrentSoundLanguage(result: JsonElement?): String? =
     (result.firstObject()?.get("language") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }

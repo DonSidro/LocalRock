@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.shared.vacuum
 
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -100,6 +101,30 @@ class VoiceTest {
     fun sendsTheVoiceSwitchAsTheBareObject() {
         assertEquals("""{"data":0}""", voiceSwitchParams("data", false).toString())
         assertEquals("""{"data":1}""", voiceSwitchParams("data", true).toString())
+    }
+
+    private fun msg(id: Int) = VoiceMessage(id, 0L, "m$id", 1, null)
+
+    @Test
+    fun historyReadsNewestFirstAndRetriesAFailedWindowOnce() = runTest {
+        val windows = listOf(0 to 100, 100 to 200, 200 to 300)
+        val calls = mutableListOf<Int>()
+        var failedOnce = false
+        val read = readVoiceHistory(windows) { min, _ ->
+            calls += min
+            if (min == 200 && !failedOnce) { failedOnce = true; null } else listOf(msg(min + 1))
+        }
+        assertEquals(listOf(200, 200, 100, 0), calls)
+        assertEquals(listOf(1, 101, 201), read!!.map { it.id })
+    }
+
+    @Test
+    fun aWindowThatFailsTwiceKeepsTheNewerLines() = runTest {
+        val windows = listOf(0 to 100, 100 to 200, 200 to 300)
+        val read = readVoiceHistory(windows) { min, _ -> if (min == 0) null else listOf(msg(min + 1)) }
+        assertEquals(listOf(101, 201), read!!.map { it.id })
+        assertNull(readVoiceHistory(windows) { _, _ -> null })
+        assertEquals(emptyList(), readVoiceHistory(windows) { _, _ -> emptyList() })
     }
 
     @Test

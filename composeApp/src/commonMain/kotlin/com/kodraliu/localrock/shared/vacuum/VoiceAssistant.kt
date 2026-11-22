@@ -87,14 +87,9 @@ class VoiceAssistant(private val session: VacuumSession) {
         throw VoiceInstallException(VoiceInstallFailure.TIMEOUT)
     }
 
-    // Newest 1000 at most; a window that fails ends the read with what came before it.
-    private suspend fun readHistory(summary: VoiceHistorySummary): List<VoiceMessage>? {
-        val out = mutableListOf<VoiceMessage>()
-        for ((min, max) in voiceHistoryWindows(summary).takeLast(10)) {
-            val page = runCatching { parseVoiceHistory(session.getVoiceHistory(min, max).requireOk("get_voice_history").result) }
-                .getOrNull() ?: return out.takeIf { it.isNotEmpty() }
-            out += page
+    // Newest 1000 at most, read newest first; a window that fails twice ends the read with what was already read.
+    private suspend fun readHistory(summary: VoiceHistorySummary): List<VoiceMessage>? =
+        readVoiceHistory(voiceHistoryWindows(summary)) { min, max ->
+            runCatching { parseVoiceHistory(session.getVoiceHistory(min, max).requireOk("get_voice_history").result) }.getOrNull()
         }
-        return out.distinctBy { it.id }.sortedBy { it.id }
-    }
 }
