@@ -1021,6 +1021,7 @@ class VacuumRepository(
         val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
         current.def.settingName?.let { name ->
             val sent = session.setRobotSetting(name, on)
+            // Read back before requireOk on purpose: a refused write still refreshes the row with the robot's real value.
             readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }?.let { updated ->
                 _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
             }
@@ -1044,6 +1045,7 @@ class VacuumRepository(
         val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
         val name = current.def.settingName ?: return
         val sent = session.setRobotSetting(name, value)
+        // Read back before requireOk on purpose: a refused write still refreshes the row with the robot's real value.
         readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }?.let { updated ->
             _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
         }
