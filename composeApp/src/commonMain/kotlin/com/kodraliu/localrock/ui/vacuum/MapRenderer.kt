@@ -572,14 +572,12 @@ private fun drawPath(canvas: Canvas, map: ParsedMap, palette: MapPalette, faint:
         strokeCap = StrokeCap.Round
         strokeJoin = StrokeJoin.Round
     })
-    for (line in listOf(main)) {
-        canvas.drawPath(line, Paint().apply {
-            color = palette.path
-            style = PaintingStyle.Stroke
-            strokeWidth = 0.9f
-            strokeCap = StrokeCap.Round
-        })
-    }
+    canvas.drawPath(main, Paint().apply {
+        color = palette.path
+        style = PaintingStyle.Stroke
+        strokeWidth = 0.9f
+        strokeCap = StrokeCap.Round
+    })
     // The trips to the dock to wash the mop are dashed.
     canvas.drawPath(wash, Paint().apply {
         color = Color(0x33FFFFFF) // the app's backWashPathColor, #FFFFFF33
