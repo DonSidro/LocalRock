@@ -167,6 +167,11 @@ class VacuumRepository(
     /** True while the robot holds a newly built map that has not been saved yet. */
     val unsavedMapPresent: StateFlow<Boolean> = _status.map { it.unsavedMapPresent }
         .stateIn(scope, SharingStarted.Eagerly, false)
+    private val _unresponsive = MutableStateFlow(false)
+
+    /** True once several status polls in a row got no answer; false again as soon as the robot replies or pushes. */
+    val unresponsive: StateFlow<Boolean> = _unresponsive
+
     private var pollJob: Job? = null
     private var dpsJob: Job? = null
     private var mapPollJob: Job? = null
@@ -183,12 +188,14 @@ class VacuumRepository(
         dpsJob = scope.launch {
             session.dpsUpdates.collect { dps ->
                 println("[VacLocal] dps push: ${dps.keys}")
+                _unresponsive.value = false
                 _status.update { it.applyDpsPush(dps) }
             }
         }
         pollJob = scope.launch {
 
             var consecutiveFailures = 0
+            var unansweredPolls = 0
             while (isActive) {
                 // While the link is (re)connecting a request fails at once. Wait for it instead,
                 // so the first status goes out the moment it is up.
@@ -197,6 +204,8 @@ class VacuumRepository(
                 runCatching { session.getStatus() }
                     .onSuccess { fresh ->
                         consecutiveFailures = 0
+                        unansweredPolls = 0
+                        _unresponsive.value = false
                         if (fresh != null) {
                             println("[VacLocal] get_status ok: state=${fresh.state} battery=${fresh.battery}")
                             _status.update { it.merge(fresh) }
@@ -206,6 +215,7 @@ class VacuumRepository(
                     }
                     .onFailure { e ->
                         consecutiveFailures++
+                        if (++unansweredPolls >= STALE_LINK_FAILURE_THRESHOLD) _unresponsive.value = true
                         println("[VacLocal] get_status FAILED (#$consecutiveFailures): ${e::class.simpleName}: ${e.message}")
                         if (consecutiveFailures >= STALE_LINK_FAILURE_THRESHOLD) {
                             // A timed-out RPC is not proof of a dead socket: a slow response or a

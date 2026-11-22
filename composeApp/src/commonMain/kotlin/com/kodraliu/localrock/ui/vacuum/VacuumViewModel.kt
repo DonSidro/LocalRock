@@ -163,8 +163,19 @@ class VacuumViewModel(
         }
 
         viewModelScope.launch {
+            repository.unresponsive.collect { quiet ->
+                if (quiet) {
+                    loadLastKnown()
+                } else if (status.value.state != null || status.value.battery != null) {
+                    _lastKnown.value = null
+                    _lastKnownMap.value = null
+                }
+            }
+        }
+
+        viewModelScope.launch {
             status.collect { s ->
-                if (s.state != null || s.battery != null) {
+                if ((s.state != null || s.battery != null) && !repository.unresponsive.value) {
                     _lastKnown.value = null
                     _lastKnownMap.value = null
                 }
@@ -186,7 +197,7 @@ class VacuumViewModel(
     fun loadLastKnown() {
         viewModelScope.launch {
             val snapshot = runCatching { container.deviceRepository.lastKnown(device.duid) }.getOrNull() ?: return@launch
-            if (status.value.state != null || status.value.battery != null) return@launch
+            if ((status.value.state != null || status.value.battery != null) && !repository.unresponsive.value) return@launch
             _lastKnown.value = snapshot
             _lastKnownMap.value = snapshot.map
                 ?.let { encoded ->
