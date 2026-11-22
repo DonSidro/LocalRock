@@ -55,7 +55,8 @@ fun parseSoundProgress(result: JsonElement?): SoundProgress? {
  */
 fun parseVoicePackList(info: JsonElement?, location: String?): List<VoicePack>? {
     val list = (info as? JsonObject)?.get("voice_list") as? JsonArray ?: return null
-    val loc = (location?.takeIf { it.isNotBlank() } ?: "cn").replace("cn", "prc")
+    val raw = location?.takeIf { it.isNotBlank() } ?: "cn"
+    val loc = if (raw == "cn") "prc" else raw
     return list.mapNotNull { item ->
         val o = item as? JsonObject ?: return@mapNotNull null
         val applicable = o["applicable"] as? JsonArray
