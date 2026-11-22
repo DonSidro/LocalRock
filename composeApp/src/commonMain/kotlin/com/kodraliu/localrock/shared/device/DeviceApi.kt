@@ -26,6 +26,8 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 
 class DeviceApi(private val client: HttpClient) {
@@ -100,14 +102,15 @@ class DeviceApi(private val client: HttpClient) {
         if (!resp.status.isSuccess()) {
             throw DeviceApiException(resp.status.value, firmwareStartRefusal(resp.status.value))
         }
-        val root = resp.body<kotlinx.serialization.json.JsonObject>()
-        val data = (root["data"] ?: root["result"]) as? kotlinx.serialization.json.JsonObject
-        fun text(key: String) = (data?.get(key) as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
-        val started = (data?.get("started") as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
+        val root = resp.body<JsonObject>()
+        val data = (root["data"] ?: root["result"]) as? JsonObject
+        fun text(key: String) = (data?.get(key) as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+        val started = (data?.get("started") as? JsonPrimitive)?.content == "true"
         // The server answers its own refusals with HTTP 200 and the status in `code`.
-        val code = (root["code"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull()
-        val message = if (!started && (code == 404 || code == 501)) firmwareStartRefusal(code) else
-            text("reason") ?: text("error") ?: (root["msg"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+        val code = (root["code"] as? JsonPrimitive)?.content?.toIntOrNull()
+        // A body 404 is the server naming an unknown robot, so only 501 means the install option is off.
+        val message = if (!started && code == 501) firmwareStartRefusal(code) else
+            text("reason") ?: text("error") ?: (root["msg"] as? JsonPrimitive)?.content
         return FirmwareStartResult(started, text("version"), if (started) null else message)
     }
 
@@ -125,7 +128,7 @@ class DeviceApi(private val client: HttpClient) {
 
 /** A server without install support answers HTTP 404 (older) or code 501 in the body (install option off). */
 internal fun firmwareStartRefusal(status: Int): String = when (status) {
-    404, 501 -> "This server cannot install firmware. Turn on its install option (enable_install in the [ota] section, server PR #255), then try again."
+    404, 501 -> "This server cannot install firmware. Turn on the server's firmware install option (enable_install), then try again."
     else -> "The server did not accept the update request (HTTP $status)"
 }
 
