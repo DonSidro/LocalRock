@@ -100,7 +100,6 @@ class VoiceTest {
     fun sendsTheVoiceSwitchAsTheBareObject() {
         assertEquals("""{"data":0}""", voiceSwitchParams("data", false).toString())
         assertEquals("""{"data":1}""", voiceSwitchParams("data", true).toString())
-        assertEquals("[1]", voiceSwitchParams(null, true).toString())
     }
 
     @Test

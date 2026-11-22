@@ -30,10 +30,7 @@ fun parseVoiceSwitch(result: JsonElement?): VoiceSwitch? {
 }
 
 /** `set_voice_service_switch` takes only the bare object, `{"data":1}`; other shapes time out instead of being refused. */
-fun voiceSwitchParams(key: String?, on: Boolean): JsonElement {
-    val v = JsonPrimitive(if (on) 1 else 0)
-    return if (key != null) JsonObject(mapOf(key to v)) else JsonArray(listOf(v))
-}
+fun voiceSwitchParams(key: String, on: Boolean): JsonElement = JsonObject(mapOf(key to JsonPrimitive(if (on) 1 else 0)))
 
 /** `get_voice_history_summary`: the id range the robot holds and how many messages. */
 data class VoiceHistorySummary(val minId: Int, val maxId: Int, val count: Int)
