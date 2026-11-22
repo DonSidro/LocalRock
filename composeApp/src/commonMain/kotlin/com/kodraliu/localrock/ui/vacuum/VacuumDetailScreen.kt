@@ -150,6 +150,8 @@ import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kodraliu.localrock.shared.model.Scene
+import com.kodraliu.localrock.shared.vacuum.ACTIVE_CLEANING_STATES
+import com.kodraliu.localrock.shared.vacuum.CleanProgress
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.DockErrorCodes
 import com.kodraliu.localrock.shared.vacuum.DockSettings
@@ -204,10 +206,6 @@ private val ROUTE_OPTIONS = listOf(
 
 private val DEEP_ROUTES = setOf(MopRoute.DEEP, MopRoute.DEEP_PLUS)
 
-private val ACTIVE_CLEANING_STATES = setOf(
-    VacuumStateCodes.CLEANING, VacuumStateCodes.SEGMENT_CLEANING,
-    VacuumStateCodes.ZONED_CLEANING, VacuumStateCodes.SPOT_CLEANING,
-)
 
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
@@ -225,6 +223,7 @@ fun VacuumDetailScreen(
     onHistory: () -> Unit,
 ) {
     val status by viewModel.status.collectAsState()
+    val cleanProgress by viewModel.cleanProgress.collectAsState()
     val busy by viewModel.busy.collectAsState()
     val supportsSmartPlan by viewModel.supportsSmartPlan.collectAsState()
     val supportsWaterSlide by viewModel.supportsWaterSlide.collectAsState()
@@ -491,6 +490,7 @@ fun VacuumDetailScreen(
     val ControlBand: @Composable () -> Unit = {
         StatusBar(
             status = status,
+            cleanProgress = cleanProgress,
             lastCleanArea = lastCleanArea,
             onHistory = onHistory,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 10.dp),
@@ -1044,6 +1044,7 @@ private fun MapEmptyState(busy: Boolean, onLoadMap: () -> Unit, onRecover: () ->
 @Composable
 private fun StatusBar(
     status: VacuumStatus,
+    cleanProgress: CleanProgress,
     lastCleanArea: Long?,
     onHistory: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1136,6 +1137,10 @@ private fun StatusBar(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                )
+                CleaningProgressBar(
+                    progress = cleanProgress,
+                    elapsedLabel = time,
                 )
             }
             Row(

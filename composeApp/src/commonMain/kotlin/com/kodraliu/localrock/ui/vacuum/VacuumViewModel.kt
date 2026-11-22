@@ -11,6 +11,9 @@ import com.kodraliu.localrock.shared.vacuum.BetaFeatureDef
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.RoomType
+import com.kodraliu.localrock.shared.vacuum.VacuumStatus
+import com.kodraliu.localrock.shared.vacuum.CleanProgress
+import com.kodraliu.localrock.shared.vacuum.toCleanProgress
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
@@ -74,6 +77,11 @@ class VacuumViewModel(
         .map { isWaterSlideSupported(it ?: serverFeatureSet) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, isWaterSlideSupported(serverFeatureSet))
     val status = repository.status
+
+    /** The status projected into a job progress: live in the detail screen, through breaks included. */
+    val cleanProgress: StateFlow<CleanProgress> = repository.status
+        .map { it.toCleanProgress() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, VacuumStatus().toCleanProgress())
 
     private val errorBannerKey = "robot-error-${device.duid}"
 
