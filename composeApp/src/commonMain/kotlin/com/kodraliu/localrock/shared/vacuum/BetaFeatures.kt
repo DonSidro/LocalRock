@@ -33,7 +33,35 @@ data class BetaFeatureDef(
     val choices: List<FeatureChoice>? = null,
     /** Id of an older option this one replaces on robots that advertise this one. */
     val replaces: String? = null,
+    /**
+     * Set when the value is one field of a larger reply, such as `switch_status` in get_status or `enable` in
+     * get_carpet_mode, rather than the reply's only number.
+     */
+    val readKey: String? = null,
+    /** Set when the option is some bits of the value read: it is on when any of them is set. */
+    val readMask: Int? = null,
+    /** The shape the set command takes. */
+    val write: FeatureWrite = FeatureWrite.VALUE,
 )
+
+/** How an option's set command takes the new value. */
+enum class FeatureWrite {
+    /** The new value alone, in the shapes [betaSetParamCandidates] tries. */
+    VALUE,
+
+    /** `{"status": n}`, whatever the get reply looks like. */
+    STATUS,
+
+    /** The whole object read, with [BetaFeatureDef.readKey] changed, as a one-item list. */
+    ECHO,
+}
+
+/**
+ * The `switch_status` bit in get_status for Vacuum Carpet First. ioBroker.roborock reads the same field on a
+ * Saros Z70 (0x1 offline map, 0x8 carpet first, 0x20 cross carpet cleaning); a Qrevo 2 Pro with the official
+ * app's Vacuum Carpet First on and the other two off reports 8.
+ */
+const val SWITCH_STATUS_CARPET_FIRST = 0x8
 
 val BetaFeatureDefs = listOf(
     BetaFeatureDef(
@@ -90,6 +118,24 @@ val BetaFeatureDefs = listOf(
         setMethod = "set_collision_avoid_status",
         section = FeatureSection.OBSTACLE,
     ),
+    // With bit 118 (python-roborock TWO_GEARS_NO_COLLISION) the official app shows the same value as a
+    // two-way picker: a Qrevo 2 Pro reporting 1 showed "High Coverage". 2 as Less Collision follows an
+    // S8 MaxV that went from 1 to 2 when its owner chose the careful setting. 0 is not offered there.
+    BetaFeatureDef(
+        id = "collision_mode",
+        title = "Less collision mode",
+        description = "How closely the robot works around obstacles",
+        bit = 118,
+        getMethod = "get_collision_avoid_status",
+        setMethod = "set_collision_avoid_status",
+        section = FeatureSection.OBSTACLE,
+        choices = listOf(
+            FeatureChoice(1, "High coverage", "Reaches more of the floor and cleans closer, and may touch obstacles lightly"),
+            FeatureChoice(2, "Less collision", "Moves more carefully to avoid bumping or getting stuck, and may miss some spots"),
+        ),
+        replaces = "avoid_collision",
+        write = FeatureWrite.STATUS,
+    ),
     BetaFeatureDef(
         id = "water_leak_check",
         title = "Water leak detection",
@@ -107,6 +153,29 @@ val BetaFeatureDefs = listOf(
         getMethod = "get_ap_mic_led_status",
         setMethod = "set_ap_mic_led_status",
         section = FeatureSection.ROBOT,
+    ),
+    BetaFeatureDef(
+        id = "carpet_first",
+        title = "Vacuum carpet first",
+        description = "Vacuums carpets before mopping the rest, so the mop never wets them",
+        bit = 23,
+        getMethod = "get_status",
+        setMethod = "app_set_priority_carpet_cleaning_status",
+        section = FeatureSection.CARPET,
+        readKey = "switch_status",
+        readMask = SWITCH_STATUS_CARPET_FIRST,
+        write = FeatureWrite.STATUS,
+    ),
+    BetaFeatureDef(
+        id = "carpet_boost",
+        title = "Carpet boost",
+        description = "Turns suction up to maximum on carpet",
+        bit = null,
+        getMethod = "get_carpet_mode",
+        setMethod = "set_carpet_mode",
+        section = FeatureSection.CARPET,
+        readKey = "enable",
+        write = FeatureWrite.ECHO,
     ),
     BetaFeatureDef(
         id = "carpet_deep_clean",
@@ -154,6 +223,24 @@ val BetaFeatureDefs = listOf(
         getMethod = "get_dust_collection_switch_status",
         setMethod = "set_dust_collection_switch_status",
         section = FeatureSection.DOCK,
+    ),
+    // With bit 53 (python-roborock AUTO_COLLECTION_2) the same value is a frequency: a Qrevo 2 Pro reporting
+    // 1 showed "Balanced" in the official app. 2 as High follows python-roborock's open PR #1036 (Saros 10R).
+    BetaFeatureDef(
+        id = "dust_collection_frequency",
+        title = "Auto-empty frequency",
+        description = "When the dock empties the dustbin",
+        bit = 53,
+        getMethod = "get_dust_collection_switch_status",
+        setMethod = "set_dust_collection_switch_status",
+        section = FeatureSection.DOCK,
+        choices = listOf(
+            FeatureChoice(0, "Off", "Never; empty the dustbin by hand"),
+            FeatureChoice(1, "Balanced", "After each clean"),
+            FeatureChoice(2, "High", "During cleaning as well, for homes with pets or a lot of carpet"),
+        ),
+        replaces = "dust_collection_switch",
+        write = FeatureWrite.STATUS,
     ),
     BetaFeatureDef(
         id = "identify_furniture",
@@ -251,6 +338,13 @@ val BetaFeatureDefs = listOf(
 /** The features this robot's `newFeatureSet` advertises. */
 fun supportedBetaFeatures(newFeatureSet: String?): List<BetaFeatureDef> =
     BetaFeatureDefs.filter { it.bit == null || newFeatureBit(newFeatureSet, it.bit) }
+
+/**
+ * The order to read [defs] in: options gated on a feature bit first, then the ones every robot is
+ * asked. A read stops at the first option with no reply, so a robot that ignores one of the
+ * ungated commands then hides only the ungated options, not the ones its flags advertise.
+ */
+fun betaReadOrder(defs: List<BetaFeatureDef>): List<BetaFeatureDef> = defs.sortedBy { it.bit == null }
 
 /** Whether the Beta page has anything to show: a flag-gated switch of its own, or flags with no switch here. */
 fun showsBetaPage(defs: List<BetaFeatureDef>, unlisted: List<AdvertisedFeature>): Boolean =
@@ -363,9 +457,14 @@ data class BetaFeatureState(
     val key: String? = null,
     val raw: String? = null,
     val answered: Boolean = true,
+    /** The object [value] was read from, for an option written back whole ([FeatureWrite.ECHO]). */
+    val reply: JsonObject? = null,
 ) {
-    val enabled: Boolean get() = value == 1
-    val toggleable: Boolean get() = if (def.choices != null) value != null else value == 0 || value == 1
+    val enabled: Boolean get() = def.readMask?.let { mask -> value != null && (value and mask) != 0 } ?: (value == 1)
+    val toggleable: Boolean get() = when {
+        def.choices != null || def.readMask != null -> value != null
+        else -> value == 0 || value == 1
+    }
 
     /** The label for the current value of a multi-choice setting; a value the app has no name for shows as "Other (n)". */
     val choiceLabel: String? get() = value?.let { v -> def.choices?.let { choiceLabelFor(it, v) } }
@@ -387,18 +486,47 @@ fun parseBetaReply(result: JsonElement?): Pair<String?, Int>? {
     }
 }
 
+/** One option's value as read: the reply key it sits under, the number, and the object it came from. */
+data class FeatureReading(val key: String?, val value: Int, val reply: JsonObject? = null)
+
+/** Reads [def]'s value from its get reply: the [BetaFeatureDef.readKey] field when it has one, else the reply's only number. */
+fun parseFeatureReply(def: BetaFeatureDef, result: JsonElement?): FeatureReading? {
+    val readKey = def.readKey ?: return parseBetaReply(result)?.let { (key, value) -> FeatureReading(key, value) }
+    val obj = (if (result is JsonArray && result.size == 1) result[0] else result) as? JsonObject ?: return null
+    val value = (obj[readKey] as? JsonPrimitive)?.intOrNull ?: return null
+    return FeatureReading(readKey, value, obj)
+}
+
 /**
  * Param shapes to try for a set command, in order. python-roborock does not document these, so the
  * first is the wrapped form of the get reply and the rest are the other usual forms.
  */
-fun betaSetParamCandidates(key: String?, on: Boolean): List<JsonElement> {
-    val v = JsonPrimitive(if (on) 1 else 0)
+fun betaSetParamCandidates(key: String?, on: Boolean): List<JsonElement> = betaSetParamCandidates(key, if (on) 1 else 0)
+
+fun betaSetParamCandidates(key: String?, value: Int): List<JsonElement> {
+    val v = JsonPrimitive(value)
     val obj = key?.let { JsonObject(mapOf(it to v)) }
     return listOfNotNull(
         JsonArray(listOf(obj ?: v)),
         obj,
         JsonArray(listOf(v)).takeIf { obj != null },
     )
+}
+
+/** Param shapes to try for writing [value] to [state]'s option, in order; empty when the last read lacks what the write needs. */
+fun featureSetParamCandidates(state: BetaFeatureState, value: Int): List<JsonElement> = when (state.def.write) {
+    FeatureWrite.VALUE -> betaSetParamCandidates(state.key, value)
+    FeatureWrite.STATUS -> JsonObject(mapOf("status" to JsonPrimitive(value))).let { listOf(it, JsonArray(listOf(it))) }
+    FeatureWrite.ECHO -> {
+        val key = state.def.readKey
+        val reply = state.reply
+        if (key == null || reply == null) {
+            emptyList()
+        } else {
+            val obj = JsonObject(reply + (key to JsonPrimitive(value)))
+            listOf(JsonArray(listOf(obj)), obj)
+        }
+    }
 }
 
 /**

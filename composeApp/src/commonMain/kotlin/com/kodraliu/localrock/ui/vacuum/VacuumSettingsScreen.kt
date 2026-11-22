@@ -264,6 +264,7 @@ fun VacuumSettingsScreen(
             title = "Obstacle avoidance",
             features = betaFeatures.inSection(FeatureSection.OBSTACLE),
             onToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            onChoice = { id, value -> viewModel.report { it.setBetaChoice(id, value) } },
             onBack = { route = SettingsRoute.Root },
         )
         SettingsRoute.BetaFeatures -> BetaFeaturesScreen(
@@ -293,6 +294,7 @@ fun VacuumSettingsScreen(
             onEmptyWaterTank = { viewModel.run("Emptying the water tank") { it.emptyInbuiltWaterTank() } },
             features = betaFeatures.inSection(FeatureSection.DOCK),
             onFeatureToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            onFeatureChoice = { id, value -> viewModel.report { it.setBetaChoice(id, value) } },
             valleySettings = valleySettings,
             onMopDryingChange = { on -> viewModel.run { it.setMopDrying(on) } },
             onDryTimeChange = { seconds -> viewModel.run { it.setDryTime(seconds) } },
@@ -1300,6 +1302,7 @@ private fun DockSettingsScreen(
     onEmptyWaterTank: () -> Unit,
     features: List<BetaFeatureState>,
     onFeatureToggle: (String, Boolean) -> Unit,
+    onFeatureChoice: (String, Int) -> Unit,
     valleySettings: ValleySettings?,
     onMopDryingChange: (Boolean) -> Unit,
     onDryTimeChange: (Int) -> Unit,
@@ -1435,7 +1438,7 @@ private fun DockSettingsScreen(
                 }
                 items(features, key = { it.def.id }) { f ->
                     HorizontalDivider(Modifier.padding(start = 72.dp))
-                    FeatureToggleRow(f, onFeatureToggle)
+                    FeatureToggleRow(f, onFeatureToggle, onFeatureChoice)
                 }
             }
         }
