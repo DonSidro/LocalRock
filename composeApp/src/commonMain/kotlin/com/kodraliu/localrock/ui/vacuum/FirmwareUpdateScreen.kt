@@ -58,6 +58,7 @@ internal fun FirmwareUpdateScreen(viewModel: VacuumViewModel, onBack: () -> Unit
     var confirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { if (state is FirmwareUpdateState.Idle) viewModel.checkFirmwareUpdate() }
+    LaunchedEffect(Unit) { viewModel.resumeFirmwareWatch() }
 
     // Recomputed whenever the robot's status changes, since it decides if the button works.
     val blocker = remember(robotStatus) { viewModel.firmwareBlocker() }

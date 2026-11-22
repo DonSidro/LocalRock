@@ -228,9 +228,9 @@ class VacuumViewModel(
         }
     }
 
-    private suspend fun followFirmwareUpdate(target: String?, before: String?) {
+    private suspend fun followFirmwareUpdate(target: String?, before: String?, startedWorking: Boolean = false) {
         val clock = TimeSource.Monotonic.markNow()
-        var seenWorking = false
+        var seenWorking = startedWorking
         while (clock.elapsedNow() < FIRMWARE_WATCH_LIMIT) {
             delay(FIRMWARE_POLL_MS)
             val ota = runCatching { repository.fetchOtaState() }
@@ -250,6 +250,20 @@ class VacuumViewModel(
             }
         }
         _firmwareProgress.value = FirmwareProgress.Failed("The update is taking longer than expected. Check the robot and try again.")
+    }
+
+    /** Picks the progress watch back up when the page opens while the robot is already downloading or installing. */
+    fun resumeFirmwareWatch() {
+        if (firmwareJob?.isActive == true) return
+        firmwareJob = viewModelScope.launch {
+            val state = runCatching { repository.fetchOtaState() }.getOrNull()
+            val percent = if (state == "downloading") runCatching { repository.fetchOtaProgress() }.getOrNull() else null
+            val step = nextFirmwareStep(FirmwareProgress.Idle, false, state != null, state, percent)
+            if (!step.seenWorking) return@launch
+            _firmwareProgress.value = step.progress
+            val before = runCatching { container.deviceRepository.checkFirmwareUpdate(device.duid) }.getOrNull()?.currentVersion ?: firmwareVersion
+            followFirmwareUpdate(null, before, startedWorking = true)
+        }
     }
 
     // The server's version can lag the robot's reboot by a few polls, so ask again before calling it a failure.

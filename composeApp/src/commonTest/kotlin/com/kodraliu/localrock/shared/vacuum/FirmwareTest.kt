@@ -84,6 +84,16 @@ class FirmwareTest {
     }
 
     @Test
+    fun aRobotAlreadyDownloadingOrInstallingWhenThePageOpensIsPickedUp() {
+        val downloading = nextFirmwareStep(FirmwareProgress.Idle, false, true, "downloading", 55)
+        assertEquals(FirmwareProgress.Downloading(55), downloading.progress)
+        assertTrue(downloading.seenWorking)
+        assertTrue(nextFirmwareStep(FirmwareProgress.Idle, false, true, "installing", 0).seenWorking)
+        assertTrue(!nextFirmwareStep(FirmwareProgress.Idle, false, true, "idle", null).seenWorking)
+        assertTrue(!nextFirmwareStep(FirmwareProgress.Idle, false, false, null, null).seenWorking)
+    }
+
+    @Test
     fun silenceBeforeTheRobotStartedIsNotARestartAndAFailureEnds() {
         assertEquals(FirmwareProgress.Starting, nextFirmwareStep(FirmwareProgress.Starting, false, false, null, null).progress)
         val failed = nextFirmwareStep(FirmwareProgress.Installing, true, true, "failed", null)
