@@ -5,7 +5,6 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class MapObstaclesTest {
@@ -19,7 +18,7 @@ class MapObstaclesTest {
         val obstacles = parseLegacyMap(raw).obstacles
         assertEquals(9, obstacles.size)
         assertEquals(MapObstacle(x = 29023, y = 22194, type = 18, confidence = 0f, photoId = null, ignored = false), obstacles[0])
-        assertNull(obstacles[0].typeName)
+        assertEquals("Obstacle", obstacles[0].typeName)
         val pedestal = obstacles[5]
         assertEquals("Pedestal", pedestal.typeName)
         assertEquals(0.85f, pedestal.confidence!!, 0.01f)
@@ -39,7 +38,11 @@ class MapObstaclesTest {
             ),
             obstacles,
         )
-        assertEquals("Shoes", obstacles[0].typeName)
+        assertEquals("Footwear", obstacles[0].typeName)
+        assertEquals("Plastic bag", obstacles[1].typeName)
+        assertEquals(ObstacleKind.FOOTWEAR, obstacleType(2).kind)
+        assertEquals(ObstacleKind.UNKNOWN, obstacleType(7).kind)
+        assertEquals(89, MapObstacle(0, 0, 48, 0.8995f, null, false).confidencePercent())
     }
 
     @Test
