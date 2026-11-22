@@ -76,7 +76,7 @@ class VoiceAssistant(private val session: VacuumSession) {
             val busy = progress?.state == 1 || progress?.state == 2
             val current = if (busy) null else runCatching { fetchCurrentSound() }.getOrNull()
             val step = voiceInstallStep(progress, current, pack.id, idlePolls + 1)
-            idlePolls = if (step is VoiceInstallStep.Working && step.percent == null && current != null) idlePolls + 1 else 0
+            idlePolls = nextVoiceIdlePolls(step, current, idlePolls)
             when (step) {
                 is VoiceInstallStep.Working -> onProgress(step.percent)
                 VoiceInstallStep.Done -> return

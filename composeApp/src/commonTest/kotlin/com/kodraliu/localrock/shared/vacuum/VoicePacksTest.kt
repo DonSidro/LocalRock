@@ -57,6 +57,21 @@ class VoicePacksTest {
     }
 
     @Test
+    fun idlePollsCountOnlyConsecutiveIdleReads() {
+        val idle = CurrentSound(3, 7, 0, "us", "en")
+        var polls = 0
+        var step: VoiceInstallStep = VoiceInstallStep.Working(null)
+        repeat(VOICE_INSTALL_IDLE_POLLS) {
+            step = voiceInstallStep(SoundProgress(0, 0, 0, 0), idle, 12, polls + 1)
+            polls = nextVoiceIdlePolls(step, idle, polls)
+        }
+        assertEquals(VoiceInstallStep.Failed(installFailed = false), step)
+        assertEquals(VOICE_INSTALL_IDLE_POLLS - 1, nextVoiceIdlePolls(VoiceInstallStep.Working(null), idle, VOICE_INSTALL_IDLE_POLLS - 2))
+        assertEquals(0, nextVoiceIdlePolls(VoiceInstallStep.Working(null), null, 2))
+        assertEquals(0, nextVoiceIdlePolls(VoiceInstallStep.Working(40), idle, 2))
+    }
+
+    @Test
     fun installStepsFollowThePluginsProgressRules() {
         val idle = CurrentSound(3, 7, 0, "us", "en")
         val switched = CurrentSound(12, 2, 0, "us", "de")

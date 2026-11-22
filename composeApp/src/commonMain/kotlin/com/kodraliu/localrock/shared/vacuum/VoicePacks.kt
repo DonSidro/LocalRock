@@ -84,6 +84,10 @@ sealed interface VoiceInstallStep {
 /** Consecutive idle polls (nothing in progress, target not in use) after which an install counts as failed. */
 const val VOICE_INSTALL_IDLE_POLLS = 5
 
+/** The idle-poll count after one more poll: grows on an idle read of the robot, resets on anything else. */
+fun nextVoiceIdlePolls(step: VoiceInstallStep, current: CurrentSound?, idlePolls: Int): Int =
+    if (step is VoiceInstallStep.Working && step.percent == null && current != null) idlePolls + 1 else 0
+
 /** Mirrors the plugin's getProgess: busy on state 1 or 2, failure on any other state while a sid is set. */
 fun voiceInstallStep(progress: SoundProgress?, current: CurrentSound?, targetSid: Int, idlePolls: Int = 0): VoiceInstallStep {
     if (progress != null && (progress.state == 1 || progress.state == 2)) return VoiceInstallStep.Working(progress.progress.coerceIn(0, 100))
