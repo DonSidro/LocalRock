@@ -107,7 +107,8 @@ fun rememberMapLayers(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap
     val palette = if (dark) DarkPalette else LightPalette
     // A live update replaces the map object every few seconds. The floor only depends on the grid and
     // rooms, so it is not redrawn for a robot that has merely moved; the overlay carries the route.
-    val floor = remember(map.floorKey(), dark, scale) { renderLayer(map, palette, scale, overlay = false) }
+    val floorKey = remember(map) { map.floorKey() }
+    val floor = remember(floorKey, dark, scale) { renderLayer(map, palette, scale, overlay = false) }
     val overlay = remember(map, dark, scale) { renderLayer(map, palette, scale, overlay = true) }
     return floor to overlay
 }
@@ -132,7 +133,8 @@ fun rememberWallBitmaps(map: ParsedMap, scale: Int, enabled: Boolean): Pair<Imag
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     // Only the 3D view draws the walls, so the flat map does not pay for two more full-size bitmaps.
     if (!enabled) return null
-    return remember(map.floorKey(), dark, scale) {
+    val floorKey = remember(map) { map.floorKey() }
+    return remember(floorKey, dark, scale) {
         val wall = (if (dark) DarkPalette else LightPalette).wall
         renderWalls(map, lerp(wall, Color.White, 0.10f), scale) to renderWalls(map, lerp(wall, Color.White, 0.30f), scale)
     }
@@ -182,7 +184,8 @@ private fun hsv(hue: Float, saturation: Float, value: Float): Color {
 @Composable
 fun rememberSelectionBitmap(map: ParsedMap, selectedRoomIds: List<Int>, scale: Int): ImageBitmap? {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return remember(map.floorKey(), selectedRoomIds, dark, scale) {
+    val floorKey = remember(map) { map.floorKey() }
+    return remember(floorKey, selectedRoomIds, dark, scale) {
         if (selectedRoomIds.isEmpty()) {
             null
         } else {
