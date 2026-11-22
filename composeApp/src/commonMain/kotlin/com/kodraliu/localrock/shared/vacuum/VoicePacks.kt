@@ -82,7 +82,7 @@ sealed interface VoiceInstallStep {
 }
 
 /** Consecutive idle polls (nothing in progress, target not in use) after which an install counts as failed. */
-const val VOICE_INSTALL_IDLE_POLLS = 3
+const val VOICE_INSTALL_IDLE_POLLS = 5
 
 /** Mirrors the plugin's getProgess: busy on state 1 or 2, failure on any other state while a sid is set. */
 fun voiceInstallStep(progress: SoundProgress?, current: CurrentSound?, targetSid: Int, idlePolls: Int = 0): VoiceInstallStep {
