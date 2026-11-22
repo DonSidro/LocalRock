@@ -6,6 +6,7 @@ import com.kodraliu.localrock.shared.model.FirmwareOtaResponse
 import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
 import com.kodraliu.localrock.shared.model.HomeDetail
+import com.kodraliu.localrock.shared.model.LastKnown
 import com.kodraliu.localrock.shared.model.Room
 import com.kodraliu.localrock.shared.model.Scene
 import com.kodraliu.localrock.shared.model.SceneRunResult
@@ -54,6 +55,15 @@ class DeviceApi(private val client: HttpClient) {
         ).unwrapData()
     }
 
+    /** The voice-pkg `info` list for [model]; the server passes it through with pack URLs pointing at itself. */
+    suspend fun voicePackages(model: String): JsonElement {
+        val resp = client.get("/voice-pkg/info") { parameter("model", model) }
+        if (!resp.status.isSuccess()) {
+            throw DeviceApiException(resp.status.value, "Voice packs unavailable (HTTP ${resp.status.value})")
+        }
+        return resp.body()
+    }
+
     /** The routines saved for one robot, in the order the server keeps them. */
     suspend fun getScenes(duid: String): List<Scene> {
         val resp = client.get("/user/scene/device/$duid")
@@ -74,6 +84,13 @@ class DeviceApi(private val client: HttpClient) {
         val response: SceneRunResponse = resp.body()
         if (response.code != 200) throw DeviceApiException(response.code, response.msg)
         return response.result ?: response.data ?: SceneRunResult()
+    }
+
+    /** The robot's last-known state from the server, with its last map when [includeMap]. */
+    suspend fun lastKnown(duid: String, includeMap: Boolean): LastKnown {
+        return client.get("/user/devices/$duid/last_known") {
+            if (includeMap) parameter("map", "1")
+        }.unwrapData()
     }
 
     suspend fun checkFirmwareUpdate(duid: String): FirmwareUpdateInfo? {

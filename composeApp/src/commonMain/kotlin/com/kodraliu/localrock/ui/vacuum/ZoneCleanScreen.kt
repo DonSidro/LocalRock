@@ -1,8 +1,12 @@
 package com.kodraliu.localrock.ui.vacuum
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -15,10 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Map
-import androidx.compose.material.icons.filled.OpenWith
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +29,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,7 +45,9 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
@@ -51,6 +55,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import com.kodraliu.localrock.shared.vacuum.ZoneRect
+import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
+import androidx.compose.ui.geometry.Rect
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,10 +70,14 @@ fun ZoneCleanScreen(
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragCurrent by remember { mutableStateOf<Offset?>(null) }
     var sent by remember { mutableStateOf(false) }
-    var drawMode by remember { mutableStateOf(true) } // true = draw zones, false = pan/zoom
+    // The zone tapped for editing, and the move or corner drag on it in progress.
+    var selected by remember { mutableStateOf<Int?>(null) }
+    var edit by remember { mutableStateOf<ZoneDrag?>(null) }
     var mapScale by remember { mutableStateOf(1f) }
     var mapOffset by remember { mutableStateOf(Offset.Zero) }
     var viewport by remember { mutableStateOf(Size.Zero) }
+    // The map size the view was last framed for: a new map size frames it again, a resized view keeps the zoom.
+    var framedFor by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     Scaffold(
         topBar = {
@@ -77,19 +87,14 @@ fun ZoneCleanScreen(
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
-                    // Draw / Pan toggle
-                    FilledIconToggleButton(
-                        checked = drawMode,
-                        onCheckedChange = { drawMode = it },
-                    ) {
-                        Icon(
-                            if (drawMode) Icons.Default.Edit else Icons.Default.OpenWith,
-                            contentDescription = if (drawMode) "Draw mode" else "Pan mode",
-                        )
-                    }
                     if (zones.isNotEmpty()) {
-                        IconButton(onClick = { zones = emptyList(); sent = false }) {
-                            Icon(Icons.Default.Delete, "Clear zones")
+                        val one = selected
+                        IconButton(onClick = {
+                            zones = if (one != null) zones.filterIndexed { i, _ -> i != one } else emptyList()
+                            selected = null
+                            sent = false
+                        }) {
+                            Icon(Icons.Default.Delete, if (one != null) "Delete zone" else "Clear zones")
                         }
                     }
                     if (zones.isNotEmpty() && !sent) {
@@ -123,14 +128,26 @@ fun ZoneCleanScreen(
                 }
             } else {
                 val pm = parsedMap!!
-                val bitmap = rememberMapBitmap(pm)
+                val bitmap = rememberMapBitmap(pm, floorPlan = false)
                 val zoneColor = MaterialTheme.colorScheme.primary
 
-                // Whole map, centred; again whenever the view or the map changes size (e.g. on rotation).
+                // Whole map, centred, when the map first shows or changes size. A view that only changes
+                // size (rotation, or the hint below changing length) keeps the user's zoom (#101).
                 LaunchedEffect(viewport, pm.width, pm.height) {
-                    mapScale = 1f
-                    mapOffset = clampMapOffset(Offset.Zero, 1f, pm.fittedSize(viewport), viewport)
+                    if (viewport.width <= 0f || viewport.height <= 0f) return@LaunchedEffect
+                    val mapSize = pm.width to pm.height
+                    if (framedFor != mapSize) {
+                        framedFor = mapSize
+                        // Framed on the floor plan, as on the robot screen: the grid is mostly empty around it.
+                        val (scale, offset) = frameMap(pm.contentBoundsNorm(), pm.fittedSize(viewport), viewport)
+                        mapScale = scale
+                        mapOffset = offset
+                    } else {
+                        mapOffset = clampMapOffset(mapOffset, mapScale, pm.fittedSize(viewport), viewport)
+                    }
                 }
+                // The gesture handlers outlive a map refresh, so they read the current map instead of restarting.
+                val currentMap by rememberUpdatedState(pm)
 
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Canvas(
@@ -138,51 +155,109 @@ fun ZoneCleanScreen(
                             .fillMaxSize()
                             .clipToBounds()
                             .onSizeChanged { viewport = it.toSize() }
-                            .pointerInput(drawMode, pm) {
+                            .pointerInput(Unit) {
+                                // A tap selects the zone under it for editing, or clears the selection;
+                                // a double tap returns to the framed floor plan.
+                                detectTapGestures(onTap = { tap ->
+                                    val map = currentMap
+                                    val content = map.fittedSize(size.toSize())
+                                    selected = zones.indices.lastOrNull { i ->
+                                        zoneScreenRect(map, zones[i], content, mapScale, mapOffset).contains(tap)
+                                    }
+                                }, onDoubleTap = {
+                                    val view = size.toSize()
+                                    val (scale, offset) = frameMap(currentMap.contentBoundsNorm(), currentMap.fittedSize(view), view)
+                                    mapScale = scale
+                                    mapOffset = offset
+                                })
+                            }
+                            .pointerInput(Unit) {
                                 // Screen position -> map canvas position, kept on the map.
                                 fun mapPoint(p: Offset): Offset {
-                                    val content = pm.fittedSize(size.toSize())
+                                    val content = currentMap.fittedSize(size.toSize())
                                     val c = (p - mapOffset) / mapScale
                                     return Offset(c.x.coerceIn(0f, content.width), c.y.coerceIn(0f, content.height))
                                 }
-                                if (drawMode) {
-                                    detectDragGestures(
-                                        onDragStart = { offset ->
+                                // One finger draws a zone; two fingers pinch and move the map (#101).
+                                detectZoneGestures(
+                                    onDrawStart = { offset ->
+                                        sent = false
+                                        val map = currentMap
+                                        val content = map.fittedSize(size.toSize())
+                                        val index = selected?.takeIf { it in zones.indices }
+                                        val zone = index?.let { zones[it] }
+                                        // A selected zone is edited from its corners or its inside; a drag anywhere
+                                        // else draws a new zone.
+                                        val corner = zone?.corners()?.indexOfFirst { (x, y) ->
+                                            (zoneScreenPoint(map, x, y, content, mapScale, mapOffset) - offset).getDistance() <=
+                                                ZONE_HANDLE_REACH.toPx()
+                                        } ?: -1
+                                        edit = when {
+                                            zone == null || index == null -> null
+                                            corner >= 0 -> ZoneDrag.Corner(index, zone, corner)
+                                            zoneScreenRect(map, zone, content, mapScale, mapOffset).contains(offset) ->
+                                                ZoneDrag.Move(index, zone, map.canvasToMm(mapPoint(offset), content.width, content.height))
+                                            else -> null
+                                        }
+                                        if (edit == null) {
+                                            selected = null
                                             dragStart = mapPoint(offset)
                                             dragCurrent = dragStart
-                                            sent = false
-                                        },
-                                        onDrag = { change, _ ->
-                                            change.consume()
-                                            dragCurrent = mapPoint(change.position)
-                                        },
-                                        onDragEnd = {
-                                            val start = dragStart ?: return@detectDragGestures
-                                            val end = dragCurrent ?: return@detectDragGestures
-                                            val content = pm.fittedSize(size.toSize())
-                                            val a = pm.canvasToMm(start, content.width, content.height)
-                                            val b = pm.canvasToMm(end, content.width, content.height)
+                                        }
+                                    },
+                                    onDraw = { position ->
+                                        val map = currentMap
+                                        val content = map.fittedSize(size.toSize())
+                                        val (x, y) = map.canvasToMm(mapPoint(position), content.width, content.height)
+                                        when (val e = edit) {
+                                            is ZoneDrag.Corner -> zones = zones.replaced(e.index, e.original.withCorner(e.corner, x, y))
+                                            is ZoneDrag.Move -> zones = zones.replaced(
+                                                e.index,
+                                                e.original.movedBy(x - e.startMm.first, y - e.startMm.second),
+                                            )
+                                            null -> dragCurrent = mapPoint(position)
+                                        }
+                                    },
+                                    onDrawEnd = {
+                                        if (edit != null) {
+                                            edit = null
+                                            return@detectZoneGestures
+                                        }
+                                        val start = dragStart
+                                        val end = dragCurrent
+                                        dragStart = null
+                                        dragCurrent = null
+                                        if (start != null && end != null) {
+                                            val map = currentMap
+                                            val content = map.fittedSize(size.toSize())
+                                            val a = map.canvasToMm(start, content.width, content.height)
+                                            val b = map.canvasToMm(end, content.width, content.height)
                                             val mx1 = minOf(a.first, b.first)
                                             val my1 = minOf(a.second, b.second)
                                             val mx2 = maxOf(a.first, b.first)
                                             val my2 = maxOf(a.second, b.second)
-                                            if (mx2 - mx1 > 500 && my2 - my1 > 500) {
+                                            if (mx2 - mx1 > MIN_ZONE_SIDE_MM && my2 - my1 > MIN_ZONE_SIDE_MM) {
                                                 zones = zones + ZoneRect(mx1, my1, mx2, my2)
+                                                // The new zone is ready to adjust straight away.
+                                                selected = zones.lastIndex
                                             }
-                                            dragStart = null
-                                            dragCurrent = null
-                                        },
-                                        onDragCancel = { dragStart = null; dragCurrent = null },
-                                    )
-                                } else {
-                                    detectTransformGestures { centroid, pan, zoom, _ ->
+                                        }
+                                    },
+                                    onDrawCancel = {
+                                        // A second finger landed: put an edited zone back as it was.
+                                        edit?.let { e -> zones = zones.replaced(e.index, e.original) }
+                                        edit = null
+                                        dragStart = null
+                                        dragCurrent = null
+                                    },
+                                    onTransform = { centroid, pan, zoom ->
                                         val view = size.toSize()
                                         val (newScale, newOffset) =
-                                            zoomMap(mapScale, mapOffset, centroid, pan, zoom, pm.fittedSize(view), view)
+                                            zoomMap(mapScale, mapOffset, centroid, pan, zoom, currentMap.fittedSize(view), view)
                                         mapScale = newScale
                                         mapOffset = newOffset
-                                    }
-                                }
+                                    },
+                                )
                             },
                     ) {
                         val content = pm.fittedSize(size)
@@ -201,20 +276,33 @@ fun ZoneCleanScreen(
 
                             val strokePx = (2.dp.toPx() / mapScale).coerceAtLeast(1f)
 
-                            for (zone in zones) {
+                            val handleRadius = 7.dp.toPx() / mapScale
+                            for ((index, zone) in zones.withIndex()) {
                                 val a = pm.mmToCanvas(zone.x1, zone.y1, content.width, content.height)
                                 val b = pm.mmToCanvas(zone.x2, zone.y2, content.width, content.height)
                                 val left = minOf(a.x, b.x)
                                 val top = minOf(a.y, b.y)
                                 val w = maxOf(a.x, b.x) - left
                                 val h = maxOf(a.y, b.y) - top
-                                drawRect(color = zoneColor.copy(alpha = 0.3f), topLeft = Offset(left, top), size = Size(w, h))
-                                drawRect(color = zoneColor, topLeft = Offset(left, top), size = Size(w, h), style = Stroke(strokePx))
+                                val isSelected = index == selected
+                                drawRect(color = zoneColor.copy(alpha = if (isSelected) 0.4f else 0.3f), topLeft = Offset(left, top), size = Size(w, h))
+                                drawRect(
+                                    color = zoneColor,
+                                    topLeft = Offset(left, top),
+                                    size = Size(w, h),
+                                    style = Stroke(if (isSelected) strokePx * 2 else strokePx),
+                                )
+                                if (isSelected) {
+                                    for (corner in listOf(Offset(left, top), Offset(left + w, top), Offset(left, top + h), Offset(left + w, top + h))) {
+                                        drawCircle(color = Color.White, radius = handleRadius, center = corner)
+                                        drawCircle(color = zoneColor, radius = handleRadius, center = corner, style = Stroke(strokePx))
+                                    }
+                                }
                             }
 
                             val ds = dragStart
                             val dc = dragCurrent
-                            if (drawMode && ds != null && dc != null) {
+                            if (ds != null && dc != null) {
                                 val left = minOf(ds.x, dc.x)
                                 val top = minOf(ds.y, dc.y)
                                 val w = maxOf(ds.x, dc.x) - left
@@ -237,9 +325,9 @@ fun ZoneCleanScreen(
                 Text(
                     text = when {
                         sent -> "Zone cleaning started!"
-                        !drawMode -> "Pinch to zoom · Double-tap to reset · Switch to draw mode to add zones"
-                        zones.isNotEmpty() -> "${zones.size} zone(s) — tap Start to begin"
-                        else -> "Drag on the map to draw a zone · Switch to pan mode to navigate"
+                        selected != null -> "Drag the zone to move it · Drag a corner to resize · Tap elsewhere when done"
+                        zones.isNotEmpty() -> "${zones.size} zone(s) — tap a zone to change it, or Start to begin"
+                        else -> "Drag to draw a zone · Two fingers to zoom and move · Double-tap to reset the view"
                     },
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     style = MaterialTheme.typography.bodySmall,
@@ -249,4 +337,79 @@ fun ZoneCleanScreen(
             }
         }
     }
+}
+
+/**
+ * One finger drags out a zone. As soon as a second finger lands the touch becomes a pinch and pan of
+ * the map until every finger is lifted, and a zone being drawn is dropped. Nothing is drawn before the
+ * finger has moved past the touch slop, so a tap still reaches the double-tap detector.
+ */
+private suspend fun PointerInputScope.detectZoneGestures(
+    onDrawStart: (Offset) -> Unit,
+    onDraw: (Offset) -> Unit,
+    onDrawEnd: () -> Unit,
+    onDrawCancel: () -> Unit,
+    onTransform: (centroid: Offset, pan: Offset, zoom: Float) -> Unit,
+) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        var drawing = false
+        var transforming = false
+        do {
+            val event = awaitPointerEvent()
+            val pressed = event.changes.count { it.pressed }
+            if (pressed >= 2 || transforming) {
+                if (!transforming) {
+                    transforming = true
+                    if (drawing) {
+                        drawing = false
+                        onDrawCancel()
+                    }
+                }
+                if (pressed >= 2) {
+                    onTransform(event.calculateCentroid(useCurrent = false), event.calculatePan(), event.calculateZoom())
+                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                }
+            } else {
+                val change = event.changes.firstOrNull { it.id == down.id }
+                if (change != null) {
+                    if (!drawing && (change.position - down.position).getDistance() > viewConfiguration.touchSlop) {
+                        drawing = true
+                        onDrawStart(down.position)
+                    }
+                    if (drawing) {
+                        onDraw(change.position)
+                        change.consume()
+                    }
+                }
+            }
+        } while (event.changes.any { it.pressed })
+        if (drawing) onDrawEnd()
+    }
+}
+
+/** How far from a corner of the selected zone a drag still grabs that corner. */
+private val ZONE_HANDLE_REACH = 28.dp
+
+/** A drag that changes an existing zone; [original] is what it goes back to if the drag is cancelled. */
+private sealed interface ZoneDrag {
+    val index: Int
+    val original: ZoneRect
+
+    data class Move(override val index: Int, override val original: ZoneRect, val startMm: Pair<Int, Int>) : ZoneDrag
+    data class Corner(override val index: Int, override val original: ZoneRect, val corner: Int) : ZoneDrag
+}
+
+private fun List<ZoneRect>.replaced(index: Int, zone: ZoneRect): List<ZoneRect> =
+    mapIndexed { i, z -> if (i == index) zone else z }
+
+/** Where a point in robot millimetres is on screen, at the view's zoom and pan. */
+private fun zoneScreenPoint(map: ParsedMap, xMm: Int, yMm: Int, content: Size, scale: Float, offset: Offset): Offset =
+    map.mmToCanvas(xMm, yMm, content.width, content.height) * scale + offset
+
+/** The zone's rectangle on screen. */
+private fun zoneScreenRect(map: ParsedMap, zone: ZoneRect, content: Size, scale: Float, offset: Offset): Rect {
+    val a = zoneScreenPoint(map, zone.x1, zone.y1, content, scale, offset)
+    val b = zoneScreenPoint(map, zone.x2, zone.y2, content, scale, offset)
+    return Rect(minOf(a.x, b.x), minOf(a.y, b.y), maxOf(a.x, b.x), maxOf(a.y, b.y))
 }
