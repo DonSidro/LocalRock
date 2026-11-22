@@ -132,14 +132,11 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -935,7 +932,9 @@ private fun DrawScope.drawMapLayer(image: ImageBitmap, view: MapView, height: Fl
     }
 }
 
-private const val MIN_LABEL_WIDTH_PX = 100
+private val MIN_LABEL_WIDTH = 36.dp
+private val LABEL_PILL_FLAT = Color.White.copy(alpha = 0.8f)
+private val LABEL_PILL_3D = Color.Black.copy(alpha = 0.6f)
 
 @Composable
 private fun VacuumMapImage(
@@ -1111,11 +1110,10 @@ private fun VacuumMapImage(
                 val order = selectedRoomIds.indexOf(room.id)
                 val selected = order >= 0
                 val text = if (selected) "${order + 1} · ${room.name}" else room.name
-                // Dark names sit well on the coloured floor of the flat map; the 3D walls are black, so
-                // there the names are white with a thin edge.
+                // Dark names on a light pill over the flat map; white names on a dark pill over the black 3D walls.
                 val style = when {
                     selected -> selectedLabelStyle
-                    is3D -> labelStyle.copy(color = Color.White, shadow = Shadow(Color(0xE6000000), Offset(0f, 1f), 3f))
+                    is3D -> labelStyle.copy(color = Color.White)
                     else -> labelStyle
                 }
                 // Each name has a round badge with its room type in front, as in the Roborock app. A room the
@@ -1123,39 +1121,48 @@ private fun VacuumMapImage(
                 val badge = if (selected) 0f else 16.dp.toPx()
                 val badgeGap = if (selected) 0f else 3.dp.toPx()
                 val unnamed = !room.inRoomTable && !selected
-                // A name is shortened to fit inside its room, so it never runs out over the black between rooms.
+                val padX = 6.dp.toPx()
+                val padY = 3.dp.toPx()
+                val edge = 4.dp.toPx()
+                // A name is shortened to fit inside its room, so it never runs out over the black between rooms,
+                // and never wider than the view so it is not cut off at the screen edge.
                 val yawRad = view.yawDegrees * (PI / 180.0)
                 val spanCells = abs(cos(yawRad)) * (room.labelSpanCells ?: 0) + abs(sin(yawRad)) * (room.labelSpanCellsY ?: room.labelSpanCells ?: 0)
                 val roomWidthPx = spanCells.toFloat() * view.k * scale
-                val textRoom = (roomWidthPx - badge - badgeGap).toInt().coerceAtLeast(MIN_LABEL_WIDTH_PX)
-                val measured = if (roomWidthPx > 0f) {
-                    textMeasurer.measure(
-                        text, style,
-                        overflow = TextOverflow.Ellipsis, softWrap = false, maxLines = 1,
-                        constraints = Constraints(maxWidth = textRoom),
-                    )
-                } else {
-                    textMeasurer.measure(text, style)
-                }
+                val viewRoom = (size.width - 2 * (padX + edge) - badge - badgeGap).toInt().coerceAtLeast(1)
+                val textRoom = (roomWidthPx - badge - badgeGap).toInt().coerceAtLeast(MIN_LABEL_WIDTH.roundToPx()).coerceAtMost(viewRoom)
+                val measured = textMeasurer.measure(
+                    text, style,
+                    overflow = TextOverflow.Ellipsis, softWrap = false, maxLines = 1,
+                    constraints = Constraints(maxWidth = textRoom),
+                )
                 val tw = if (unnamed) 0f else measured.size.width.toFloat()
                 val th = measured.size.height.toFloat()
                 val total = if (selected) tw else badge + (if (unnamed) 0f else badgeGap + tw)
-                val padX = 6.dp.toPx()
-                val padY = 3.dp.toPx()
-                val labelTopLeft = Offset(cx - tw / 2 - padX, cy - th / 2 - padY)
-                val labelSize = Size(tw + padX * 2, th + padY * 2)
-                if (selected) {
+                val rowH = maxOf(th, badge)
+                val pillW = total + padX * 2
+                val pillH = rowH + padY * 2
+                // The label stays inside the view: a name near the edge slides in instead of being cut off.
+                val lx = if (size.width > pillW + 2 * edge) cx.coerceIn(pillW / 2 + edge, size.width - pillW / 2 - edge) else cx
+                val ly = if (size.height > pillH + 2 * edge) cy.coerceIn(pillH / 2 + edge, size.height - pillH / 2 - edge) else cy
+                val pillTopLeft = Offset(lx - pillW / 2, ly - pillH / 2)
+                // A backing behind every name keeps it readable where it reaches past its room onto the black.
+                if (!unnamed) {
                     drawRoundRect(
-                        color = selectedBgColor,
-                        topLeft = labelTopLeft,
-                        size = labelSize,
-                        cornerRadius = CornerRadius(6.dp.toPx()),
+                        color = when {
+                            selected -> selectedBgColor
+                            is3D -> LABEL_PILL_3D
+                            else -> LABEL_PILL_FLAT
+                        },
+                        topLeft = pillTopLeft,
+                        size = Size(pillW, pillH),
+                        cornerRadius = CornerRadius(pillH / 2),
                     )
                 }
-                labelHits += RoomLabelHit(room.id, Rect(Offset(cx - total / 2 - padX, cy - maxOf(th, badge) / 2 - padY), Size(total + padX * 2, maxOf(th, badge) + padY * 2)))
-                val left = cx - total / 2
+                labelHits += RoomLabelHit(room.id, Rect(pillTopLeft, Size(pillW, pillH)))
+                val left = lx - total / 2
                 if (!selected) {
-                    val centre = Offset(left + badge / 2, cy)
+                    val centre = Offset(left + badge / 2, ly)
                     drawCircle(color = Color(0xFF14202B), radius = badge / 2, center = centre)
                     val glyph = badge * 0.6f
                     withTransform({ translate(left = centre.x - glyph / 2, top = centre.y - glyph / 2) }) {
@@ -1164,24 +1171,8 @@ private fun VacuumMapImage(
                         }
                     }
                 }
-                if (!unnamed) {
-                    val topLeft = Offset(left + badge + badgeGap, cy - th / 2)
-                    if (is3D && !selected) {
-                        val outline = textMeasurer.measure(
-                            text,
-                            style.copy(
-                                color = Color(0xE6000000),
-                                shadow = null,
-                                drawStyle = Stroke(width = 0.8.dp.toPx(), join = StrokeJoin.Round),
-                            ),
-                            overflow = TextOverflow.Ellipsis, softWrap = false, maxLines = 1,
-                            constraints = Constraints(maxWidth = measured.size.width.coerceAtLeast(1)),
-                        )
-                        drawText(outline, topLeft = topLeft)
-                    }
-                    // Drawn from the measured layout, so a name near the screen edge is not re-wrapped to fit.
-                    drawText(measured, topLeft = topLeft)
-                }
+                // Drawn from the measured layout, so a name near the screen edge is not re-wrapped to fit.
+                if (!unnamed) drawText(measured, topLeft = Offset(left + badge + badgeGap, ly - th / 2))
             }
         }
 
