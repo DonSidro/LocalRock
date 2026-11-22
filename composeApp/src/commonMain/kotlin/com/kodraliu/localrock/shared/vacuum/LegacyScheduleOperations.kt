@@ -35,8 +35,20 @@ internal suspend fun replaceLegacySchedule(
     }
 }
 
-/** Robot get_timer entries the server has no job for (the robot's own legacy timers), appended after the jobs. */
+/** Robot get_timer entries with no server job, matched by job id or the job's native timer name, appended after the jobs. */
 internal fun mergeRobotOnlyTimers(jobs: List<CleanTimer>, robot: List<CleanTimer>): List<CleanTimer> {
-    val known = jobs.map { it.id }.toSet()
+    val known = jobs.flatMap { listOfNotNull(it.id, it.serverJob?.nativeName) }.toSet()
     return jobs + robot.filter { it.id !in known }
+}
+
+/** Jobs plus the robot's own timers; if the robot cannot be read, the robot-only timers seen last time stay listed. */
+internal suspend fun listWithRobotTimers(
+    jobs: List<CleanTimer>,
+    previous: List<CleanTimer>,
+    readRobot: suspend () -> List<CleanTimer>,
+): List<CleanTimer> {
+    val robot = try { readRobot() }
+    catch (e: CancellationException) { throw e }
+    catch (e: Exception) { previous.filter { it.serverJob == null } }
+    return mergeRobotOnlyTimers(jobs, robot)
 }

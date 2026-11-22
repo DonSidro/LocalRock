@@ -3,6 +3,10 @@ package com.kodraliu.localrock.shared.vacuum
 import com.kodraliu.localrock.shared.device.DeviceApiException
 import com.kodraliu.localrock.shared.schedule.ScheduleException
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import com.kodraliu.localrock.shared.schedule.ServerSchedule
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -73,18 +77,57 @@ class LegacyScheduleOperationsTest {
         assertEquals(false, restored)
     }
 
+    private fun job(id: String, nativeName: String?) = CleanTimer(
+        id, true, 7, 0, emptySet(),
+        serverJob = ServerSchedule(buildJsonObject {
+            put("id", id)
+            put("param", buildJsonObject {
+                put("method", "server_scheduled_start")
+                put("params", buildJsonArray { add(buildJsonObject { nativeName?.let { put("name", it) } }) })
+            })
+        }),
+    )
+
     @Test fun robot_only_timers_are_added_after_server_jobs() {
-        val job = CleanTimer("100", true, 7, 0, emptySet())
-        val shared = CleanTimer("100", false, 7, 0, emptySet())
+        val jobs = job("55", null)
         val robotOnly = CleanTimer("200", true, 9, 30, setOf(1))
-        val merged = mergeRobotOnlyTimers(listOf(job), listOf(shared, robotOnly))
-        assertEquals(listOf(job, robotOnly), merged)
+        val merged = mergeRobotOnlyTimers(listOf(jobs), listOf(robotOnly))
+        assertEquals(listOf(jobs, robotOnly), merged)
         assertEquals(null, merged.last().serverJob)
     }
 
-    @Test fun nothing_is_added_when_the_robot_has_no_extra_timers() {
-        val job = CleanTimer("100", true, 7, 0, emptySet())
-        assertEquals(listOf(job), mergeRobotOnlyTimers(listOf(job), listOf(job.copy(enabled = false))))
-        assertEquals(emptyList(), mergeRobotOnlyTimers(emptyList(), emptyList()))
+    @Test fun mirrored_timer_is_shown_once_by_its_native_name() {
+        val mirrored = job("55", "1700000000")
+        val robot = CleanTimer("1700000000", true, 7, 0, emptySet())
+        assertEquals(listOf(mirrored), mergeRobotOnlyTimers(listOf(mirrored), listOf(robot)))
+    }
+
+    @Test fun job_id_alone_also_matches() {
+        val same = job("100", null)
+        assertEquals(listOf(same), mergeRobotOnlyTimers(listOf(same), listOf(CleanTimer("100", false, 7, 0, emptySet()))))
+    }
+
+    @Test fun unrelated_robot_timer_is_kept() {
+        val mirrored = job("55", "1700000000")
+        val other = CleanTimer("1700000999", true, 8, 0, emptySet())
+        assertEquals(listOf(mirrored, other), mergeRobotOnlyTimers(listOf(mirrored), listOf(other)))
+    }
+
+    @Test fun failed_robot_read_keeps_the_previous_robot_only_timers() = runTest {
+        val jobs = listOf(job("55", "1700000000"))
+        val kept = CleanTimer("200", true, 9, 30, setOf(1))
+        val previous = listOf(job("55", "1700000000"), kept)
+        val merged = listWithRobotTimers(jobs, previous) { throw IllegalStateException("offline") }
+        assertEquals(listOf(jobs[0], kept), merged)
+        assertEquals(jobs, listWithRobotTimers(jobs, emptyList()) { throw IllegalStateException("offline") })
+    }
+
+    @Test fun successful_robot_read_drops_a_deleted_robot_timer() = runTest {
+        val previous = listOf(CleanTimer("200", true, 9, 30, setOf(1)))
+        assertEquals(emptyList(), listWithRobotTimers(emptyList(), previous) { emptyList() })
+    }
+
+    @Test fun cancellation_is_not_swallowed_by_the_robot_read() = runTest {
+        assertFailsWith<CancellationException> { listWithRobotTimers(emptyList(), emptyList()) { throw CancellationException("cancelled") } }
     }
 }
