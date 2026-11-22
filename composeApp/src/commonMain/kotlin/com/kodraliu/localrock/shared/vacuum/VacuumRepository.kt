@@ -315,14 +315,10 @@ class VacuumRepository(
         applyRoomNames()
     }
 
-    private fun resolveRoomName(room: ParsedMapRoom): String =
-        segmentToRoomId[room.id]?.let { homeRoomNames[it] } ?: room.name
-
     private fun applyRoomNames() {
-        _parsedMap.update { pm ->
-            pm?.copy(rooms = pm.rooms.map { it.copy(name = resolveRoomName(it)) })
-        }
-        _rooms.update { list -> list.map { it.copy(name = resolveRoomName(it)) } }
+        fun ParsedMapRoom.resolved() = withRoomTable(segmentToRoomId, homeRoomNames, rawSegmentTable)
+        _parsedMap.update { pm -> pm?.copy(rooms = pm.rooms.map { it.resolved() }) }
+        _rooms.update { list -> list.map { it.resolved() } }
     }
 
     /**
@@ -976,7 +972,9 @@ class VacuumRepository(
 
     /** Null when the robot did not reply at all, so a read that timed out is not mistaken for an answer. */
     private suspend fun readBetaFeature(def: BetaFeatureDef): BetaFeatureState? {
-        val resp = runCatching { session.sendCommand(def.getMethod) }.getOrNull() ?: return null
+        val resp = runCatching {
+            def.settingName?.let { session.getRobotSetting(it) } ?: session.sendCommand(def.getMethod)
+        }.getOrNull() ?: return null
         val parsed = parseBetaReply(resp.result)
         return BetaFeatureState(
             def = def,
@@ -1011,7 +1009,7 @@ class VacuumRepository(
                 }
                 if (state.answered && state.toggleable) states += state
             }
-            _betaFeatures.value = states
+            _betaFeatures.value = states.withoutReplaced()
             if (complete) betaFeatureDefsRead = defs
         } finally {
             _betaFeaturesLoading.value = false
@@ -1028,6 +1026,13 @@ class VacuumRepository(
      */
     suspend fun setBetaFeature(id: String, on: Boolean) {
         val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
+        current.def.settingName?.let { name ->
+            val sent = session.setRobotSetting(name, on)
+            // Read back before requireOk on purpose: a refused write still refreshes the row with the robot's real value.
+            refreshBetaFeature(current.def)
+            sent.requireOk("app_set_robot_setting")
+            return
+        }
         val candidates = betaSetParamCandidates(current.key, on)
         var last: V1Response? = null
         for (i in betaSetTryOrder(candidates.size, betaSetAcceptedShape[id])) {
@@ -1038,6 +1043,22 @@ class VacuumRepository(
         val updated = readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }
         if (updated != null) _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
         last?.requireOk(current.def.setMethod)
+    }
+
+    private suspend fun refreshBetaFeature(def: BetaFeatureDef) {
+        readBetaFeature(def)?.takeIf { it.answered && it.toggleable }?.let { updated ->
+            _betaFeatures.update { list -> list.map { if (it.def.id == def.id) updated else it } }
+        }
+    }
+
+    /** Writes one value of a multi-choice option, then reads it back so the screen shows what the robot holds. */
+    suspend fun setBetaChoice(id: String, value: Int) {
+        val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
+        val name = current.def.settingName ?: return
+        val sent = session.setRobotSetting(name, value)
+        // Read back before requireOk on purpose: a refused write still refreshes the row with the robot's real value.
+        refreshBetaFeature(current.def)
+        sent.requireOk("app_set_robot_setting")
     }
 
     suspend fun fetchDockSettings() {
@@ -1387,6 +1408,21 @@ private fun parseCronTimer(id: String, enabled: Boolean, cron: String): CleanTim
 }
 
 const val CONSUMABLE_UNSUPPORTED = "unsupported"
+
+/** A room with its home name, its type tag and whether the robot's room table lists it. */
+internal fun ParsedMapRoom.withRoomTable(
+    segmentToRoomId: Map<Int, Long>,
+    homeRoomNames: Map<Long, String>,
+    table: List<SegmentEntry>?,
+): ParsedMapRoom {
+    val tagId = table?.firstOrNull { it.segment == id }?.tagId
+    return copy(
+        name = segmentToRoomId[id]?.let { homeRoomNames[it] } ?: name,
+        tag = tagId,
+        // The segment mapping outlives the raw table, which is cleared on a floor switch or map save.
+        inRoomTable = id in segmentToRoomId || table?.any { it.segment == id } == true,
+    )
+}
 
 /**
  * Segment id -> Roborock room id from a `get_room_mapping` result (`[[segment, "roomId", tag], ...]`).

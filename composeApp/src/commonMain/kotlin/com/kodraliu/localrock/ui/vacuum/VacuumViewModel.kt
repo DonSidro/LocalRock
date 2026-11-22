@@ -11,11 +11,20 @@ import com.kodraliu.localrock.shared.vacuum.BetaFeatureDef
 import com.kodraliu.localrock.shared.model.LastKnown
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.MapEditException
+import com.kodraliu.localrock.shared.vacuum.ProductCatalog
 import com.kodraliu.localrock.shared.vacuum.RoomType
+import com.kodraliu.localrock.shared.vacuum.VoiceAssistant
+import com.kodraliu.localrock.shared.vacuum.VoiceInstallException
+import com.kodraliu.localrock.shared.vacuum.VoiceInstallState
+import com.kodraliu.localrock.shared.vacuum.VoicePack
+import com.kodraliu.localrock.shared.vacuum.VoicePackListState
+import com.kodraliu.localrock.shared.vacuum.isVoiceAssistantSupported
+import com.kodraliu.localrock.shared.vacuum.parseVoicePackList
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
+import com.kodraliu.localrock.shared.vacuum.productDisplayName
 import com.kodraliu.localrock.shared.vacuum.showsBetaPage
 import com.kodraliu.localrock.shared.vacuum.supportedBetaFeatures
 import com.kodraliu.localrock.shared.vacuum.unlistedAdvertisedFeatures
@@ -24,8 +33,9 @@ import com.kodraliu.localrock.shared.vacuum.map.parseB01Map
 import com.kodraliu.localrock.shared.vacuum.map.parseLegacyMap
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -49,6 +59,7 @@ class VacuumViewModel(
 
     val deviceName: String = device.name
     val modelName: String? = container.deviceRepository.productsByDuid.value[duid]?.model
+    val modelDisplayName: String? = productDisplayName(container.deviceRepository.productsByDuid.value[duid])
     val firmwareVersion: String? = device.fv
     private val serverFeatureSet = device.newFeatureSet
     private val serverFeatureInfo = device.featureSet
@@ -80,6 +91,10 @@ class VacuumViewModel(
     val supportsWaterSlide: StateFlow<Boolean> = repository.robotFeatureSet
         .map { isWaterSlideSupported(it ?: serverFeatureSet) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, isWaterSlideSupported(serverFeatureSet))
+    val supportsVoiceAssistant: StateFlow<Boolean> = newFeatureSet
+        .map { isVoiceAssistantSupported(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, isVoiceAssistantSupported(serverFeatureSet))
+    val voice = VoiceAssistant(repository.session)
     val status = repository.status
 
     private val errorBannerKey = "robot-error-${device.duid}"
@@ -98,6 +113,58 @@ class VacuumViewModel(
 
     /** The last map the robot sent, to draw while it cannot be asked for a live one. */
     val lastKnownMap: StateFlow<ParsedMap?> = _lastKnownMap.asStateFlow()
+
+    // The map's rotation and 2D/3D view are a purely local rendering choice: the robot has no
+    // concept of either, so these live in this device's app settings rather than any RPC.
+    private val _mapRotation = MutableStateFlow(container.appSettings.mapRotation(device.duid))
+    val mapRotation: StateFlow<Int> = _mapRotation.asStateFlow()
+
+    /** The flat 2D map's orientation. The 3D view has its own heading, [map3DYaw]. */
+    fun rotateMap90() {
+        val next = (_mapRotation.value + 90) % 360
+        container.appSettings.setMapRotation(device.duid, next)
+        _mapRotation.value = next
+    }
+
+    private val _map3DYaw = MutableStateFlow(container.appSettings.map3DYaw(device.duid))
+    val map3DYaw: StateFlow<Float> = _map3DYaw.asStateFlow()
+    private val _map3DTilt = MutableStateFlow(container.appSettings.map3DTilt(device.duid))
+    val map3DTilt: StateFlow<Float> = _map3DTilt.asStateFlow()
+    private var map3DSaveJob: Job? = null
+
+    /** Turning the 3D model fires on every frame of a twist; the view updates at once. */
+    fun setMap3DYaw(degrees: Float) {
+        _map3DYaw.value = ((degrees % 360f) + 360f) % 360f
+        saveMap3DViewSoon()
+    }
+
+    /** A twist or drag arrives as a change, so two events in one frame both count. */
+    fun turnMap3DBy(degrees: Float) = setMap3DYaw(_map3DYaw.value + degrees)
+
+    fun tiltMap3DBy(degrees: Float) = setMap3DTilt(_map3DTilt.value + degrees)
+
+    fun setMap3DTilt(degrees: Float) {
+        _map3DTilt.value = degrees.coerceIn(MAP_3D_MIN_TILT, MAP_3D_MAX_TILT)
+        saveMap3DViewSoon()
+    }
+
+    // Only where the model settles is written to storage, not every frame of getting there.
+    private fun saveMap3DViewSoon() {
+        map3DSaveJob?.cancel()
+        map3DSaveJob = viewModelScope.launch {
+            delay(500)
+            container.appSettings.setMap3DYaw(device.duid, _map3DYaw.value)
+            container.appSettings.setMap3DTilt(device.duid, _map3DTilt.value)
+        }
+    }
+
+    private val _map3D = MutableStateFlow(container.appSettings.map3D(device.duid))
+    val map3D: StateFlow<Boolean> = _map3D.asStateFlow()
+
+    fun setMap3D(value: Boolean) {
+        container.appSettings.setMap3D(device.duid, value)
+        _map3D.value = value
+    }
 
     private val _firmwareUpdate = MutableStateFlow<FirmwareUpdateState>(FirmwareUpdateState.Idle)
     val firmwareUpdate: StateFlow<FirmwareUpdateState> = _firmwareUpdate.asStateFlow()
@@ -153,6 +220,11 @@ class VacuumViewModel(
                 runCatching { repository.fetchRobotFeatureSet() }
                 runCatching { repository.fetchConsumableStatus() }
                 runCatching { repository.rooms() }
+                // Preloaded so the Voice Assistant page opens complete; the chat history waits for its own page.
+                if (isVoiceAssistantSupported(newFeatureSet.value)) {
+                    runCatching { voice.fetchSwitch() }
+                    runCatching { voice.fetchSettings() }
+                }
             }
             // A robot that never answers (dead battery, lost Wi-Fi, stuck) leaves the screen empty;
             // the server still holds where it was last seen and what it last reported.
@@ -297,6 +369,51 @@ class VacuumViewModel(
     fun removeDefaultCleanOrder() {
         container.appSettings.setCleanOrder(device.duid, repository.currentFloorFlag.value, emptyList())
         container.messages.success("Default order removed")
+    }
+
+    private val _voicePacks = MutableStateFlow<VoicePackListState>(VoicePackListState.Loading)
+    val voicePacks: StateFlow<VoicePackListState> = _voicePacks.asStateFlow()
+
+    /** Reads the robot's current pack, then the server's pack list for this model. */
+    fun loadVoicePacks() {
+        viewModelScope.launch {
+            _voicePacks.value = VoicePackListState.Loading
+            val current = runCatching { voice.fetchCurrentSound() }.getOrNull() ?: voice.currentSound.value
+            val model = modelName
+            _voicePacks.value = if (model == null) {
+                VoicePackListState.Unavailable(null)
+            } else {
+                runCatching { container.deviceRepository.voicePackages(model) }.fold(
+                    onSuccess = { info ->
+                        parseVoicePackList(info, current?.location)?.let { VoicePackListState.Loaded(it) }
+                            ?: VoicePackListState.Unavailable(null)
+                    },
+                    onFailure = { VoicePackListState.Unavailable(it.message) },
+                )
+            }
+        }
+    }
+
+    private val _voiceInstall = MutableStateFlow<VoiceInstallState?>(null)
+    val voiceInstall: StateFlow<VoiceInstallState?> = _voiceInstall.asStateFlow()
+
+    // Runs in the view model so leaving the page does not stop the polling.
+    fun installVoicePack(pack: VoicePack) {
+        if (_voiceInstall.value?.running == true) return
+        _voiceInstall.value = VoiceInstallState(pack.id)
+        viewModelScope.launch {
+            try {
+                voice.installVoicePack(pack, onProgress = { p -> _voiceInstall.value = VoiceInstallState(pack.id, p) })
+                _voiceInstall.value = null
+                runCatching { voice.fetchSettings() }
+            } catch (e: VoiceInstallException) {
+                _voiceInstall.value = VoiceInstallState(pack.id, failure = e.failure)
+            }
+        }
+    }
+
+    fun dismissVoiceInstallFailure() {
+        if (_voiceInstall.value?.running == false) _voiceInstall.value = null
     }
 
     /**

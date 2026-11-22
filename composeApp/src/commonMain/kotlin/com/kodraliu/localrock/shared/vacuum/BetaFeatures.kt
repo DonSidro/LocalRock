@@ -16,6 +16,9 @@ import kotlinx.serialization.json.intOrNull
 /** The settings page a feature is shown on, following the official app's grouping. */
 enum class FeatureSection { CARPET, FLOOR, OBSTACLE, DOCK, ROBOT, BETA }
 
+/** One value of a multi-choice setting and the label shown for it. */
+data class FeatureChoice(val value: Int, val label: String, val description: String? = null)
+
 data class BetaFeatureDef(
     val id: String,
     val title: String,
@@ -24,6 +27,12 @@ data class BetaFeatureDef(
     val getMethod: String,
     val setMethod: String,
     val section: FeatureSection = FeatureSection.BETA,
+    /** Set for options reached through app_get/set_robot_setting by name, not their own get/set pair. */
+    val settingName: String? = null,
+    /** Set for a setting with more than two values: shown as a picker, not a switch. */
+    val choices: List<FeatureChoice>? = null,
+    /** Id of an older option this one replaces on robots that advertise this one. */
+    val replaces: String? = null,
 )
 
 val BetaFeatureDefs = listOf(
@@ -109,6 +118,26 @@ val BetaFeatureDefs = listOf(
         section = FeatureSection.CARPET,
     ),
     BetaFeatureDef(
+        id = "avoid_carpet_wires",
+        title = "Avoid wires along carpet borders",
+        description = "Detects cables near carpet edges and keeps clear of them",
+        bit = 105,
+        getMethod = "app_get_robot_setting",
+        setMethod = "app_set_robot_setting",
+        section = FeatureSection.CARPET,
+        settingName = "nearbycarpet_detecting_wire_status",
+    ),
+    BetaFeatureDef(
+        id = "carpet_side_brush_lift",
+        title = "Lower side brush on carpet",
+        description = "Keeps the side brush down while cleaning carpets",
+        bit = 104,
+        getMethod = "app_get_robot_setting",
+        setMethod = "app_set_robot_setting",
+        section = FeatureSection.CARPET,
+        settingName = "disable_sidebrush_lift_status",
+    ),
+    BetaFeatureDef(
         id = "clean_fluid_delivery",
         title = "Auto cleaning fluid",
         description = "Adds cleaning fluid to the mop water from the dock",
@@ -152,6 +181,71 @@ val BetaFeatureDefs = listOf(
         setMethod = "set_clean_follow_ground_material_status",
         section = FeatureSection.FLOOR,
     ),
+    BetaFeatureDef(
+        id = "uncleaned_area_reminder",
+        title = "Uncleaned area reminder",
+        description = "Tells you about any uncleaned area after each clean, with a one-tap option to clean it",
+        bit = 154,
+        getMethod = "app_get_robot_setting",
+        setMethod = "app_set_robot_setting",
+        section = FeatureSection.ROBOT,
+        settingName = "enable_omission_area_clean_status",
+    ),
+    BetaFeatureDef(
+        id = "follow_low_obstacles",
+        title = "Follow low obstacles",
+        description = "Lets the robot follow low obstacles",
+        bit = 117,
+        getMethod = "app_get_robot_setting",
+        setMethod = "app_set_robot_setting",
+        section = FeatureSection.OBSTACLE,
+        settingName = "enable_follow_low_obs_status",
+    ),
+    BetaFeatureDef(
+        id = "full_duplex",
+        title = "Full duplex voice",
+        description = "Talk and listen at the same time during voice chat",
+        bit = 115,
+        getMethod = "app_get_robot_setting",
+        setMethod = "app_set_robot_setting",
+        section = FeatureSection.ROBOT,
+        settingName = "full_duplex_switch",
+    ),
+    BetaFeatureDef(
+        id = "climbing_arms_high_sill",
+        title = "Climbing arms on high thresholds",
+        description = "Uses the climbing arms to cross high door thresholds and carpet",
+        bit = 147,
+        getMethod = "app_get_robot_setting",
+        setMethod = "app_set_robot_setting",
+        section = FeatureSection.FLOOR,
+        settingName = "enable_sway_arm_for_high_door_sill_carpet",
+    ),
+    BetaFeatureDef(
+        id = "cleaning_pattern",
+        title = "Cleaning pattern",
+        description = "How the robot lines up its passes",
+        bit = 70,
+        getMethod = "app_get_robot_setting",
+        setMethod = "app_set_robot_setting",
+        section = FeatureSection.FLOOR,
+        settingName = "clean_direction_status",
+        choices = listOf(
+            FeatureChoice(0, "Smart", "Runs along the long side of the room"),
+            FeatureChoice(1, "Along floor direction", "Follows the floor boards or tiles"),
+            FeatureChoice(2, "Mixed pattern", "Crosses the last clean's direction, which is slower"),
+        ),
+        replaces = "follow_ground_material",
+    ),
+    BetaFeatureDef(
+        id = "optimize_battery",
+        title = "Smart charging",
+        description = "Charges to 80% first, then slowly to 100%, to protect the battery",
+        bit = 74,
+        getMethod = "get_optimize_battery_status",
+        setMethod = "set_optimize_battery_status",
+        section = FeatureSection.ROBOT,
+    ),
 )
 
 /** The features this robot's `newFeatureSet` advertises. */
@@ -161,6 +255,12 @@ fun supportedBetaFeatures(newFeatureSet: String?): List<BetaFeatureDef> =
 /** Whether the Beta page has anything to show: a flag-gated switch of its own, or flags with no switch here. */
 fun showsBetaPage(defs: List<BetaFeatureDef>, unlisted: List<AdvertisedFeature>): Boolean =
     defs.any { it.section == FeatureSection.BETA && it.bit != null } || unlisted.isNotEmpty()
+
+/** Drops an older option once the option that replaces it has answered, so a failed read keeps the old one. */
+fun List<BetaFeatureState>.withoutReplaced(): List<BetaFeatureState> {
+    val replaced = mapNotNull { it.def.replaces }.toSet()
+    return filter { it.def.id !in replaced }
+}
 
 /** The reads of [features] that belong on [section], in the order the definitions list them. */
 fun List<BetaFeatureState>.inSection(section: FeatureSection): List<BetaFeatureState> =
@@ -241,8 +341,8 @@ private val AdvertisedFeatureNames = mapOf(
     128 to "Roller mop",
 )
 
-/** Bits that have their own place in the app (SmartPlan, water slide), so they are not listed as missing. */
-private val HandledElsewhereBits = setOf(55, 106)
+/** Bits with their own place in the app or that name no setting; the per-bit reasons are in the tests. */
+private val HandledElsewhereBits = setOf(35, 38, 41, 42, 47, 49, 51, 52, 53, 55, 57, 62, 106)
 
 /** A `newFeatureSet` bit the robot advertises that has no switch here; [name] is null when python-roborock has none. */
 data class AdvertisedFeature(val bit: Int, val name: String?)
@@ -250,7 +350,7 @@ data class AdvertisedFeature(val bit: Int, val name: String?)
 /** What the robot advertises in `newFeatureSet` (bit 32 and up) that has no switch here, in bit order. */
 fun unlistedAdvertisedFeatures(newFeatureSet: String?): List<AdvertisedFeature> {
     val s = newFeatureSet ?: return emptyList()
-    val covered = BetaFeatureDefs.mapNotNull { it.bit }.toSet() + HandledElsewhereBits
+    val covered = BetaFeatureDefs.mapNotNull { it.bit }.toSet() + HandledElsewhereBits + VOICE_ASSISTANT_BIT
     return (32 until s.length * 4)
         .filter { it !in covered && newFeatureBit(s, it) }
         .map { AdvertisedFeature(it, AdvertisedFeatureNames[it]) }
@@ -265,8 +365,14 @@ data class BetaFeatureState(
     val answered: Boolean = true,
 ) {
     val enabled: Boolean get() = value == 1
-    val toggleable: Boolean get() = value == 0 || value == 1
+    val toggleable: Boolean get() = if (def.choices != null) value != null else value == 0 || value == 1
+
+    /** The label for the current value of a multi-choice setting; a value the app has no name for shows as "Other (n)". */
+    val choiceLabel: String? get() = value?.let { v -> def.choices?.let { choiceLabelFor(it, v) } }
 }
+
+fun choiceLabelFor(choices: List<FeatureChoice>, value: Int): String =
+    choices.firstOrNull { it.value == value }?.label ?: "Other ($value)"
 
 /** Reads a reply that holds one number: `1`, `[1]`, `{"status":1}` or `[{"status":1}]`. */
 fun parseBetaReply(result: JsonElement?): Pair<String?, Int>? {

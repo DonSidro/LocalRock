@@ -55,6 +55,15 @@ class DeviceApi(private val client: HttpClient) {
         ).unwrapData()
     }
 
+    /** The voice-pkg `info` list for [model]; the server passes it through with pack URLs pointing at itself. */
+    suspend fun voicePackages(model: String): JsonElement {
+        val resp = client.get("/voice-pkg/info") { parameter("model", model) }
+        if (!resp.status.isSuccess()) {
+            throw DeviceApiException(resp.status.value, "Voice packs unavailable (HTTP ${resp.status.value})")
+        }
+        return resp.body()
+    }
+
     /** The routines saved for one robot, in the order the server keeps them. */
     suspend fun getScenes(duid: String): List<Scene> {
         val resp = client.get("/user/scene/device/$duid")
