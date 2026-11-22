@@ -24,4 +24,11 @@ class MatterAndPetGatesTest {
         assertFalse(isPetSearchSupported(matterOnly))
         assertFalse(isPetSearchSupported(null))
     }
+
+    @Test
+    fun aNewCodeIsOnlyOfferedBeforeTheRobotHasJoined() {
+        assertTrue(MatterState.Ready.canRenewCode)
+        assertFalse(MatterState.Joined.canRenewCode)
+        assertFalse(MatterState.Preparing.canRenewCode)
+    }
 }

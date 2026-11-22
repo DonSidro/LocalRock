@@ -200,15 +200,19 @@ internal fun MatterScreen(
                         }
                         Text(
                             when {
+                                expired && !state.canRenewCode -> "This code has expired."
                                 expired -> "This code has expired. Get a new one to add the robot."
                                 remaining != null -> "The code is valid for another ${countdownText(remaining)}."
+                                !state.canRenewCode -> "The code is valid for 15 minutes from when the robot made it."
                                 else -> "The code is valid for 15 minutes from when the robot made it. Get a new code for a fresh 15 minutes."
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = if (expired) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        OutlinedButton(onClick = { wantNewCode = true; attempt++ }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Get a new code")
+                        if (state.canRenewCode) {
+                            OutlinedButton(onClick = { wantNewCode = true; attempt++ }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Get a new code")
+                            }
                         }
                         if (state == MatterState.Joined) {
                             OutlinedButton(onClick = { confirmLeave = true }, modifier = Modifier.fillMaxWidth()) {

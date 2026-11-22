@@ -29,6 +29,8 @@ enum class MatterState {
     /** A setup code and QR payload are on offer. */
     val hasCodes: Boolean get() = this == Ready || this == Joined
 
+    // The official app shows no code and no renew action once joined; re-sending the key there may drop the pairing.
+    val canRenewCode: Boolean get() = this == Ready
 }
 
 data class MatterInfo(val state: MatterState?, val manualCode: String?, val qrPayload: String?)
