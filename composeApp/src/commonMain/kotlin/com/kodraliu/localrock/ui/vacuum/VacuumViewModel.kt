@@ -75,6 +75,7 @@ class VacuumViewModel(
     private val newFeatureSet: StateFlow<String?> = repository.robotFeatureSet
         .map { it ?: serverFeatureSet }
         .stateIn(viewModelScope, SharingStarted.Eagerly, serverFeatureSet)
+    val supportsFastRoute: Boolean get() = isFastRouteSupported(newFeatureSet.value)
     val dockCapabilities: StateFlow<DockCapabilities> =
         combine(newFeatureSet, repository.robotNewFeatureInfo) { flags, info ->
             DockCapabilities(modelName, info?.toString() ?: serverFeatureInfo, flags)
