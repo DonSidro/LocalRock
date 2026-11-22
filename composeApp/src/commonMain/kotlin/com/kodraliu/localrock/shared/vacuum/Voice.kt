@@ -1,6 +1,7 @@
 package com.kodraliu.localrock.shared.vacuum
 
 import com.kodraliu.localrock.shared.protocol.V1Response
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -82,6 +83,8 @@ fun voiceHistoryWindows(summary: VoiceHistorySummary): List<Pair<Int, Int>> {
     return (summary.minId..summary.maxId step VOICE_HISTORY_WINDOW).map { it to it + VOICE_HISTORY_WINDOW }
 }
 
+const val VOICE_HISTORY_RETRY_MS = 500L
+
 /** Reads the newest windows first and retries a failed one once, so a dropped reply costs older lines, not the newest. */
 suspend fun readVoiceHistory(
     windows: List<Pair<Int, Int>>,
@@ -91,7 +94,7 @@ suspend fun readVoiceHistory(
     val out = mutableListOf<VoiceMessage>()
     var failed = false
     for ((min, max) in windows.takeLast(maxWindows).asReversed()) {
-        val page = fetch(min, max) ?: fetch(min, max)
+        val page = fetch(min, max) ?: run { delay(VOICE_HISTORY_RETRY_MS); fetch(min, max) }
         if (page == null) { failed = true; break }
         out += page
     }
