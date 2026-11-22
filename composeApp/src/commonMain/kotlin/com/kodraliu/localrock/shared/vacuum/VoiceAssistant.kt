@@ -68,13 +68,16 @@ class VoiceAssistant(private val session: VacuumSession) {
             throw VoiceInstallException(VoiceInstallFailure.SEND, e)
         }
         var waited = 0L
+        var idlePolls = 0
         while (waited < timeoutMs) {
             delay(pollMs)
             waited += pollMs
             val progress = runCatching { parseSoundProgress(session.getSoundProgress().requireOk("get_sound_progress").result) }.getOrNull()
             val busy = progress?.state == 1 || progress?.state == 2
             val current = if (busy) null else runCatching { fetchCurrentSound() }.getOrNull()
-            when (val step = voiceInstallStep(progress, current, pack.id)) {
+            val step = voiceInstallStep(progress, current, pack.id, idlePolls + 1)
+            idlePolls = if (step is VoiceInstallStep.Working && step.percent == null && current != null) idlePolls + 1 else 0
+            when (step) {
                 is VoiceInstallStep.Working -> onProgress(step.percent)
                 VoiceInstallStep.Done -> return
                 is VoiceInstallStep.Failed ->

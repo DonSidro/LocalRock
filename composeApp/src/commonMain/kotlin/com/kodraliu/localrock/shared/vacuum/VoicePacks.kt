@@ -81,14 +81,20 @@ sealed interface VoiceInstallStep {
     data class Failed(val installFailed: Boolean) : VoiceInstallStep
 }
 
+/** Consecutive idle polls (nothing in progress, target not in use) after which an install counts as failed. */
+const val VOICE_INSTALL_IDLE_POLLS = 3
+
 /** Mirrors the plugin's getProgess: busy on state 1 or 2, failure on any other state while a sid is set. */
-fun voiceInstallStep(progress: SoundProgress?, current: CurrentSound?, targetSid: Int): VoiceInstallStep {
+fun voiceInstallStep(progress: SoundProgress?, current: CurrentSound?, targetSid: Int, idlePolls: Int = 0): VoiceInstallStep {
     if (progress != null && (progress.state == 1 || progress.state == 2)) return VoiceInstallStep.Working(progress.progress.coerceIn(0, 100))
     if (progress != null && progress.state != 3 && progress.sidInProgress > 0) {
         // Errors 2 and 13 are the plugin's "download failed"; the rest are "installation failed".
         return VoiceInstallStep.Failed(installFailed = progress.error != 2 && progress.error != 13)
     }
-    return if (current?.sidInUse == targetSid) VoiceInstallStep.Done else VoiceInstallStep.Working(null)
+    if (current?.sidInUse == targetSid) return VoiceInstallStep.Done
+    // The robot never started the download, so there is nothing to wait for.
+    if (current != null && current.sidInProgress == 0 && idlePolls >= VOICE_INSTALL_IDLE_POLLS) return VoiceInstallStep.Failed(installFailed = false)
+    return VoiceInstallStep.Working(null)
 }
 
 /** `dnld_install_sound` params as the plugin's _onPressUseButton builds them; ota_url stays empty without the cloud. */
