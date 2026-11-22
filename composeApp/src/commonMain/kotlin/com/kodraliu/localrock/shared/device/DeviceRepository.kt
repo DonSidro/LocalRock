@@ -3,6 +3,7 @@ package com.kodraliu.localrock.shared.device
 import com.kodraliu.localrock.shared.auth.AuthRepository
 import com.kodraliu.localrock.shared.demo.DemoData
 import com.kodraliu.localrock.shared.model.Device
+import com.kodraliu.localrock.shared.model.FirmwareStartResult
 import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
 import com.kodraliu.localrock.shared.model.LastKnown
@@ -140,6 +141,11 @@ class DeviceRepository(
     suspend fun lastKnown(duid: String, includeMap: Boolean = true): LastKnown? {
         if (isDemo()) return null
         return deviceApi.lastKnown(duid, includeMap).takeIf { it.known }
+    }
+
+    suspend fun startFirmwareUpdate(duid: String): FirmwareStartResult {
+        if (isDemo()) return FirmwareStartResult(false, null, "Updates are not available in demo mode")
+        return deviceApi.startFirmwareUpdate(duid)
     }
 
     suspend fun checkFirmwareUpdate(duid: String): FirmwareUpdateInfo? {

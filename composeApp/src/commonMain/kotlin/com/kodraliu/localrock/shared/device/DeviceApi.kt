@@ -3,6 +3,7 @@ package com.kodraliu.localrock.shared.device
 import com.kodraliu.localrock.shared.http.ProdJson
 import com.kodraliu.localrock.shared.http.serverErrorText
 import com.kodraliu.localrock.shared.model.FirmwareOtaResponse
+import com.kodraliu.localrock.shared.model.FirmwareStartResult
 import com.kodraliu.localrock.shared.model.FirmwareUpdateInfo
 import com.kodraliu.localrock.shared.model.Home
 import com.kodraliu.localrock.shared.model.HomeDetail
@@ -25,6 +26,8 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 
 class DeviceApi(private val client: HttpClient) {
@@ -93,6 +96,24 @@ class DeviceApi(private val client: HttpClient) {
         }.unwrapData()
     }
 
+    /** The Update button: asks the server to install the version the cloud offers. */
+    suspend fun startFirmwareUpdate(duid: String): FirmwareStartResult {
+        val resp = client.post("/ota/device/$duid/upgrade") { header(HttpHeaders.Accept, "application/json") }
+        if (!resp.status.isSuccess()) {
+            throw DeviceApiException(resp.status.value, firmwareStartRefusal(resp.status.value))
+        }
+        val root = resp.body<JsonObject>()
+        val data = (root["data"] ?: root["result"]) as? JsonObject
+        fun text(key: String) = (data?.get(key) as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+        val started = (data?.get("started") as? JsonPrimitive)?.content == "true"
+        // The server answers its own refusals with HTTP 200 and the status in `code`.
+        val code = (root["code"] as? JsonPrimitive)?.content?.toIntOrNull()
+        // A body 404 is the server naming an unknown robot, so only 501 means the install option is off.
+        val message = if (!started && code == 501) firmwareStartRefusal(code) else
+            text("reason") ?: text("error") ?: (root["msg"] as? JsonPrimitive)?.content
+        return FirmwareStartResult(started, text("version"), if (started) null else message)
+    }
+
     suspend fun checkFirmwareUpdate(duid: String): FirmwareUpdateInfo? {
         val resp = client.get("/ota/firmware/$duid/updatev2") {
             parameter("lang", "en")
@@ -103,6 +124,12 @@ class DeviceApi(private val client: HttpClient) {
         }
         return resp.body<FirmwareOtaResponse>().result
     }
+}
+
+/** A server without install support answers HTTP 404 (older) or code 501 in the body (install option off). */
+internal fun firmwareStartRefusal(status: Int): String = when (status) {
+    404, 501 -> "This server cannot install firmware. Turn on the server's firmware install option (enable_install), then try again."
+    else -> "The server did not accept the update request (HTTP $status)"
 }
 
 /** Only `code`/`msg` are guaranteed; `data` is absent or shaped differently on error replies. */

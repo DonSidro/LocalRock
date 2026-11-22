@@ -10,6 +10,12 @@ import com.kodraliu.localrock.shared.vacuum.AdvertisedFeature
 import com.kodraliu.localrock.shared.vacuum.BetaFeatureDef
 import com.kodraliu.localrock.shared.model.LastKnown
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
+import com.kodraliu.localrock.shared.vacuum.FirmwareProgress
+import com.kodraliu.localrock.shared.vacuum.firmwareInstallBlocker
+import com.kodraliu.localrock.shared.vacuum.firmwareOutcome
+import com.kodraliu.localrock.shared.vacuum.nextFirmwareStep
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.TimeSource
 import com.kodraliu.localrock.shared.vacuum.MapEditException
 import com.kodraliu.localrock.shared.vacuum.ProductCatalog
 import com.kodraliu.localrock.shared.vacuum.RoomType
@@ -36,6 +42,7 @@ import com.kodraliu.localrock.shared.vacuum.map.parseB01Map
 import com.kodraliu.localrock.shared.vacuum.map.parseLegacyMap
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
@@ -189,6 +196,105 @@ class VacuumViewModel(
 
     private val _firmwareUpdate = MutableStateFlow<FirmwareUpdateState>(FirmwareUpdateState.Idle)
     val firmwareUpdate: StateFlow<FirmwareUpdateState> = _firmwareUpdate.asStateFlow()
+
+    private val _firmwareProgress = MutableStateFlow<FirmwareProgress>(FirmwareProgress.Idle)
+    val firmwareProgress: StateFlow<FirmwareProgress> = _firmwareProgress.asStateFlow()
+    private var firmwareJob: Job? = null
+
+    /** Why an install cannot start right now (null when it can), from the robot's last status. */
+    fun firmwareBlocker(): String? {
+        val s = status.value
+        return firmwareInstallBlocker(s.state, s.battery, s.chargeStatus, s.inCleaning, s.errorCode)
+    }
+
+    /** Asks the server to install, then follows the robot through download, install and reboot. */
+    fun startFirmwareUpdate() {
+        if (firmwareJob?.isActive == true && !resumeReading) return
+        viewModelScope.launch {
+            // A tap during the page-open read waits for it; if it found a running update, that is already shown.
+            while (resumeReading) delay(50)
+            if (firmwareJob?.isActive == true) return@launch
+            firmwareJob = launch { runFirmwareStart() }
+        }
+    }
+
+    private suspend fun runFirmwareStart() {
+        firmwareBlocker()?.let { _firmwareProgress.value = FirmwareProgress.Failed(it); return }
+        val before = (_firmwareUpdate.value as? FirmwareUpdateState.Available)?.current ?: firmwareVersion
+        _firmwareProgress.value = FirmwareProgress.Starting
+        val started = try {
+            container.deviceRepository.startFirmwareUpdate(device.duid)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            _firmwareProgress.value = FirmwareProgress.Failed(describe(e)); return
+        }
+        if (!started.started) {
+            _firmwareProgress.value = FirmwareProgress.Failed(started.reason ?: "The server did not start the update"); return
+        }
+        followFirmwareUpdate(started.version, before)
+    }
+
+    private var resumeReading = false
+
+    private suspend fun followFirmwareUpdate(target: String?, before: String?, startedWorking: Boolean = false) {
+        val clock = TimeSource.Monotonic.markNow()
+        var seenWorking = startedWorking
+        var idleStreak = 0
+        while (clock.elapsedNow() < FIRMWARE_WATCH_LIMIT) {
+            delay(FIRMWARE_POLL_MS)
+            val ota = runCatching { repository.fetchOtaState() }
+            val percent = if (ota.isSuccess) runCatching { repository.fetchOtaProgress() }.getOrNull() else null
+            val step = nextFirmwareStep(_firmwareProgress.value, seenWorking, ota.isSuccess, ota.getOrNull(), percent, idleStreak)
+            seenWorking = step.seenWorking
+            idleStreak = step.idleStreak
+            _firmwareProgress.value = step.progress
+            if (step.finished) {
+                if (step.progress is FirmwareProgress.Failed) return
+                _firmwareProgress.value = confirmFirmwareVersion(before, target)
+                checkFirmwareUpdate()
+                return
+            }
+            if (!seenWorking && clock.elapsedNow() > FIRMWARE_START_LIMIT) {
+                _firmwareProgress.value = FirmwareProgress.Failed("The robot did not start the update.")
+                return
+            }
+        }
+        _firmwareProgress.value = FirmwareProgress.Failed("The update is taking longer than expected. Check the robot and try again.")
+    }
+
+    /** Picks the progress watch back up when the page opens while the robot is already downloading or installing. */
+    fun resumeFirmwareWatch() {
+        if (firmwareJob?.isActive == true) return
+        resumeReading = true
+        firmwareJob = viewModelScope.launch {
+            val state: String?
+            val percent: Int?
+            try {
+                state = runCatching { repository.fetchOtaState() }.getOrNull()
+                percent = if (state == "downloading") runCatching { repository.fetchOtaProgress() }.getOrNull() else null
+            } finally {
+                resumeReading = false
+            }
+            val step = nextFirmwareStep(FirmwareProgress.Idle, false, state != null, state, percent)
+            if (!step.seenWorking) return@launch
+            _firmwareProgress.value = step.progress
+            val before = runCatching { container.deviceRepository.checkFirmwareUpdate(device.duid) }.getOrNull()?.currentVersion ?: firmwareVersion
+            followFirmwareUpdate(null, before, startedWorking = true)
+        }
+    }
+
+    // The server's version can lag the robot's reboot by a few polls, so ask again before calling it a failure.
+    private suspend fun confirmFirmwareVersion(before: String?, target: String?): FirmwareProgress {
+        var outcome: FirmwareProgress = firmwareOutcome(before, target, null)
+        repeat(FIRMWARE_CONFIRM_TRIES) { attempt ->
+            if (attempt > 0) delay(FIRMWARE_POLL_MS)
+            val info = runCatching { container.deviceRepository.checkFirmwareUpdate(device.duid) }.getOrNull()
+            outcome = firmwareOutcome(before, target, info?.currentVersion)
+            if (outcome is FirmwareProgress.Done) return outcome
+        }
+        return outcome
+    }
 
     private val _routines = MutableStateFlow<RoutinesState>(RoutinesState.Loading)
     val routines: StateFlow<RoutinesState> = _routines.asStateFlow()
@@ -486,6 +592,11 @@ class VacuumViewModel(
         }
     }
 }
+
+private val FIRMWARE_POLL_MS = 3_000L
+private const val FIRMWARE_CONFIRM_TRIES = 6
+private val FIRMWARE_START_LIMIT = 2.minutes
+private val FIRMWARE_WATCH_LIMIT = 25.minutes
 
 sealed interface FirmwareUpdateState {
     data object Idle : FirmwareUpdateState
