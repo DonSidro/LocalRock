@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -140,7 +141,7 @@ import com.kodraliu.localrock.shared.vacuum.RobotSettings
 import com.kodraliu.localrock.shared.vacuum.VolumeLevels
 import com.kodraliu.localrock.shared.vacuum.volumeLabel
 import com.kodraliu.localrock.shared.vacuum.volumeLevelIndex
-import com.kodraliu.localrock.shared.vacuum.VacuumStateCodes
+import com.kodraliu.localrock.shared.vacuum.isDockedAndIdle
 import com.kodraliu.localrock.shared.vacuum.washFrequencyLabel
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.ui.AppColors
@@ -165,6 +166,7 @@ private sealed interface SettingsRoute {
     data object Valley : SettingsRoute
     data object BetaFeatures : SettingsRoute
     data object History : SettingsRoute
+    data object Matter : SettingsRoute
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -199,6 +201,7 @@ fun VacuumSettingsScreen(
     val betaFeatureDefs by viewModel.betaFeatureDefs.collectAsState()
     val unlistedFeatures by viewModel.unlistedFeatures.collectAsState()
     val showsBetaFeatures by viewModel.showsBetaFeatures.collectAsState()
+    val supportsMatter by viewModel.supportsMatter.collectAsState()
     val dockCapabilities by viewModel.dockCapabilities.collectAsState()
 
     // Every feature the robot reports is read once, so a page with none is not offered. The list
@@ -242,6 +245,7 @@ fun VacuumSettingsScreen(
                 scope.launch { runCatching { repository.fetchDndSettings() } }
                 route = SettingsRoute.DndMode
             },
+            onMatter = if (!supportsMatter) null else ({ route = SettingsRoute.Matter }),
             onBetaFeatures = if (!showsBetaFeatures) null else ({
                 route = SettingsRoute.BetaFeatures
             }),
@@ -286,8 +290,7 @@ fun VacuumSettingsScreen(
             dockType = status.dockType,
             dockStatus = status.dockStatus,
             busy = busy,
-            robotDockedAndIdle = status.inCleaning == 0 &&
-                status.state in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE),
+            robotDockedAndIdle = status.isDockedAndIdle(),
             onWashModeChange = { mode -> viewModel.run { it.setWashMode(mode) } },
             onWashFrequencyChange = { mode, minutes -> viewModel.run { it.setWashFrequency(mode, minutes) } },
             onAutoEmptyModeChange = { mode -> viewModel.run { it.setAutoEmptyMode(mode) } },
@@ -324,6 +327,12 @@ fun VacuumSettingsScreen(
             dndSettings = dndSettings,
             onEnable = { sh, sm, eh, em -> scope.launch { runCatching { repository.setDnd(sh, sm, eh, em) } } },
             onDisable = { scope.launch { runCatching { repository.disableDnd() } } },
+            onBack = { route = SettingsRoute.Root },
+        )
+        SettingsRoute.Matter -> MatterScreen(
+            loadStatus = { repository.fetchMatterStatus() },
+            requestKey = { repository.requestMatterKey() },
+            reset = { repository.resetMatter() },
             onBack = { route = SettingsRoute.Root },
         )
         SettingsRoute.History -> {
@@ -433,6 +442,7 @@ private fun SettingsRootScreen(
     onDockSettings: () -> Unit,
     onRobotSettings: () -> Unit,
     onDndMode: () -> Unit,
+    onMatter: (() -> Unit)?,
     onBetaFeatures: (() -> Unit)?,
 ) {
     Scaffold(
@@ -531,6 +541,18 @@ private fun SettingsRootScreen(
                         subtitle = "Set quiet hours for cleaning",
                         onClick = onDndMode,
                     )
+                }
+                if (onMatter != null) {
+                    item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+                    item {
+                        SettingsCategoryRow(
+                            icon = Icons.Default.Link,
+                            iconTint = AppColors.AccentIndigo,
+                            title = "Matter",
+                            subtitle = "Add the robot to Apple Home, Google Home and more",
+                            onClick = onMatter,
+                        )
+                    }
                 }
                 if (onBetaFeatures != null) {
                     item { HorizontalDivider(Modifier.padding(start = 72.dp)) }

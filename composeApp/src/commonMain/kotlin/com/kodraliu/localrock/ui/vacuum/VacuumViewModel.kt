@@ -22,6 +22,8 @@ import com.kodraliu.localrock.shared.vacuum.isVoiceAssistantSupported
 import com.kodraliu.localrock.shared.vacuum.parseVoicePackList
 import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
+import com.kodraliu.localrock.shared.vacuum.isMatterSupported
+import com.kodraliu.localrock.shared.vacuum.isPetSearchSupported
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
 import com.kodraliu.localrock.shared.vacuum.productDisplayName
@@ -81,6 +83,12 @@ class VacuumViewModel(
     val unlistedFeatures: StateFlow<List<AdvertisedFeature>> = newFeatureSet
         .map { unlistedAdvertisedFeatures(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, unlistedAdvertisedFeatures(serverFeatureSet))
+    val supportsPetSearch: StateFlow<Boolean> = newFeatureSet
+        .map { isPetSearchSupported(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, isPetSearchSupported(serverFeatureSet))
+    val supportsMatter: StateFlow<Boolean> = newFeatureSet
+        .map { isMatterSupported(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, isMatterSupported(serverFeatureSet))
     val showsBetaFeatures: StateFlow<Boolean> = combine(betaFeatureDefs, unlistedFeatures, ::showsBetaPage)
         .stateIn(viewModelScope, SharingStarted.Eagerly, showsBetaPage(betaFeatureDefs.value, unlistedFeatures.value))
 

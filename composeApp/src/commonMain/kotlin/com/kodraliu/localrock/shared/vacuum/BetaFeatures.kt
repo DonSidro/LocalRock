@@ -435,8 +435,8 @@ private val AdvertisedFeatureNames = mapOf(
     128 to "Roller mop",
 )
 
-/** Bits with their own place in the app or that name no setting; the per-bit reasons are in the tests. */
-private val HandledElsewhereBits = setOf(35, 38, 41, 42, 47, 49, 51, 52, 53, 55, 57, 62, 106)
+/** Bits with their own place in the app (Matter among them) or that name no setting; the per-bit reasons are in the tests. */
+private val HandledElsewhereBits = setOf(35, 38, 41, 42, 47, 49, 51, 52, 53, 55, 57, 62, 67, 106)
 
 /** A `newFeatureSet` bit the robot advertises that has no switch here; [name] is null when python-roborock has none. */
 data class AdvertisedFeature(val bit: Int, val name: String?)

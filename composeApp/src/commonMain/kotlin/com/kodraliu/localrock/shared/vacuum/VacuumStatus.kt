@@ -90,6 +90,10 @@ object DockErrorCodes {
 }
 
 
+/** True when the robot sits on its dock and is not in the middle of a clean. */
+fun VacuumStatus.isDockedAndIdle(): Boolean =
+    inCleaning == 0 && state in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE)
+
 object VacuumStateCodes {
     const val STARTING = 1
     const val CHARGER_DISCONNECTED = 2
