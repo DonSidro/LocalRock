@@ -26,3 +26,5 @@ actual fun formatCleanRecordTime(epochSeconds: Long): String {
         }
     }
 }
+
+actual fun localUtcOffsetSeconds(epochSeconds: Long): Int = java.util.TimeZone.getDefault().getOffset(epochSeconds * 1000L) / 1000

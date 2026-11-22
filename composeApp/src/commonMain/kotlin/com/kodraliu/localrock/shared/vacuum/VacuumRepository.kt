@@ -167,6 +167,11 @@ class VacuumRepository(
     /** True while the robot holds a newly built map that has not been saved yet. */
     val unsavedMapPresent: StateFlow<Boolean> = _status.map { it.unsavedMapPresent }
         .stateIn(scope, SharingStarted.Eagerly, false)
+    private val unansweredPolls = UnansweredPolls(STALE_LINK_FAILURE_THRESHOLD)
+
+    /** True once several status polls in a row got no answer; false again as soon as the robot replies or pushes. */
+    val unresponsive: StateFlow<Boolean> = unansweredPolls.unresponsive
+
     private var pollJob: Job? = null
     private var dpsJob: Job? = null
     private var mapPollJob: Job? = null
@@ -183,6 +188,7 @@ class VacuumRepository(
         dpsJob = scope.launch {
             session.dpsUpdates.collect { dps ->
                 println("[VacLocal] dps push: ${dps.keys}")
+                unansweredPolls.heardFromRobot()
                 _status.update { it.applyDpsPush(dps) }
             }
         }
@@ -197,6 +203,7 @@ class VacuumRepository(
                 runCatching { session.getStatus() }
                     .onSuccess { fresh ->
                         consecutiveFailures = 0
+                        unansweredPolls.heardFromRobot()
                         if (fresh != null) {
                             println("[VacLocal] get_status ok: state=${fresh.state} battery=${fresh.battery}")
                             _status.update { it.merge(fresh) }
@@ -206,6 +213,7 @@ class VacuumRepository(
                     }
                     .onFailure { e ->
                         consecutiveFailures++
+                        unansweredPolls.pollFailed()
                         println("[VacLocal] get_status FAILED (#$consecutiveFailures): ${e::class.simpleName}: ${e.message}")
                         if (consecutiveFailures >= STALE_LINK_FAILURE_THRESHOLD) {
                             // A timed-out RPC is not proof of a dead socket: a slow response or a
@@ -254,7 +262,10 @@ class VacuumRepository(
 
     suspend fun refreshStatus() {
         runCatching { session.getStatus() }.getOrNull()
-            ?.let { fresh -> _status.update { it.merge(fresh) } }
+            ?.let { fresh ->
+                unansweredPolls.heardFromRobot()
+                _status.update { it.merge(fresh) }
+            }
     }
 
     fun detach() {
@@ -304,14 +315,10 @@ class VacuumRepository(
         applyRoomNames()
     }
 
-    private fun resolveRoomName(room: ParsedMapRoom): String =
-        segmentToRoomId[room.id]?.let { homeRoomNames[it] } ?: room.name
-
     private fun applyRoomNames() {
-        _parsedMap.update { pm ->
-            pm?.copy(rooms = pm.rooms.map { it.copy(name = resolveRoomName(it)) })
-        }
-        _rooms.update { list -> list.map { it.copy(name = resolveRoomName(it)) } }
+        fun ParsedMapRoom.resolved() = withRoomTable(segmentToRoomId, homeRoomNames, rawSegmentTable)
+        _parsedMap.update { pm -> pm?.copy(rooms = pm.rooms.map { it.resolved() }) }
+        _rooms.update { list -> list.map { it.resolved() } }
     }
 
     /**
@@ -986,14 +993,18 @@ class VacuumRepository(
 
     /** Null when the robot did not reply at all, so a read that timed out is not mistaken for an answer. */
     private suspend fun readBetaFeature(def: BetaFeatureDef): BetaFeatureState? {
-        val resp = runCatching { session.sendCommand(def.getMethod) }.getOrNull() ?: return null
-        val parsed = parseBetaReply(resp.result)
+        val resp = runCatching {
+            def.settingName?.let { session.getRobotSetting(it) } ?: session.sendCommand(def.getMethod)
+        }.getOrNull() ?: return null
+        val parsed = parseFeatureReply(def, resp.result)
         return BetaFeatureState(
             def = def,
-            value = parsed?.second,
-            key = parsed?.first,
-            raw = resp.result?.toString() ?: resp.error?.toString(),
+            value = parsed?.value,
+            key = parsed?.key,
+            // A field of a larger reply (get_status) keeps only that field, not the whole status.
+            raw = if (def.readKey != null && parsed != null) parsed.value.toString() else resp.result?.toString() ?: resp.error?.toString(),
             answered = resp.error == null,
+            reply = parsed?.reply,
         )
     }
 
@@ -1013,7 +1024,7 @@ class VacuumRepository(
         try {
             val states = mutableListOf<BetaFeatureState>()
             var complete = true
-            for (def in defs) {
+            for (def in betaReadOrder(defs)) {
                 val state = readBetaFeature(def)
                 if (state == null) {
                     complete = false
@@ -1021,7 +1032,8 @@ class VacuumRepository(
                 }
                 if (state.answered && state.toggleable) states += state
             }
-            _betaFeatures.value = states
+            // Shown in the list's own order, not the order they were read in.
+            _betaFeatures.value = states.sortedBy { defs.indexOf(it.def) }.withoutReplaced()
             if (complete) betaFeatureDefsRead = defs
         } finally {
             _betaFeaturesLoading.value = false
@@ -1036,18 +1048,39 @@ class VacuumRepository(
      * last time, then reads the option back so the screen shows what the robot holds. Throws the robot's
      * refusal, if any, after that.
      */
-    suspend fun setBetaFeature(id: String, on: Boolean) {
+    suspend fun setBetaFeature(id: String, on: Boolean) = writeBetaFeature(id, if (on) 1 else 0)
+
+    /** Writes one value of a multi-choice option, then reads it back so the screen shows what the robot holds. */
+    suspend fun setBetaChoice(id: String, value: Int) = writeBetaFeature(id, value)
+
+    private suspend fun writeBetaFeature(id: String, value: Int) {
         val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
-        val candidates = betaSetParamCandidates(current.key, on)
-        var last: V1Response? = null
-        for (i in betaSetTryOrder(candidates.size, betaSetAcceptedShape[id])) {
-            last = session.sendCommandRaw(current.def.setMethod, candidates[i])
-            if (last.error == null) betaSetAcceptedShape[id] = i
-            if (last.error?.get("code")?.jsonPrimitive?.intOrNull !in BetaShapeRefusalCodes) break
+        val method: String
+        val sent: V1Response?
+        val name = current.def.settingName
+        if (name != null) {
+            method = "app_set_robot_setting"
+            sent = session.setRobotSetting(name, value)
+        } else {
+            method = current.def.setMethod
+            val candidates = featureSetParamCandidates(current, value)
+            var last: V1Response? = null
+            for (i in betaSetTryOrder(candidates.size, betaSetAcceptedShape[id])) {
+                last = session.sendCommandRaw(method, candidates[i])
+                if (last.error == null) betaSetAcceptedShape[id] = i
+                if (last.error?.get("code")?.jsonPrimitive?.intOrNull !in BetaShapeRefusalCodes) break
+            }
+            sent = last
         }
-        val updated = readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }
-        if (updated != null) _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
-        last?.requireOk(current.def.setMethod)
+        // Read back before requireOk on purpose: a refused write still refreshes the row with the robot's real value.
+        refreshBetaFeature(current.def)
+        sent?.requireOk(method)
+    }
+
+    private suspend fun refreshBetaFeature(def: BetaFeatureDef) {
+        readBetaFeature(def)?.takeIf { it.answered && it.toggleable }?.let { updated ->
+            _betaFeatures.update { list -> list.map { if (it.def.id == def.id) updated else it } }
+        }
     }
 
     suspend fun fetchDockSettings() {
@@ -1397,6 +1430,21 @@ private fun parseCronTimer(id: String, enabled: Boolean, cron: String): CleanTim
 }
 
 const val CONSUMABLE_UNSUPPORTED = "unsupported"
+
+/** A room with its home name, its type tag and whether the robot's room table lists it. */
+internal fun ParsedMapRoom.withRoomTable(
+    segmentToRoomId: Map<Int, Long>,
+    homeRoomNames: Map<Long, String>,
+    table: List<SegmentEntry>?,
+): ParsedMapRoom {
+    val tagId = table?.firstOrNull { it.segment == id }?.tagId
+    return copy(
+        name = segmentToRoomId[id]?.let { homeRoomNames[it] } ?: name,
+        tag = tagId,
+        // The segment mapping outlives the raw table, which is cleared on a floor switch or map save.
+        inRoomTable = id in segmentToRoomId || table?.any { it.segment == id } == true,
+    )
+}
 
 /**
  * Segment id -> Roborock room id from a `get_room_mapping` result (`[[segment, "roomId", tag], ...]`).
