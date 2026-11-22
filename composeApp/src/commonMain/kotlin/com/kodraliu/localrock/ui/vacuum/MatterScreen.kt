@@ -48,6 +48,9 @@ import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.qr.QrEncoder
 import com.kodraliu.localrock.shared.vacuum.MatterInfo
 import com.kodraliu.localrock.shared.vacuum.MatterState
+import com.kodraliu.localrock.shared.vacuum.matterCodeAgeKnown
+import com.kodraliu.localrock.shared.vacuum.matterNeedsKey
+import com.kodraliu.localrock.shared.vacuum.matterPollIsDone
 import com.kodraliu.localrock.ui.adaptive.CenteredContent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -123,14 +126,13 @@ internal fun MatterScreen(
             }
             if (!state.hasCodes && !state.failed) sawWorking = true
             if (asked) pollsSinceAsk++
-            val stillOld = renewing && state.hasCodes && current.qrPayload == oldQr && pollsSinceAsk < 4
-            if (state.hasCodes && !(renewing && !asked) && !stillOld) {
+            val unchanged = current.qrPayload == oldQr
+            if (matterPollIsDone(state, renewing, asked, unchanged, pollsSinceAsk)) {
                 // A code that showed up after a step the screen watched has a known age.
-                if (sawWorking || renewing || asked) codeMadeAt = TimeSource.Monotonic.markNow()
+                if (matterCodeAgeKnown(state, sawWorking, renewing, asked, unchanged)) codeMadeAt = TimeSource.Monotonic.markNow()
                 return@LaunchedEffect
             }
-            val needsKey = state == MatterState.KeyNotExit ||
-                (attempt > 0 && state.failed) || (renewing && !asked)
+            val needsKey = matterNeedsKey(state, attempt, renewing, asked)
             if (needsKey && !asked) {
                 asked = true
                 val sent = runCatching { requestKey() }
@@ -183,40 +185,37 @@ internal fun MatterScreen(
                     state != null && state.hasCodes -> {
                         if (state == MatterState.Joined) {
                             Text(
-                                "This robot has joined a Matter platform. To add it to another one, share it from the app it joined, or use this code.",
+                                "This robot has joined a Matter platform. To add it to another one, share it from the app it joined.",
                                 style = MaterialTheme.typography.bodyMedium,
                             )
-                        }
-                        current.manualCode?.let { code ->
-                            MatterCodeCard("Setup code", groupedManualCode(code)) { clipboard.setText(AnnotatedString(code)) }
-                        }
-                        // Reading the tick here, always, is what makes the countdown redraw every second.
-                        val tick = now
-                        val remaining = codeMadeAt?.let { (CODE_LIFETIME - it.elapsedNow()).inWholeSeconds }
-                        val expired = remaining != null && remaining <= 0 && tick >= 0
-                        current.qrPayload?.let { qr ->
-                            if (!expired) MatterQrImage(qr)
-                            MatterCodeCard("QR code text", qr) { clipboard.setText(AnnotatedString(qr)) }
-                        }
-                        Text(
-                            when {
-                                expired && !state.canRenewCode -> "This code has expired."
-                                expired -> "This code has expired. Get a new one to add the robot."
-                                remaining != null -> "The code is valid for another ${countdownText(remaining)}."
-                                !state.canRenewCode -> "The code is valid for 15 minutes from when the robot made it."
-                                else -> "The code is valid for 15 minutes from when the robot made it. Get a new code for a fresh 15 minutes."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (expired) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        if (state.canRenewCode) {
-                            OutlinedButton(onClick = { wantNewCode = true; attempt++ }, modifier = Modifier.fillMaxWidth()) {
-                                Text("Get a new code")
-                            }
-                        }
-                        if (state == MatterState.Joined) {
                             OutlinedButton(onClick = { confirmLeave = true }, modifier = Modifier.fillMaxWidth()) {
                                 Text("Leave the Matter platform")
+                            }
+                        } else {
+                            current.manualCode?.let { code ->
+                                MatterCodeCard("Setup code", groupedManualCode(code)) { clipboard.setText(AnnotatedString(code)) }
+                            }
+                            // Reading the tick here, always, is what makes the countdown redraw every second.
+                            val tick = now
+                            val remaining = codeMadeAt?.let { (CODE_LIFETIME - it.elapsedNow()).inWholeSeconds }
+                            val expired = remaining != null && remaining <= 0 && tick >= 0
+                            current.qrPayload?.let { qr ->
+                                if (!expired) MatterQrImage(qr)
+                                MatterCodeCard("QR code text", qr) { clipboard.setText(AnnotatedString(qr)) }
+                            }
+                            Text(
+                                when {
+                                    expired -> "This code has expired. Get a new one to add the robot."
+                                    remaining != null -> "The code is valid for another ${countdownText(remaining)}."
+                                    else -> "The code is valid for 15 minutes from when the robot made it. Get a new code for a fresh 15 minutes."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (expired) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (state.canRenewCode) {
+                                OutlinedButton(onClick = { wantNewCode = true; attempt++ }, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Get a new code")
+                                }
                             }
                         }
                     }

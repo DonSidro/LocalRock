@@ -29,9 +29,32 @@ enum class MatterState {
     /** A setup code and QR payload are on offer. */
     val hasCodes: Boolean get() = this == Ready || this == Joined
 
-    // The official app shows no code and no renew action once joined; re-sending the key there may drop the pairing.
+    // Joined shows no code and no renew action in the official app (decompile: a joined card, plus reset); re-sending the key may drop the pairing.
     val canRenewCode: Boolean get() = this == Ready
 }
+
+/** Asking for a key while joined may drop the pairing, so only a robot that has not joined is asked. */
+fun matterKeyRequestAllowed(state: MatterState?): Boolean = state != MatterState.Joined
+
+/** Whether the page should send matter.dnld_key after reading [state]. */
+fun matterNeedsKey(state: MatterState, attempt: Int, renewing: Boolean, asked: Boolean): Boolean =
+    matterKeyRequestAllowed(state) &&
+        (state == MatterState.KeyNotExit || (attempt > 0 && state.failed) || (renewing && !asked))
+
+/** A renewing page keeps polling while the robot still shows the code it had, for a few polls. */
+fun matterCodeStillOld(renewing: Boolean, state: MatterState, unchangedCode: Boolean, pollsSinceAsk: Int): Boolean =
+    renewing && state.hasCodes && unchangedCode && pollsSinceAsk < MATTER_OLD_CODE_POLLS
+
+/** True when the page can stop polling and show what it read. */
+fun matterPollIsDone(state: MatterState, renewing: Boolean, asked: Boolean, unchangedCode: Boolean, pollsSinceAsk: Int): Boolean =
+    state == MatterState.Joined ||
+        (state.hasCodes && !(renewing && !asked) && !matterCodeStillOld(renewing, state, unchangedCode, pollsSinceAsk))
+
+/** The countdown starts only for a code the page saw appear, and never for one that did not change on a renewal. */
+fun matterCodeAgeKnown(state: MatterState, sawWorking: Boolean, renewing: Boolean, asked: Boolean, unchangedCode: Boolean): Boolean =
+    state != MatterState.Joined && (sawWorking || renewing || asked) && !(renewing && unchangedCode)
+
+const val MATTER_OLD_CODE_POLLS = 4
 
 data class MatterInfo(val state: MatterState?, val manualCode: String?, val qrPayload: String?)
 

@@ -497,7 +497,12 @@ class VacuumRepository(
     suspend fun fetchMatterStatus(): MatterInfo? =
         parseMatterStatus(session.getMatterStatus().requireOk("matter.get_status").result)
 
-    suspend fun requestMatterKey() { session.downloadMatterKey().requireOk("matter.dnld_key") }
+    suspend fun requestMatterKey() {
+        if (!matterKeyRequestAllowed(fetchMatterStatus()?.state)) {
+            throw IllegalStateException("The robot has joined a Matter platform; a new key could end that pairing")
+        }
+        session.downloadMatterKey().requireOk("matter.dnld_key")
+    }
 
     suspend fun resetMatter() { session.resetMatter().requireOk("matter.reset") }
 
