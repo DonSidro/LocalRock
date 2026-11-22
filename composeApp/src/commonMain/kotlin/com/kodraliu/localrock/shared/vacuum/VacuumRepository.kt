@@ -426,6 +426,21 @@ class VacuumRepository(
     /** Switches suction, water and route in one command, the only way in or out of SmartPlan. */
     suspend fun setCleanMotorMode(fanPower: Int, waterBoxMode: Int, mopMode: Int) {
         session.setCleanMotorMode(fanPower, waterBoxMode, mopMode).requireOk("set_clean_motor_mode")
+        // All three go out together, so the next change must start from these, not wait for a status poll.
+        _status.update { it.copy(fanPower = fanPower, waterBoxCustomMode = waterBoxMode) }
+        _mopMode.value = mopMode
+    }
+
+    suspend fun setCleanSequenceType(
+        type: Int,
+        fanPower: Int,
+        waterBoxMode: Int,
+        mopMode: Int,
+        repeat: Int? = null,
+    ) {
+        session.setCleanSequenceType(type, fanPower, waterBoxMode, mopMode, repeat)
+            .requireOk("app_set_clean_sequence_type")
+        _status.update { it.copy(cleanSequenceType = type, fanPower = fanPower, waterBoxCustomMode = waterBoxMode) }
         _mopMode.value = mopMode
     }
 
@@ -1466,6 +1481,7 @@ internal fun VacuumStatus.merge(fresh: VacuumStatus): VacuumStatus = fresh.copy(
     battery = fresh.battery ?: battery,
     state = fresh.state ?: state,
     fanPower = fresh.fanPower ?: fanPower,
+    cleanSequenceType = fresh.cleanSequenceType ?: cleanSequenceType,
     cleanArea = fresh.cleanArea ?: cleanArea,
     cleanTime = fresh.cleanTime ?: cleanTime,
     errorCode = fresh.errorCode ?: errorCode,

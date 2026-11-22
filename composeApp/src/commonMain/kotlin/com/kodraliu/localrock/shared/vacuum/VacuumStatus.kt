@@ -9,6 +9,7 @@ data class VacuumStatus(
     val battery: Int? = null,
     val state: Int? = null,
     @SerialName("fan_power") val fanPower: Int? = null,
+    @SerialName("seq_type") val cleanSequenceType: Int? = null,
     @SerialName("clean_area") val cleanArea: Long? = null,
     @SerialName("clean_time") val cleanTime: Long? = null,
     @SerialName("error_code") val errorCode: Int? = null,

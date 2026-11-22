@@ -26,6 +26,7 @@ import com.kodraliu.localrock.shared.vacuum.isMatterSupported
 import com.kodraliu.localrock.shared.vacuum.isPetSearchSupported
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
+import com.kodraliu.localrock.shared.vacuum.newFeatureBit
 import com.kodraliu.localrock.shared.vacuum.productDisplayName
 import com.kodraliu.localrock.shared.vacuum.showsBetaPage
 import com.kodraliu.localrock.shared.vacuum.supportedBetaFeatures
@@ -91,6 +92,18 @@ class VacuumViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, isMatterSupported(serverFeatureSet))
     val showsBetaFeatures: StateFlow<Boolean> = combine(betaFeatureDefs, unlistedFeatures, ::showsBetaPage)
         .stateIn(viewModelScope, SharingStarted.Eagerly, showsBetaPage(betaFeatureDefs.value, unlistedFeatures.value))
+
+    val supportsVacuumThenMop: StateFlow<Boolean> = newFeatureSet
+        .map { newFeatureBit(it, 93) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, newFeatureBit(serverFeatureSet, 93))
+    // The stock app names bit 102 CtmWithRepeat and sends repeat only for sequence type 1.
+    val supportsVacuumThenMopRepeat: StateFlow<Boolean> = newFeatureSet
+        .map { newFeatureBit(it, 102) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, newFeatureBit(serverFeatureSet, 102))
+    // Stock CleanEfficiency allows deep routes outside mop-only mode.
+    val supportsCleanEfficiency: StateFlow<Boolean> = newFeatureSet
+        .map { newFeatureBit(it, 108) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, newFeatureBit(serverFeatureSet, 108))
 
     // The robot's own answer wins; the server's record is the fallback until it has replied.
     val supportsSmartPlan: StateFlow<Boolean> = repository.robotFeatureSet
