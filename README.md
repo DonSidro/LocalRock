@@ -44,6 +44,7 @@ LocalRock is a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.
 
 - [Why LocalRock](#why-localrock)
 - [Features](#features)
+  - [Features that need a newer server](#features-that-need-a-newer-server)
   - [Not available](#not-available)
 - [Screenshots](#screenshots)
 - [How it works](#how-it-works)
@@ -81,30 +82,47 @@ The app implements the Roborock protocol (Hawk‑signed REST + MQTT‑over‑TLS
 
 ## Features
 
-- **Live map** — real‑time robot map with zoom/pan, room labels, cleaning path, no‑go zones, walls and carpets
-- **Full cleaning control** — start / pause / stop / dock, room and zone cleaning
-- **Cleaning modes** — Vac & Mop, Mop or Vacuum, with suction power, water flow, route and cleaning count; **SmartPlan** on robots that support it
+- **Live map** — real‑time robot map with zoom/pan, coloured rooms with their floor types, room names you can tap to select, cleaning path, obstacles with their names and photos, no‑go zones, walls and carpets
+- **Rotate and 3D** — turn the flat map in quarter turns, or switch to a 3D view you can turn and tilt
+- **Full cleaning control** — start / pause / stop / dock, room and zone cleaning; drawn zones can be moved, resized and deleted
+- **Cleaning modes** — Vac & Mop, Mop or Vacuum, with suction power, water flow, route and cleaning count; **SmartPlan** and **vacuum then mop** on robots that support them
 - **Per‑room settings** — give each room its own suction, water and route for one run
 - **Room cleaning** — pick rooms in the order they should be cleaned, with real names pulled from your home data, and set a default cleaning order for a full clean
 - **Pin & Go** — send the robot to a point on the map
 - **Remote control** — manually drive the vacuum
 - **Map editor** — draw no‑go zones, invisible walls, carpets (including round ones) and thresholds; pick a room type or give a room a custom name; split and merge rooms; set floor types
-- **Map management** — rename and delete maps, and send the robot out to map the home again (for example after moving the dock)
+- **Map management** — rename and delete maps, back up and restore a map, and send the robot out to map the home again (for example after moving the dock)
 - **Multi‑level homes** — keep a map per floor, switch with the picker on the map, or let the robot recognise the floor by itself
 - **Schedule** — recurring cleans at a set time and on chosen days
 - **Dock controls & settings** — empty, wash and dry, tank and dust‑bag status, empty the robot's built‑in water tank through the dock, and the dock's own settings (wash mode, mop wash frequency, auto‑empty), offered per model
-- **Robot settings** — volume, child lock, status LED, carpet mode and Do Not Disturb
+- **Robot settings** — volume, child lock, status LED, carpet mode and carpet boost, collision and auto‑empty levels, Smart Charging, Do Not Disturb, and the other options newer robots advertise
+- **Voice Assistant** — on robots with voice control: the on/off switch, the voice commands, the voice language, volume and the robot's chat history
+- **Matter** — show the robot's Matter setup code as a QR code to add it to a Matter home
+- **Find my pet** — send a robot with pet patrol out to look for your pet
+- **Firmware updates** — check for new firmware and install it; your server asks Roborock's cloud on your behalf, so the robot and the app stay off it
 - **Robot alerts** — optional notifications when a robot gets stuck, finishes cleaning, or its dock needs attention; on Android a background watch keeps them coming while the app is closed and can show cleaning progress
-- **Status & consumables** — battery, state, cleaning stats, filter/brush life
-- **Cleaning history** — past sessions and lifetime totals
+- **Status & consumables** — battery, state, cleaning stats, and maintenance counted the way the official app counts it
+- **Offline robots** — when a robot stops answering, where and when it was last seen; a robot the server has never heard from shows as **Not paired yet** and opens Add vacuum
+- **Cleaning history** — past sessions with their run map and timeline, Cruise runs, and lifetime totals
+- **Opens straight into your robot** — with one robot, or the last one you used when there are several
 - **On‑phone onboarding** — provision a brand‑new vacuum over Wi‑Fi from the app
 - **Light / dark / system theme**
 - **What's new** — release notes shown once in the app after an update (they ship inside the app; nothing is fetched)
 
+### Features that need a newer server
+
+Some features rely on server changes that are not in a released version of [`local_roborock_server`](https://github.com/Python-roborock/local_roborock_server) yet. Without them the app still works; it just leaves that part out.
+
+| Feature | Needs in `local_roborock_server` | Without it |
+| --- | --- | --- |
+| Last seen, Not paired yet | [#251](https://github.com/Python-roborock/local_roborock_server/pull/251) (merged, not released yet) | An unanswering robot shows as plain Offline |
+| Voice language packs | [#261](https://github.com/Python-roborock/local_roborock_server/pull/261) | The Language page says "Voice packs unavailable"; the rest of Voice Assistant works |
+| Matter on a locally paired robot | [#252](https://github.com/Python-roborock/local_roborock_server/pull/252) | The robot can't get a Matter setup code |
+| Firmware check and install | [#255](https://github.com/Python-roborock/local_roborock_server/pull/255), with the install option turned on | No update is found, and Update says the server's install option is needed |
+
 ### Not available
 
 - ~~**Camera live view**~~ — **does not work on a local‑only setup, and the button is hidden in the app.** The robot only allows a camera preview after Roborock's **cloud** has authorised remote viewing, and that authorisation cannot be set from the local network. Making it work without the cloud needs **changes in [`local_roborock_server`](https://github.com/Python-roborock/local_roborock_server)**. See [Camera live view](#camera-live-view) for details.
-- ~~**Firmware update check**~~ — hidden in the app. It needs the server to proxy Roborock's OTA endpoint; without that there is no cloud to ask.
 
 ---
 
