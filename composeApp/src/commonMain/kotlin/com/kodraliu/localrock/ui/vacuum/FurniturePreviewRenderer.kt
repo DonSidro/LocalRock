@@ -12,7 +12,7 @@ import com.kodraliu.localrock.resources.*
 import org.jetbrains.compose.resources.DrawableResource
 import kotlin.math.roundToInt
 
-/** Original raster illustrations for the catalog and Items list. */
+/** AI-generated furniture illustrations for the catalog and Items list. */
 internal enum class FurniturePreviewArtwork(
     val symbol: FurnitureSymbol,
     val fileName: String,

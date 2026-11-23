@@ -9,6 +9,11 @@ full-color PNG illustrations on light thumbnail tiles in either theme. Each prev
 preserves the illustration's proportions, independently of the item's map dimensions.
 Saved four-corner footprints control position, rotation and dimensions.
 
+The catalog PNGs were created with ChatGPT image generation, selected from generated
+variations and cropped for the picker. They are custom illustrations, not artwork
+extracted from the Roborock app, its APK or its source code. The robot's supported
+furniture categories determine which objects the catalog represents.
+
 Open **Edit map → Furniture**, using the tile below the zone tools. Save or discard
 any pending zone edits first. The furniture editor loads a fresh map. Add an item
 from the catalog, then tap it or choose it from **Items**. Its padded, dashed
