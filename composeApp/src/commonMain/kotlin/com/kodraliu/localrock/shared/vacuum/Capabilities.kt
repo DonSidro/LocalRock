@@ -1,5 +1,8 @@
 package com.kodraliu.localrock.shared.vacuum
 
+/** Manage Maps tool tiles, in official order. */
+enum class MapTool { DIVIDE, COMBINE, REMOVE, NAME_ROOM, NO_GO, THRESHOLD, FLOOR_TYPE, CARPET, FURNITURE, SEQUENCE }
+
 // What one robot supports, as the settings screens ask it; screens test these flags, never bit numbers.
 data class Capabilities(
     val hasCarpetSettings: Boolean,
@@ -20,6 +23,10 @@ data class Capabilities(
     val pinNGo: Boolean,
     val firmwareUpdates: Boolean,
     val dock: DockCapabilities,
+    // Manage Maps.
+    val mapTools: Set<MapTool>,
+    val mapBackup: Boolean,
+    val maxRooms: Int,
     // Switches the robot reports, and the advertised bits with no control yet (ghost rows).
     val betaFeatures: List<BetaFeatureDef>,
     val unlistedFeatures: List<AdvertisedFeature>,
@@ -40,6 +47,8 @@ fun buildCapabilities(
     val betaFeatures = supportedBetaFeatures(nfs)
     val unlisted = unlistedAdvertisedFeatures(nfs)
     val settings = buildSettingsCapabilities(featureSet, nfs)
+    val advertised = buildAdvertisedCapabilities(nfs, robotIsFcc)
+    val maps = buildMapCapabilities(featureSet, nfs, advertised)
     return Capabilities(
         hasCarpetSettings = settings.hasCarpetSettings,
         hasFloorSettings = settings.hasFloorSettings,
@@ -59,9 +68,12 @@ fun buildCapabilities(
         pinNGo = true,
         firmwareUpdates = true, // isSupportFirmwareUpdate is a host-app check; LocalRock always offers its server update
         dock = DockCapabilities(model, featureSet, nfs),
+        mapTools = maps.mapTools,
+        mapBackup = maps.mapBackup,
+        maxRooms = maps.maxRooms,
         betaFeatures = betaFeatures,
         unlistedFeatures = unlisted,
         showsBetaFeatures = showsBetaPage(betaFeatures, unlisted),
-        advertised = buildAdvertisedCapabilities(nfs, robotIsFcc),
+        advertised = advertised,
     )
 }
