@@ -376,6 +376,7 @@ class VacuumViewModel(
                 launch { runCatching { repository.fetchDockSettings() } }
                 launch { runCatching { repository.fetchDndSettings() } }
                 launch { runCatching { repository.fetchTimers() } }
+                launch { runCatching { repository.fetchMopMode() } }
                 launch { runCatching { NewestRunCache.load(repository) } }
                 if (capabilities.value.chargingMode) launch { runCatching { repository.fetchValleySettings() } }
             }
@@ -584,6 +585,8 @@ class VacuumViewModel(
             }
         }
     }
+
+    fun info(text: String) = container.messages.info(text)
 
     /**
      * Runs [action] with the screen marked busy and reads the status back. A failure goes to

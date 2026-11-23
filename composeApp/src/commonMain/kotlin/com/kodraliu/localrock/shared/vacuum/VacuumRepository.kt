@@ -73,6 +73,9 @@ class VacuumRepository(
     val mapBytes: StateFlow<ByteArray?> = _mapBytes
 
     private val _parsedMap = MutableStateFlow<ParsedMap?>(null)
+    // True until the first map request after opening has finished, so the screen can say "loading" rather than "no map".
+    private val _firstMapPending = MutableStateFlow(true)
+    val firstMapPending: StateFlow<Boolean> = _firstMapPending
     val parsedMap: StateFlow<ParsedMap?> = _parsedMap
 
     private val _mapStatus = MutableStateFlow("idle")
@@ -240,6 +243,8 @@ class VacuumRepository(
                 delay(pollIntervalMs)
             }
         }
+        // An unreachable robot must not leave the screen on "loading" forever.
+        scope.launch { delay(20_000); _firstMapPending.value = false }
         mapPollJob = scope.launch {
             var loaded = false
             while (isActive) {
@@ -247,9 +252,10 @@ class VacuumRepository(
                 runCatching { fetchMap() }
                     .onSuccess { loaded = true }
                     .onFailure { println("[VacLocal] fetchMap FAILED: ${it::class.simpleName}: ${it.message}") }
+                _firstMapPending.value = false
                 // Until a map has arrived, ask again soon: sitting out the idle minute after a
                 // failed first request left the screen without a map for up to two minutes.
-                delay(
+                waitForNextMapPoll(
                     when {
                         !loaded -> MAP_RETRY_MS
                         _status.value.state in ACTIVE_STATES -> MAP_FAST_POLL_MS
@@ -260,6 +266,24 @@ class VacuumRepository(
         }
     }
 
+
+    @kotlin.concurrent.Volatile
+    private var liveMapViewers = 0
+
+    /** A screen that shows the map calls this with true while open and false on close, so the robot icon keeps up while it moves; overlapping screens are counted. */
+    fun setLiveMapRate(on: Boolean) {
+        liveMapViewers = (liveMapViewers + if (on) 1 else -1).coerceAtLeast(0)
+    }
+
+    private suspend fun waitForNextMapPoll(normalMs: Long) {
+        var waited = 0L
+        while (true) {
+            val live = liveMapViewers > 0 && _status.value.state in ACTIVE_STATES
+            if (waited >= (if (live) LIVE_MAP_POLL_MS else normalMs)) break
+            delay(250)
+            waited += 250
+        }
+    }
 
     suspend fun forceReconnect() {
         runCatching { mqttClient.forceReconnect() }
@@ -383,6 +407,11 @@ class VacuumRepository(
 
     suspend fun setFanPower(level: Int) =
         setOneMotorMode("set_custom_mode", session.setCustomMode(level)) { it.copy(fanPower = level) }
+
+    suspend fun setWaterBoxDistance(distance: Int) {
+        session.setWaterBoxDistanceOff(distance).requireOk("set_water_box_distance_off")
+        _status.update { it.copy(distanceOff = distance) }
+    }
 
     suspend fun setWaterBoxMode(level: Int) =
         setOneMotorMode("set_water_box_custom_mode", session.setWaterBoxCustomMode(level)) { it.copy(waterBoxMode = level) }
@@ -1399,6 +1428,7 @@ class VacuumRepository(
         val HEX = charArrayOf('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f')
         val ConsumableJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
         const val MAP_FAST_POLL_MS = 8_000L
+        const val LIVE_MAP_POLL_MS = 1_200L
         const val MAP_IDLE_POLL_MS = 60_000L
         const val MAP_RETRY_MS = 5_000L
         /** Map requests after a floor switch, [MAP_FAST_POLL_MS] apart: about a minute and a half. */
@@ -1511,6 +1541,7 @@ internal fun VacuumStatus.merge(fresh: VacuumStatus): VacuumStatus = fresh.copy(
     switchMapMode = fresh.switchMapMode ?: switchMapMode,
     inCleaning = fresh.inCleaning ?: inCleaning,
     cleanPercent = fresh.cleanPercent ?: cleanPercent,
+    distanceOff = fresh.distanceOff ?: distanceOff,
 )
 
 
