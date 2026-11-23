@@ -65,8 +65,8 @@ internal fun encodeSmartWashParams(settings: SmartWashSettings): JsonObject = Js
 fun washFrequencyLabel(settings: SmartWashSettings?): String = when (settings?.mode) {
     null -> "Unavailable"
     0 -> if (settings.intervalSeconds % 60 == 0) "${settings.intervalSeconds / 60} min" else "${settings.intervalSeconds} sec"
-    1 -> "After each room"
-    2 -> "Smart"
+    1 -> "By Room"
+    2 -> "Smart Mop Wash"
     else -> "Unknown (${settings.mode})"
 }
 
@@ -93,7 +93,9 @@ data class DndSettings(
  */
 internal fun dryerSettingBody(reported: JsonObject?, enabled: Boolean, dryTimeSeconds: Int?): JsonObject {
     val body = (reported ?: JsonObject(emptyMap())).toMutableMap()
-    body["status"] = JsonPrimitive(if (enabled) 1 else 0)
+    // On keeps a reported Scheduled (2) or Auto (1) start; only off, or no answer, picks the value.
+    val held = (reported?.get("status") as? JsonPrimitive)?.intOrNull?.takeIf { it != 0 }
+    body["status"] = JsonPrimitive(if (enabled) held ?: 1 else 0)
     if (dryTimeSeconds != null) {
         val on = ((reported?.get("on") as? JsonObject) ?: JsonObject(emptyMap())).toMutableMap()
         on["dry_time"] = JsonPrimitive(dryTimeSeconds)

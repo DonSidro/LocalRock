@@ -21,9 +21,9 @@ class DockCapabilitiesTest {
     fun smart_frequency_requires_its_own_flag_and_modes_preserve_their_codes() {
         val ordinary = DockCapabilities("a187", null, flags(34)).washFrequencyOptions
         assertEquals(listOf(10, 15, 20, 25), ordinary.filter { it.mode == 0 }.map { it.intervalMinutes })
-        assertEquals(WashFrequencyOption("By room", 1), ordinary.last())
+        assertEquals(WashFrequencyOption("By Room", 1), ordinary.last())
         assertFalse(ordinary.any { it.mode == 2 })
-        assertEquals(WashFrequencyOption("Smart", 2), DockCapabilities("a187", null, flags(109)).washFrequencyOptions.last())
+        assertEquals(WashFrequencyOption("Smart Mop Wash", 2), DockCapabilities("a187", null, flags(109)).washFrequencyOptions.last())
     }
 
     @Test

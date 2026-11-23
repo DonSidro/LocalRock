@@ -1392,7 +1392,7 @@ private fun DockSettingsScreen(
                             icon = Icons.Default.Thermostat,
                             iconTint = AppColors.Warn,
                             title = "Washing water temperature",
-                            subtitle = DockOptions.washWaterTemperature.labelFor(temperature),
+                            subtitle = DockOptions.washWaterTemperature(dockType).labelFor(temperature),
                             enabled = !busy,
                             onClick = { dialogTarget = "wash_temp" },
                         )
@@ -1506,9 +1506,9 @@ private fun DockSettingsScreen(
         )
         "wash_temp" -> SimplePickerDialog(
             title = "Washing water temperature",
-            options = DockOptions.washWaterTemperature.map { it.label },
-            selected = DockOptions.washWaterTemperature.indexOfFirst { it.code == dockSettings.washWaterTemperature },
-            onSelect = { onWashWaterTemperatureChange(DockOptions.washWaterTemperature[it].code); dialogTarget = null },
+            options = DockOptions.washWaterTemperature(dockType).map { it.label },
+            selected = DockOptions.washWaterTemperature(dockType).indexOfFirst { it.code == dockSettings.washWaterTemperature },
+            onSelect = { onWashWaterTemperatureChange(DockOptions.washWaterTemperature(dockType)[it].code); dialogTarget = null },
             enabled = !busy,
             onDismiss = { dialogTarget = null },
         )
