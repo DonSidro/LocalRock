@@ -390,7 +390,7 @@ private fun CameraTargetMap(map: ParsedMap,floor:Int,target:Pair<Int,Int>?,enabl
         val fit = fitScale(size.width, size.height, bounds.width * bitmap.width,
             bounds.height * bitmap.height, 0f, 1f, false)
         return framedView(size.width, size.height,
-            bounds.center.x * bitmap.width, bounds.center.y * bitmap.height,
+            (bounds.left + bounds.right) / 2f * bitmap.width, (bounds.top + bounds.bottom) / 2f * bitmap.height,
             fit, viewport.zoom, viewport.pan, 0f, 1f)
     }
     val currentViewFor by rememberUpdatedState(::viewFor)
