@@ -20,7 +20,7 @@ class FeatureSectionsTest {
     @Test
     fun only_what_fits_nowhere_else_stays_under_beta() {
         val beta = BetaFeatureDefs.filter { it.section == FeatureSection.BETA }.map { it.id }
-        assertEquals(listOf("identify_furniture"), beta)
+        assertEquals(listOf("identify_room", "identify_furniture"), beta)
     }
 
     @Test
