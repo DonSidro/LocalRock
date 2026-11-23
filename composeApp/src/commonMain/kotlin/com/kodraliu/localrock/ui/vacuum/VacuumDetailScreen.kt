@@ -2356,7 +2356,7 @@ private fun CleanOrderSheetContent(
 
 
 @Composable
-private fun MapsSheetContent(
+internal fun MapsSheetContent(
     floorMaps: List<FloorMap>,
     currentFloorFlag: Int,
     loading: Boolean,
@@ -2575,7 +2575,7 @@ private fun MapsSheetContent(
 }
 
 @Composable
-private fun RenameMapDialog(floor: FloorMap, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun RenameMapDialog(floor: FloorMap, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var name by remember(floor) { mutableStateOf(floor.name) }
     val problem = mapNameBlocker(name.trim())
     AlertDialog(
@@ -2619,7 +2619,7 @@ private fun SettingSwitchRow(
 
 /** Turning multi-level maps off keeps one map; the robot deletes the others (captured). */
 @Composable
-private fun KeepMapDialog(
+internal fun KeepMapDialog(
     floorMaps: List<FloorMap>,
     currentFloorFlag: Int,
     onConfirm: (Int) -> Unit,
@@ -2710,7 +2710,7 @@ internal fun SavedMapImage(map: ParsedMap, modifier: Modifier = Modifier, rotati
 }
 
 @Composable
-private fun BackupMapDialog(floor: FloorMap, picture: ParsedMap?, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+internal fun BackupMapDialog(floor: FloorMap, picture: ParsedMap?, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Back up \"${floor.name}\"?") },
@@ -2731,7 +2731,7 @@ private fun BackupMapDialog(floor: FloorMap, picture: ParsedMap?, onConfirm: () 
 }
 
 @Composable
-private fun RestoreBackupDialog(floor: FloorMap, picture: ParsedMap?, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+internal fun RestoreBackupDialog(floor: FloorMap, picture: ParsedMap?, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Restore \"${floor.name}\"?") },
@@ -2771,7 +2771,7 @@ private fun DialogMapPicture(map: ParsedMap) {
 }
 
 @Composable
-private fun DeleteMapDialog(floor: FloorMap, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+internal fun DeleteMapDialog(floor: FloorMap, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
