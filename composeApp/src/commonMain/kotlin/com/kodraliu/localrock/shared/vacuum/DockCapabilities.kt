@@ -7,6 +7,8 @@ private val legacyWashModels = setOf(
     "a26", "a27", "a29", "a30", "a46", "a47", "a62", "a64", "a65", "a66",
     "a68", "a69", "a70", "a76",
 )
+// Official plugin: the a244/a245 (BerylLite) config sets isDeepDry, which moves the drying choices to 3, 4 and 5 hours.
+private val deepDryModels = setOf("a244", "a245")
 private val simpleWashDockTypes = setOf(41, 42, 43, 46)
 // a187 plugin DockConfigs, lines 281000–281788; charging and collection-only types excluded.
 private val knownWashDockTypes = setOf(2, 3) + (6..11) + (13..24) + (26..35) + (37..46)
@@ -16,6 +18,15 @@ class DockCapabilities(model: String?, featureSet: String?, newFeatureSet: Strin
     private val superDeepWash = newFeatureBit(newFeatureSet, 15)
     private val soakWash = newFeatureBit(newFeatureSet, 107)
     private val aiWash = newFeatureBit(newFeatureSet, 144)
+
+    private val dryHours: List<Int> =
+        if (model?.substringAfterLast('.') in deepDryModels) listOf(3, 4, 5) else listOf(2, 3, 4)
+
+    /** The drying times the official app offers this model, plus [current] when the robot reports another. */
+    fun dryTimeOptions(current: Int?): List<DockChoice> {
+        val offered = dryHours.map { DockChoice(it * 3600, "$it h") }
+        return if (current == null || offered.any { it.code == current }) offered else offered + DockChoice(current, dryTimeLabel(current))
+    }
 
     val washIntervals: List<Int> = if (model?.substringAfterLast('.') in legacyWashModels) {
         (10..50 step 5).toList()

@@ -192,7 +192,7 @@ internal fun CameraVideoControls(
                 Text(status.battery?.let {"$it%"} ?: "—%",Modifier.padding(horizontal=8.dp),color=Color.White)
                 Text(headline,Modifier.weight(1f),color=Color.White,textAlign=TextAlign.Center,maxLines=1,overflow=TextOverflow.Ellipsis)
                 if (controlsVisible || !expanded) {
-                    TextButton(onClick={motion.release();settings=true}) { Text(quality.name,color=Color.White) }
+                    TextButton(onClick={motion.release();settings=true}) { Text("Options",color=Color.White) }
                 }
                 // Keep the exit reachable even after the driving overlays fade.
                 if (expanded) {
@@ -287,12 +287,6 @@ internal fun CameraVideoControls(
     if(settings) AlertDialog(
         onDismissRequest={settings=false},title={Text("Remote viewing")},
         text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Text("Requested video quality")
-            Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                CameraVideoQuality.entries.forEach {value->
-                    FilterChip(selected=quality==value,onClick={onQuality(value)},enabled=qualityEnabled,label={Text(value.name)})
-                }
-            }
             if(diagnostics.videoWidth>0 && diagnostics.videoHeight>0)
                 Text("Received video: ${diagnostics.videoWidth} × ${diagnostics.videoHeight}")
             qualityError?.let {Text(it,color=MaterialTheme.colorScheme.error)}

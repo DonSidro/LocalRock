@@ -1,7 +1,10 @@
 package com.kodraliu.localrock.ui.vacuum
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -32,6 +35,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -39,6 +43,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Refresh
@@ -68,6 +73,8 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -94,6 +101,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
@@ -101,9 +109,25 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.kodraliu.localrock.shared.vacuum.AdvertisedFeature
 import com.kodraliu.localrock.shared.vacuum.BetaFeatureState
+import com.kodraliu.localrock.shared.vacuum.FeatureChoice
+import com.kodraliu.localrock.shared.vacuum.choiceLabelFor
 import com.kodraliu.localrock.shared.vacuum.CleanRecord
+import com.kodraliu.localrock.shared.vacuum.CleanTimelineLabels
+import com.kodraliu.localrock.shared.vacuum.CleanTimelineStep
+import com.kodraliu.localrock.shared.vacuum.carpetModeOptions
 import com.kodraliu.localrock.shared.vacuum.CleanSummary
+import com.kodraliu.localrock.shared.vacuum.PatrolThumbnail
 import com.kodraliu.localrock.shared.vacuum.ConsumableStatus
+import com.kodraliu.localrock.shared.vacuum.totalAreaLabel
+import com.kodraliu.localrock.shared.vacuum.finishReasonLabel
+import com.kodraliu.localrock.shared.vacuum.cleanTypeLabel
+import com.kodraliu.localrock.shared.vacuum.cleaningRecords
+import com.kodraliu.localrock.shared.vacuum.cruiseRecords
+import com.kodraliu.localrock.shared.vacuum.cruiseTitle
+import com.kodraliu.localrock.shared.vacuum.isCruise
+import com.kodraliu.localrock.shared.vacuum.cleanRecordTags
+import com.kodraliu.localrock.shared.vacuum.cleanDurationLabel
+import com.kodraliu.localrock.shared.vacuum.cleanAreaLabel
 import com.kodraliu.localrock.shared.vacuum.DndSettings
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.vacuum.FeatureSection
@@ -117,10 +141,12 @@ import com.kodraliu.localrock.shared.vacuum.RobotSettings
 import com.kodraliu.localrock.shared.vacuum.VolumeLevels
 import com.kodraliu.localrock.shared.vacuum.volumeLabel
 import com.kodraliu.localrock.shared.vacuum.volumeLevelIndex
+import com.kodraliu.localrock.shared.vacuum.isDockedAndIdle
 import com.kodraliu.localrock.shared.vacuum.washFrequencyLabel
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.ui.AppColors
 import com.kodraliu.localrock.ui.adaptive.CenteredContent
+import com.kodraliu.localrock.ui.strings.VoiceStrings
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -132,6 +158,7 @@ private sealed interface SettingsRoute {
     data object Maintenance : SettingsRoute
     data object DockSettings : SettingsRoute
     data object RobotSettings : SettingsRoute
+    data object VoiceAssistant : SettingsRoute
     data object DndMode : SettingsRoute
     data object Carpet : SettingsRoute
     data object Floor : SettingsRoute
@@ -139,6 +166,8 @@ private sealed interface SettingsRoute {
     data object Valley : SettingsRoute
     data object BetaFeatures : SettingsRoute
     data object History : SettingsRoute
+    data object Matter : SettingsRoute
+    data object Firmware : SettingsRoute
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -149,7 +178,9 @@ fun VacuumSettingsScreen(
     viewModel: VacuumViewModel,
     onBack: () -> Unit,
 ) {
+    val videoEnabled by viewModel.videoEnabled.collectAsState()
     val repository = viewModel.repository
+    val mapRotation = 0 // the live map has no rotation setting yet (#81 adds it)
     var route by remember { mutableStateOf<SettingsRoute>(SettingsRoute.Root) }
     // Sub-pages are local state, not nav destinations, so system back would leave Settings (#52).
     BackHandler(enabled = route != SettingsRoute.Root) {
@@ -165,13 +196,22 @@ fun VacuumSettingsScreen(
     val valleySettings by repository.valleySettings.collectAsState()
     val cleanHistory by repository.cleanHistory.collectAsState()
     val cleanSummary by repository.cleanSummary.collectAsState()
+    val rooms by repository.rooms.collectAsState()
     val firmwareUpdate by viewModel.firmwareUpdate.collectAsState()
     val betaFeatures by repository.betaFeatures.collectAsState()
     val betaFeaturesLoading by repository.betaFeaturesLoading.collectAsState()
+    val betaFeatureDefs by viewModel.betaFeatureDefs.collectAsState()
+    val unlistedFeatures by viewModel.unlistedFeatures.collectAsState()
+    val showsBetaFeatures by viewModel.showsBetaFeatures.collectAsState()
+    val supportsMatter by viewModel.supportsMatter.collectAsState()
+    val dockCapabilities by viewModel.dockCapabilities.collectAsState()
 
-    // Every feature the robot reports is read once, so a page with none is not offered.
-    LaunchedEffect(Unit) {
-        if (betaFeatures.isEmpty()) runCatching { repository.fetchBetaFeatures(viewModel.betaFeatureDefs) }
+    // Every feature the robot reports is read once, so a page with none is not offered. The list
+    // grows when the robot's own flags arrive after the server's, and is read again then.
+    LaunchedEffect(betaFeatureDefs) {
+        if (repository.betaFeaturesNeedReading(betaFeatureDefs)) {
+            runCatching { repository.fetchBetaFeatures(betaFeatureDefs) }
+        }
     }
 
     when (route) {
@@ -179,7 +219,7 @@ fun VacuumSettingsScreen(
             modelName = viewModel.modelName,
             firmwareVersion = viewModel.firmwareVersion,
             firmwareUpdate = firmwareUpdate,
-            onCheckUpdate = { viewModel.checkFirmwareUpdate() },
+            onCheckUpdate = { route = SettingsRoute.Firmware },
             onBack = onBack,
             onHistory = { route = SettingsRoute.History },
             onMaintenance = {
@@ -207,7 +247,10 @@ fun VacuumSettingsScreen(
                 scope.launch { runCatching { repository.fetchDndSettings() } }
                 route = SettingsRoute.DndMode
             },
-            onBetaFeatures = if (!viewModel.showsBetaFeatures) null else ({
+            onMatter = if (!supportsMatter) null else ({ route = SettingsRoute.Matter }),
+            videoEnabled = videoEnabled,
+            onVideoEnabled = viewModel::setVideoEnabled,
+            onBetaFeatures = if (!showsBetaFeatures) null else ({
                 route = SettingsRoute.BetaFeatures
             }),
         )
@@ -222,18 +265,20 @@ fun VacuumSettingsScreen(
             title = "Floor cleaning",
             features = betaFeatures.inSection(FeatureSection.FLOOR),
             onToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            onChoice = { id, value -> viewModel.report { it.setBetaChoice(id, value) } },
             onBack = { route = SettingsRoute.Root },
         )
         SettingsRoute.Obstacle -> FeatureSectionScreen(
             title = "Obstacle avoidance",
             features = betaFeatures.inSection(FeatureSection.OBSTACLE),
             onToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            onChoice = { id, value -> viewModel.report { it.setBetaChoice(id, value) } },
             onBack = { route = SettingsRoute.Root },
         )
         SettingsRoute.BetaFeatures -> BetaFeaturesScreen(
             features = betaFeatures.inSection(FeatureSection.BETA),
             loading = betaFeaturesLoading,
-            unlisted = viewModel.unlistedFeatures,
+            unlisted = unlistedFeatures,
             onToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
             onBack = { route = SettingsRoute.Root },
         )
@@ -245,16 +290,18 @@ fun VacuumSettingsScreen(
         )
         SettingsRoute.DockSettings -> DockSettingsScreen(
             dockSettings = dockSettings,
-            dockCapabilities = viewModel.dockCapabilities,
+            dockCapabilities = dockCapabilities,
             dockType = status.dockType,
             dockStatus = status.dockStatus,
             busy = busy,
+            robotDockedAndIdle = status.isDockedAndIdle(),
             onWashModeChange = { mode -> viewModel.run { it.setWashMode(mode) } },
             onWashFrequencyChange = { mode, minutes -> viewModel.run { it.setWashFrequency(mode, minutes) } },
             onAutoEmptyModeChange = { mode -> viewModel.run { it.setAutoEmptyMode(mode) } },
             onEmptyWaterTank = { viewModel.run("Emptying the water tank") { it.emptyInbuiltWaterTank() } },
             features = betaFeatures.inSection(FeatureSection.DOCK),
             onFeatureToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            onFeatureChoice = { id, value -> viewModel.report { it.setBetaChoice(id, value) } },
             valleySettings = valleySettings,
             onMopDryingChange = { on -> viewModel.run { it.setMopDrying(on) } },
             onDryTimeChange = { seconds -> viewModel.run { it.setDryTime(seconds) } },
@@ -276,12 +323,21 @@ fun VacuumSettingsScreen(
             onLedChange = { on -> viewModel.report { it.setLed(on) } },
             features = betaFeatures.inSection(FeatureSection.ROBOT),
             onFeatureToggle = { id, on -> viewModel.report { it.setBetaFeature(id, on) } },
+            onVoiceAssistant = if (viewModel.supportsVoiceAssistant.collectAsState().value) ({ route = SettingsRoute.VoiceAssistant }) else null,
             onBack = { route = SettingsRoute.Root },
         )
+        SettingsRoute.VoiceAssistant -> VoiceAssistantSettings(viewModel, onBack = { route = SettingsRoute.RobotSettings })
         SettingsRoute.DndMode -> DndScreen(
             dndSettings = dndSettings,
             onEnable = { sh, sm, eh, em -> scope.launch { runCatching { repository.setDnd(sh, sm, eh, em) } } },
             onDisable = { scope.launch { runCatching { repository.disableDnd() } } },
+            onBack = { route = SettingsRoute.Root },
+        )
+        SettingsRoute.Firmware -> FirmwareUpdateScreen(viewModel = viewModel, onBack = { route = SettingsRoute.Root })
+        SettingsRoute.Matter -> MatterScreen(
+            loadStatus = { repository.fetchMatterStatus() },
+            requestKey = { repository.requestMatterKey() },
+            reset = { repository.resetMatter() },
             onBack = { route = SettingsRoute.Root },
         )
         SettingsRoute.History -> {
@@ -293,6 +349,11 @@ fun VacuumSettingsScreen(
             HistoryScreen(
                 records = cleanHistory,
                 summary = cleanSummary,
+                loadMap = { repository.fetchCleanRecordMap(it) },
+                loadThumbnails = { task, x, y -> repository.fetchPatrolThumbnails(task, x, y) },
+                mapRotation = mapRotation,
+                loadTimeline = repository::fetchCleanTimeline,
+                roomName = { id -> rooms.firstOrNull { it.id == id }?.name },
                 onRefresh = {
                     scope.launch {
                         runCatching { repository.fetchCleanHistory() }
@@ -342,9 +403,11 @@ fun VacuumPinGoScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
 @Composable
 fun VacuumHistoryScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     val repository = viewModel.repository
+    val mapRotation = 0 // the live map has no rotation setting yet (#81 adds it)
     val scope = rememberCoroutineScope()
     val cleanHistory by repository.cleanHistory.collectAsState()
     val cleanSummary by repository.cleanSummary.collectAsState()
+    val rooms by repository.rooms.collectAsState()
     LaunchedEffect(Unit) {
         runCatching { repository.fetchCleanHistory() }
         runCatching { repository.fetchCleanSummary() }
@@ -352,6 +415,11 @@ fun VacuumHistoryScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     HistoryScreen(
         records = cleanHistory,
         summary = cleanSummary,
+        loadMap = { repository.fetchCleanRecordMap(it) },
+        loadThumbnails = { task, x, y -> repository.fetchPatrolThumbnails(task, x, y) },
+        mapRotation = mapRotation,
+        loadTimeline = repository::fetchCleanTimeline,
+        roomName = { id -> rooms.firstOrNull { it.id == id }?.name },
         onRefresh = {
             scope.launch {
                 runCatching { repository.fetchCleanHistory() }
@@ -379,6 +447,9 @@ private fun SettingsRootScreen(
     onDockSettings: () -> Unit,
     onRobotSettings: () -> Unit,
     onDndMode: () -> Unit,
+    onMatter: (() -> Unit)?,
+    videoEnabled: Boolean,
+    onVideoEnabled: (Boolean) -> Unit,
     onBetaFeatures: (() -> Unit)?,
 ) {
     Scaffold(
@@ -478,6 +549,28 @@ private fun SettingsRootScreen(
                         onClick = onDndMode,
                     )
                 }
+                if (onMatter != null) {
+                    item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
+                    item {
+                        SettingsCategoryRow(
+                            icon = Icons.Default.Link,
+                            iconTint = AppColors.AccentIndigo,
+                            title = "Matter",
+                            subtitle = "Add the robot to Apple Home, Google Home and more",
+                            onClick = onMatter,
+                        )
+                    }
+                }
+                item {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Experimental video", style = MaterialTheme.typography.titleMedium)
+                            Text("Show video controls on supported robots. Requires server camera support and a reachable TURN endpoint.",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(checked = videoEnabled, onCheckedChange = onVideoEnabled)
+                    }
+                }
                 if (onBetaFeatures != null) {
                     item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
                     item {
@@ -529,7 +622,7 @@ private fun SettingsRootScreen(
 }
 
 
-private const val SHOW_FIRMWARE_UPDATE_CHECK = false
+private const val SHOW_FIRMWARE_UPDATE_CHECK = true
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -721,73 +814,103 @@ private fun MaintenanceScreen(
             } else {
                 LazyColumn(contentPadding = padding) {
                     item {
+                        val used = consumables.mainBrushWorkTime ?: 0L
                         ConsumableItem(
                             icon = Icons.Default.Cached,
                             iconTint = AppColors.Good,
                             title = "Main Brush",
-                            usedSeconds = consumables.mainBrushWorkTime ?: 0L,
-                            maxSeconds = ConsumableStatus.MAIN_BRUSH_LIFETIME_S,
+                            percent = ConsumableStatus.percentLeft(used, ConsumableStatus.MAIN_BRUSH_LIFETIME_S),
+                            detail = hoursLeft(used, ConsumableStatus.MAIN_BRUSH_LIFETIME_S),
                             onReset = { onReset("main_brush_work_time") },
                         )
                     }
                     item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
                     item {
+                        val used = consumables.sideBrushWorkTime ?: 0L
                         ConsumableItem(
                             icon = Icons.Default.Autorenew,
                             iconTint = AppColors.Water,
                             title = "Side Brush",
-                            usedSeconds = consumables.sideBrushWorkTime ?: 0L,
-                            maxSeconds = ConsumableStatus.SIDE_BRUSH_LIFETIME_S,
+                            percent = ConsumableStatus.percentLeft(used, ConsumableStatus.SIDE_BRUSH_LIFETIME_S),
+                            detail = hoursLeft(used, ConsumableStatus.SIDE_BRUSH_LIFETIME_S),
                             onReset = { onReset("side_brush_work_time") },
                         )
                     }
                     item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
                     item {
+                        val used = consumables.filterWorkTime ?: 0L
                         ConsumableItem(
                             icon = Icons.Default.Air,
                             iconTint = AppColors.AccentPurple,
                             title = "Filter",
-                            usedSeconds = consumables.filterWorkTime ?: 0L,
-                            maxSeconds = ConsumableStatus.FILTER_LIFETIME_S,
+                            percent = ConsumableStatus.percentLeft(used, ConsumableStatus.FILTER_LIFETIME_S),
+                            detail = hoursLeft(used, ConsumableStatus.FILTER_LIFETIME_S),
                             onReset = { onReset("filter_work_time") },
                         )
                     }
                     item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
                     item {
+                        val percent = ConsumableStatus.percentLeft(
+                            consumables.sensorDirtyTime ?: 0L,
+                            ConsumableStatus.SENSOR_LIFETIME_S,
+                        )
                         ConsumableItem(
                             icon = Icons.Default.Sensors,
                             iconTint = AppColors.Warn,
-                            title = "Sensor",
-                            usedSeconds = consumables.sensorDirtyTime ?: 0L,
-                            maxSeconds = ConsumableStatus.SENSOR_LIFETIME_S,
+                            title = "Sensors",
+                            percent = percent,
+                            detail = cleanState(percent),
+                            showPercent = false,
                             onReset = { onReset("sensor_dirty_time") },
                         )
                     }
-                    consumables.cleaningBrushWorkTime?.let { used ->
-                        item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
-                        item {
-                            ConsumableItem(
-                                icon = Icons.Default.CleaningServices,
-                                iconTint = AppColors.AccentCyan,
-                                title = "Maintenance Brush",
-                                usedSeconds = used,
-                                maxSeconds = ConsumableStatus.CLEANING_BRUSH_LIFETIME_S,
-                                onReset = { onReset("cleaning_brush_work_times") },
-                            )
-                        }
+                    item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
+                    item {
+                        ConsumableItem(
+                            icon = Icons.Default.Build,
+                            iconTint = AppColors.AccentCyan,
+                            title = "Mop",
+                            detail = "Replace as needed.",
+                        )
                     }
                     consumables.strainerWorkTime?.let { used ->
                         item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
                         item {
+                            val percent = ConsumableStatus.percentLeft(used, ConsumableStatus.STRAINER_LIFETIME_RUNS)
                             ConsumableItem(
                                 icon = Icons.Default.FilterAlt,
                                 iconTint = AppColors.AccentIndigo,
-                                title = "Strainer",
-                                usedSeconds = used,
-                                maxSeconds = ConsumableStatus.STRAINER_LIFETIME_S,
+                                title = "Cleaning Tray",
+                                percent = percent,
+                                detail = cleanState(percent),
+                                showPercent = false,
                                 onReset = { onReset("strainer_work_times") },
                             )
                         }
+                    }
+                    consumables.cleaningBrushWorkTime?.let { used ->
+                        item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
+                        item {
+                            val percent = ConsumableStatus.percentLeft(used, ConsumableStatus.CLEANING_BRUSH_LIFETIME_RUNS)
+                            ConsumableItem(
+                                icon = Icons.Default.CleaningServices,
+                                iconTint = AppColors.AccentCyan,
+                                title = "Maintenance Brush",
+                                percent = percent,
+                                detail = cleanState(percent),
+                                showPercent = false,
+                                onReset = { onReset("cleaning_brush_work_times") },
+                            )
+                        }
+                    }
+                    item { HorizontalDivider(Modifier.padding(start = 76.dp)) }
+                    item {
+                        ConsumableItem(
+                            icon = Icons.Default.Delete,
+                            iconTint = AppColors.AccentCyan,
+                            title = "Dust Bag",
+                            detail = "Replace as needed.",
+                        )
                     }
                 }
             }
@@ -795,23 +918,33 @@ private fun MaintenanceScreen(
     }
 }
 
+private fun hoursLeft(usedSeconds: Long, maxSeconds: Long): String {
+    val remaining = (maxSeconds - usedSeconds).coerceAtLeast(0L)
+    val hours = remaining / 3600L
+    val minutes = (remaining % 3600L) / 60L
+    return if (hours > 0) "${hours}h ${minutes}m remaining" else "${minutes}m remaining"
+}
+
+private fun cleanState(percent: Int): String = when {
+    percent <= 0 -> "Must clean"
+    percent <= 20 -> "Clean soon"
+    else -> "Normal"
+}
+
 @Composable
 private fun ConsumableItem(
     icon: ImageVector,
     iconTint: Color,
     title: String,
-    usedSeconds: Long,
-    maxSeconds: Long,
-    onReset: () -> Unit,
+    detail: String,
+    percent: Int? = null,
+    showPercent: Boolean = true,
+    onReset: (() -> Unit)? = null,
 ) {
-    val remaining = (maxSeconds - usedSeconds).coerceAtLeast(0L)
-    val fraction = (remaining.toFloat() / maxSeconds).coerceIn(0f, 1f)
-    val remainingHours = remaining / 3600L
-    val remainingMinutes = (remaining % 3600L) / 60L
-    val percent = (fraction * 100).toInt()
     val progressColor = when {
-        fraction > 0.5f -> AppColors.Good
-        fraction > 0.2f -> AppColors.Warn
+        percent == null -> MaterialTheme.colorScheme.onSurfaceVariant
+        percent > 20 -> AppColors.Good
+        percent > 5 -> AppColors.Warn
         else -> MaterialTheme.colorScheme.error
     }
     Row(
@@ -837,51 +970,80 @@ private fun ConsumableItem(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                Text("$percent%", style = MaterialTheme.typography.labelMedium, color = progressColor, fontWeight = FontWeight.Bold)
+                if (percent != null && showPercent) {
+                    Text("$percent%", style = MaterialTheme.typography.labelMedium, color = progressColor, fontWeight = FontWeight.Bold)
+                }
             }
-            LinearProgressIndicator(
-                progress = { fraction },
-                modifier = Modifier.fillMaxWidth(),
-                color = progressColor,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            )
+            if (percent != null) {
+                LinearProgressIndicator(
+                    progress = { percent / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = progressColor,
+                    trackColor = if (percent <= 0) progressColor else MaterialTheme.colorScheme.surfaceVariant,
+                )
+            }
             Text(
-                if (remainingHours > 0) "${remainingHours}h ${remainingMinutes}m remaining"
-                else "${remainingMinutes}m remaining",
+                detail,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (percent != null && percent <= 0 && !showPercent) progressColor else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = onReset, modifier = Modifier.padding(top = 4.dp)) {
-            Text("Reset", color = MaterialTheme.colorScheme.error)
+        if (onReset != null) {
+            TextButton(onClick = onReset, modifier = Modifier.padding(top = 4.dp)) {
+                Text("Reset", color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HistoryScreen(
     records: List<CleanRecord>,
     summary: CleanSummary?,
+    loadMap: suspend (beginEpoch: Long) -> ParsedMap,
+    loadThumbnails: suspend (taskId: Long, x: Int, y: Int) -> List<PatrolThumbnail>,
+    mapRotation: Int,
+    loadTimeline: suspend (CleanRecord) -> List<CleanTimelineStep>?,
+    roomName: (Int) -> String?,
     onRefresh: () -> Unit,
     onBack: () -> Unit,
 ) {
+    var selected by remember { mutableStateOf<CleanRecord?>(null) }
+    var cruiseTab by remember { mutableStateOf(false) }
+    val open = selected
+    val hasCruise = (summary?.patrolCount ?: 0) > 0 || records.any { it.isCruise }
+    val showCruise = hasCruise && cruiseTab
+    val shown = when {
+        !hasCruise -> records.sortedByDescending { it.beginEpoch }
+        showCruise -> records.cruiseRecords()
+        else -> records.cleaningRecords().sortedByDescending { it.beginEpoch }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("History") },
+                title = { Text(if (open == null) "History" else formatCleanRecordTime(open.beginEpoch)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                    IconButton(onClick = { if (open == null) onBack() else selected = null }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
                 },
                 actions = {
-                    IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Refresh") }
+                    if (open == null) {
+                        IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Refresh") }
+                    }
                 },
             )
         },
     ) { padding ->
         CenteredContent {
-            if (records.isEmpty()) {
+            if (open != null) {
+                if (open.isCruise) {
+                    CruiseRecordDetail(open, loadMap, loadThumbnails, mapRotation, Modifier.padding(padding))
+                } else {
+                    CleanRecordDetail(open, loadMap, loadTimeline, roomName, mapRotation, Modifier.padding(padding))
+                }
+            } else if (records.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -903,8 +1065,30 @@ private fun HistoryScreen(
                     if (summary != null) {
                         item { CleanSummaryCard(summary) }
                     }
-                    items(records.sortedByDescending { it.beginEpoch }, key = { it.beginEpoch }) { record ->
-                        CleanRecordRow(record)
+                    if (hasCruise) {
+                        item {
+                            TabRow(selectedTabIndex = if (showCruise) 1 else 0) {
+                                Tab(selected = !showCruise, onClick = { cruiseTab = false }, text = { Text("Cleaning") })
+                                Tab(selected = showCruise, onClick = { cruiseTab = true }, text = { Text("Cruise") })
+                            }
+                        }
+                    }
+                    if (showCruise && shown.isEmpty()) {
+                        item {
+                            Text(
+                                "No cruise runs on the robot",
+                                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    items(shown, key = { it.beginEpoch }) { record ->
+                        if (record.isCruise) {
+                            CruiseRecordRow(record, onClick = { selected = record })
+                        } else {
+                            CleanRecordRow(record, onClick = { selected = record })
+                        }
                         HorizontalDivider(Modifier.padding(start = 72.dp))
                     }
                 }
@@ -915,24 +1099,18 @@ private fun HistoryScreen(
 
 @Composable
 private fun CleanSummaryCard(summary: CleanSummary) {
-    val totalHours = summary.totalTimeSec / 3600
-    val totalMinutes = (summary.totalTimeSec % 3600) / 60
-    val totalAreaM2 = summary.totalAreaMm2 / 1_000_000f
     Surface(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
         shape = MaterialTheme.shapes.extraLarge,
     ) {
-        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Lifetime Stats", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                SummaryStatItem("${summary.totalCount}", "Sessions")
-                SummaryStatItem("${totalAreaM2.roundToInt()} m²", "Total area")
-                SummaryStatItem(
-                    if (totalHours > 0) "${totalHours}h ${totalMinutes}m" else "${totalMinutes}m",
-                    "Total time",
-                )
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            SummaryStatItem(totalAreaLabel(summary.totalAreaMm2), "Total Area")
+            SummaryStatItem("${summary.totalTimeSec / 3600} h", "Total Time")
+            SummaryStatItem("${summary.totalCount}", "Working Times")
         }
     }
 }
@@ -946,52 +1124,202 @@ private fun SummaryStatItem(value: String, label: String) {
 }
 
 @Composable
-private fun CleanRecordRow(record: CleanRecord) {
-    val areaM2 = record.areaMm2 / 1_000_000f
-    val durationMin = record.durationSeconds / 60L
-    val dateStr = formatCleanRecordTime(record.beginEpoch)
+private fun CleanRecordRow(record: CleanRecord, onClick: () -> Unit) {
+    val done = record.complete == 1
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(
             shape = RoundedCornerShape(12.dp),
-            color = if (record.complete == 1) MaterialTheme.colorScheme.primaryContainer
-                    else MaterialTheme.colorScheme.errorContainer,
+            color = if (done) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
             modifier = Modifier.size(44.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    if (record.complete == 1) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    if (done) Icons.Default.CheckCircle else Icons.Default.Warning,
                     null,
                     Modifier.size(22.dp),
-                    if (record.complete == 1) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.onErrorContainer,
+                    if (done) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
                 )
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(dateStr, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(oneDecimal(areaM2)) }
-                        append(" m²")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Text(
+                formatCleanRecordTime(record.beginEpoch),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                listOfNotNull(
+                    cleanTypeLabel(record.cleanType),
+                    cleanDurationLabel(record.durationSeconds),
+                    cleanAreaLabel(record.shownAreaMm2),
+                ).joinToString("  |  "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CruiseRecordRow(record: CleanRecord, onClick: () -> Unit) {
+    val done = record.complete == 1
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = if (done) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+            modifier = Modifier.size(44.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    if (done) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    null,
+                    Modifier.size(22.dp),
+                    if (done) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
                 )
-                Text(
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append("$durationMin") }
-                        append(" min")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                "${record.cruiseTitle}, ${cleanDurationLabel(record.durationSeconds)}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                formatCleanRecordTime(record.beginEpoch),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CleanRecordDetail(
+    record: CleanRecord,
+    loadMap: suspend (beginEpoch: Long) -> ParsedMap,
+    loadTimeline: suspend (CleanRecord) -> List<CleanTimelineStep>?,
+    roomName: (Int) -> String?,
+    mapRotation: Int,
+    modifier: Modifier = Modifier,
+) {
+    val done = record.complete == 1
+    val tags = cleanRecordTags(record)
+    var map by remember(record.beginEpoch) { mutableStateOf<ParsedMap?>(null) }
+    var failed by remember(record.beginEpoch) { mutableStateOf(false) }
+    LaunchedEffect(record.beginEpoch) {
+        runCatching { loadMap(record.beginEpoch) }.onSuccess { map = it }.onFailure { failed = true }
+    }
+    Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(MaterialTheme.shapes.extraLarge)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                map != null -> SavedMapImage(map!!, Modifier.fillMaxSize().padding(8.dp), mapRotation)
+                failed -> Text("Couldn't load this run's map", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+            }
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = MaterialTheme.shapes.extraLarge,
+        ) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (done) Icons.Default.CheckCircle else Icons.Default.Warning,
+                        null,
+                        Modifier.size(24.dp),
+                        if (done) AppColors.Good else AppColors.Warn,
+                    )
+                    Text(finishReasonLabel(record), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                }
+                if (tags.isNotEmpty()) {
+                    Text(
+                        tags.joinToString(" | "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = MaterialTheme.shapes.extraLarge,
+        ) {
+            Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                SummaryStatItem(cleanDurationLabel(record.durationSeconds), "Cleaning Time")
+                SummaryStatItem(cleanAreaLabel(record.shownAreaMm2), "Cleaning Area")
+            }
+        }
+        CleanTimelineCard(record, loadTimeline, roomName)
+    }
+}
+
+@Composable
+private fun CleanTimelineCard(
+    record: CleanRecord,
+    loadTimeline: suspend (CleanRecord) -> List<CleanTimelineStep>?,
+    roomName: (Int) -> String?,
+) {
+    var loading by remember(record.beginEpoch) { mutableStateOf(true) }
+    var steps by remember(record.beginEpoch) { mutableStateOf<List<CleanTimelineStep>?>(null) }
+    LaunchedEffect(record.beginEpoch) {
+        steps = runCatching { loadTimeline(record) }.getOrNull()
+        loading = false
+    }
+    Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.extraLarge) {
+        CleanTimelineSection(steps, record.beginEpoch, loading, roomName)
+    }
+}
+
+@Composable
+private fun CleanTimelineSection(steps: List<CleanTimelineStep>?, beginEpoch: Long, loading: Boolean, roomName: (Int) -> String?) {
+    Column(Modifier.fillMaxWidth().padding(20.dp)) {
+        when {
+            loading -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            steps == null -> Text(
+                "No timeline for this run",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            else -> steps.forEach { step ->
+                val isError = step is CleanTimelineStep.Error
+                Row(Modifier.padding(vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        timelineOffset(step.time - beginEpoch),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(56.dp),
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            CleanTimelineLabels.title(step, roomName),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                        )
+                        CleanTimelineLabels.detail(step)?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
             }
         }
     }
@@ -1006,12 +1334,14 @@ private fun DockSettingsScreen(
     dockType: Int?,
     dockStatus: Int?,
     busy: Boolean,
+    robotDockedAndIdle: Boolean,
     onWashModeChange: (Int) -> Unit,
     onWashFrequencyChange: (Int, Int?) -> Unit,
     onAutoEmptyModeChange: (Int) -> Unit,
     onEmptyWaterTank: () -> Unit,
     features: List<BetaFeatureState>,
     onFeatureToggle: (String, Boolean) -> Unit,
+    onFeatureChoice: (String, Int) -> Unit,
     valleySettings: ValleySettings?,
     onMopDryingChange: (Boolean) -> Unit,
     onDryTimeChange: (Int) -> Unit,
@@ -1023,6 +1353,7 @@ private fun DockSettingsScreen(
     var confirmEmptyTank by remember { mutableStateOf(false) }
 
     val washFrequencyOptions = dockCapabilities.washFrequencyOptions
+    val dryTimeOptions = dockCapabilities.dryTimeOptions(dockSettings.dryTimeSeconds)
     val smartWash = dockSettings.smartWash
     val washFrequencyIndex = washFrequencyOptions.indexOfFirst {
         smartWash != null && it.mode == smartWash.mode && (it.mode != 0 || it.intervalMinutes?.times(60) == smartWash.intervalSeconds)
@@ -1034,6 +1365,7 @@ private fun DockSettingsScreen(
     val washFrequencyEnabled = !busy && dockKnown && smartWash != null && washFrequencyOptions.isNotEmpty()
     val washModeEnabled = !busy && dockKnown && dockSettings.washMode != null && washModes.isNotEmpty()
     val autoEmptyEnabled = !busy && dockSettings.autoEmptyMode != null && autoEmptyModes.isNotEmpty()
+    val emptyWaterTankEnabled = !busy && robotDockedAndIdle
 
     Scaffold(
         topBar = {
@@ -1139,13 +1471,13 @@ private fun DockSettingsScreen(
                         iconTint = AppColors.Water,
                         title = "Internal water tank",
                         subtitle = "Empty through the dock",
-                        enabled = !busy,
+                        enabled = emptyWaterTankEnabled,
                         onClick = { confirmEmptyTank = true },
                     )
                 }
                 items(features, key = { it.def.id }) { f ->
                     HorizontalDivider(Modifier.padding(start = 72.dp))
-                    FeatureToggleRow(f, onFeatureToggle)
+                    FeatureToggleRow(f, onFeatureToggle, onFeatureChoice)
                 }
             }
         }
@@ -1155,9 +1487,12 @@ private fun DockSettingsScreen(
         AlertDialog(
             onDismissRequest = { confirmEmptyTank = false },
             title = { Text("Empty the water tank?") },
-            text = { Text("The dock pumps the water out of the robot's built-in tank. Make sure the robot is on the dock.") },
+            text = { Text("Remove both mop holders with their pads, then place the robot back in the dock before starting.") },
             confirmButton = {
-                TextButton(onClick = { confirmEmptyTank = false; onEmptyWaterTank() }) { Text("Empty") }
+                TextButton(
+                    enabled = emptyWaterTankEnabled,
+                    onClick = { confirmEmptyTank = false; onEmptyWaterTank() },
+                ) { Text("Mops removed, start") }
             },
             dismissButton = { TextButton(onClick = { confirmEmptyTank = false }) { Text("Cancel") } },
         )
@@ -1194,9 +1529,9 @@ private fun DockSettingsScreen(
         )
         "dry_time" -> SimplePickerDialog(
             title = "Drying time",
-            options = DockOptions.dryTime.map { it.label },
-            selected = DockOptions.dryTime.indexOfFirst { it.code == dockSettings.dryTimeSeconds },
-            onSelect = { onDryTimeChange(DockOptions.dryTime[it].code); dialogTarget = null },
+            options = dryTimeOptions.map { it.label },
+            selected = dryTimeOptions.indexOfFirst { it.code == dockSettings.dryTimeSeconds },
+            onSelect = { onDryTimeChange(dryTimeOptions[it].code); dialogTarget = null },
             enabled = !busy,
             onDismiss = { dialogTarget = null },
         )
@@ -1279,7 +1614,7 @@ private fun ValleyScreen(
 }
 
 @Composable
-private fun SimplePickerDialog(
+internal fun SimplePickerDialog(
     title: String,
     options: List<String>,
     selected: Int,
@@ -1322,6 +1657,7 @@ private fun RobotSettingsScreen(
     onLedChange: (Boolean) -> Unit,
     features: List<BetaFeatureState>,
     onFeatureToggle: (String, Boolean) -> Unit,
+    onVoiceAssistant: (() -> Unit)? = null,
     onBack: () -> Unit,
 ) {
     var findTriggered by remember { mutableStateOf(false) }
@@ -1352,13 +1688,24 @@ private fun RobotSettingsScreen(
                 }
                 item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
                 item {
-                    SettingRowClickable(
-                        icon = Icons.AutoMirrored.Filled.VolumeUp,
-                        iconTint = AppColors.Water,
-                        title = "Volume",
-                        subtitle = volumeLabel,
-                        onClick = { showVolumeDialog = true },
-                    )
+                    // Voice control robots keep the volume on the Voice Assistant page, as the official app does.
+                    if (onVoiceAssistant != null) {
+                        SettingRowClickable(
+                            icon = Icons.Default.RecordVoiceOver,
+                            iconTint = AppColors.Water,
+                            title = VoiceStrings.VOICE_ASSISTANT,
+                            subtitle = VoiceStrings.VOICE_ASSISTANT_ENTRY,
+                            onClick = onVoiceAssistant,
+                        )
+                    } else {
+                        SettingRowClickable(
+                            icon = Icons.AutoMirrored.Filled.VolumeUp,
+                            iconTint = AppColors.Water,
+                            title = "Volume",
+                            subtitle = volumeLabel,
+                            onClick = { showVolumeDialog = true },
+                        )
+                    }
                 }
                 item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
                 item {
@@ -1403,7 +1750,11 @@ private fun RobotSettingsScreen(
 
 /** One feature the robot reports, as a switch under the page it belongs to. */
 @Composable
-private fun FeatureToggleRow(f: BetaFeatureState, onToggle: (String, Boolean) -> Unit) {
+private fun FeatureToggleRow(
+    f: BetaFeatureState,
+    onToggle: (String, Boolean) -> Unit,
+    onChoice: (String, Int) -> Unit = { _, _ -> },
+) {
     val icon = when (f.def.section) {
         FeatureSection.CARPET -> Icons.Default.GridView
         FeatureSection.FLOOR -> Icons.Default.CleaningServices
@@ -1411,6 +1762,27 @@ private fun FeatureToggleRow(f: BetaFeatureState, onToggle: (String, Boolean) ->
         FeatureSection.DOCK -> Icons.Default.Home
         FeatureSection.ROBOT -> Icons.Default.Settings
         FeatureSection.BETA -> Icons.Default.Science
+    }
+    val choices = f.def.choices
+    if (choices != null) {
+        var showPicker by remember { mutableStateOf(false) }
+        SettingRowClickable(
+            icon = icon,
+            iconTint = AppColors.AccentCyan,
+            title = f.def.title,
+            subtitle = f.choiceLabel ?: f.def.description,
+            onClick = { showPicker = true },
+        )
+        if (showPicker) {
+            ChoicePickerDialog(
+                title = f.def.title,
+                choices = choices,
+                selected = f.value,
+                onSelect = { onChoice(f.def.id, it); showPicker = false },
+                onDismiss = { showPicker = false },
+            )
+        }
+        return
     }
     SettingRowSwitch(
         icon = icon,
@@ -1422,6 +1794,50 @@ private fun FeatureToggleRow(f: BetaFeatureState, onToggle: (String, Boolean) ->
     )
 }
 
+/** Radio list of a multi-choice setting's values; a current value with no listed choice shows as an extra "Other (n)" line. */
+@Composable
+private fun ChoicePickerDialog(
+    title: String,
+    choices: List<FeatureChoice>,
+    selected: Int?,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val unknown = selected?.takeIf { v -> choices.none { it.value == v } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                choices.forEach { choice ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = choice.value == selected, onClick = { if (choice.value != selected) onSelect(choice.value) })
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(choice.label, style = MaterialTheme.typography.bodyMedium)
+                            choice.description?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+                if (unknown != null) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = true, enabled = false, onClick = {})
+                        Spacer(Modifier.width(8.dp))
+                        Text(choiceLabelFor(choices, unknown), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FeatureSectionScreen(
@@ -1429,6 +1845,7 @@ private fun FeatureSectionScreen(
     features: List<BetaFeatureState>,
     onToggle: (String, Boolean) -> Unit,
     onBack: () -> Unit,
+    onChoice: (String, Int) -> Unit = { _, _ -> },
 ) {
     Scaffold(
         topBar = {
@@ -1441,7 +1858,7 @@ private fun FeatureSectionScreen(
         CenteredContent {
             LazyColumn(contentPadding = padding) {
                 items(features, key = { it.def.id }) { f ->
-                    FeatureToggleRow(f, onToggle)
+                    FeatureToggleRow(f, onToggle, onChoice)
                     HorizontalDivider(Modifier.padding(start = 72.dp))
                 }
             }
@@ -1459,7 +1876,7 @@ private fun CarpetScreen(
     onBack: () -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
-    val options = listOf("Avoid carpet", "Standard", "Carpet boost")
+    val options = carpetModeOptions(carpetMode)
     Scaffold(
         topBar = {
             TopAppBar(
@@ -1475,7 +1892,7 @@ private fun CarpetScreen(
                         icon = Icons.Default.GridView,
                         iconTint = AppColors.Good,
                         title = "Carpet mode",
-                        subtitle = options.getOrElse(carpetMode) { "Standard" },
+                        subtitle = options.getOrElse(carpetMode) { "Mode $carpetMode" },
                         onClick = { showDialog = true },
                     )
                 }
@@ -1627,7 +2044,7 @@ private fun BetaFeaturesScreen(
 }
 
 @Composable
-private fun SettingRowClickable(
+internal fun SettingRowClickable(
     icon: ImageVector,
     iconTint: Color,
     title: String,
@@ -1741,7 +2158,7 @@ private fun FirmwareUpdateRow(state: FirmwareUpdateState, onCheck: () -> Unit) {
 }
 
 @Composable
-private fun SettingRowSwitch(
+internal fun SettingRowSwitch(
     icon: ImageVector,
     iconTint: Color,
     title: String,
@@ -1957,3 +2374,10 @@ private fun oneDecimal(value: Float): String {
     return "${scaled / 10}.${(scaled % 10).absoluteValue}"
 }
 
+
+private fun timelineOffset(seconds: Long): String {
+    val total = seconds.coerceAtLeast(0L)
+    val hours = total / 3600
+    val minutes = (total % 3600) / 60
+    return if (hours > 0) "+$hours:${minutes.toString().padStart(2, '0')}h" else "+${minutes}m"
+}

@@ -41,9 +41,10 @@ import com.kodraliu.localrock.shared.webrtc.liveViewSupported
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
+    val videoEnabled by viewModel.videoEnabled.collectAsState()
     val modelSupport = remember(viewModel) { cameraModelSupport(viewModel.modelName) }
     var testingEnabled by remember(viewModel) { mutableStateOf(false) }
-    val canConnect = liveViewSupported && modelSupport.canConnect(testingEnabled)
+    val canConnect = videoEnabled && liveViewSupported && modelSupport.canConnect(testingEnabled)
     val canConnectNow by rememberUpdatedState(canConnect)
     val controlsAllowed = liveViewSupported && modelSupport.allowsRobotControls
     val live = remember(viewModel) {
@@ -84,7 +85,7 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     var selectedTest by remember { mutableStateOf(CameraVideoTest.OEM_MATCH) }
     var preferredQuality by remember { mutableStateOf(CameraVideoQuality.HD) }
     var showConnectionTests by remember { mutableStateOf(false) }
-    val supported = liveViewSupported && experimentalCameraSupported(viewModel.modelName)
+    val supported = videoEnabled && liveViewSupported && experimentalCameraSupported(viewModel.modelName)
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val uriHandler = LocalUriHandler.current

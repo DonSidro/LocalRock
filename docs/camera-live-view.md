@@ -175,3 +175,7 @@ The **Connection tests (SD)** section keeps these diagnostic choices available:
 All choices request SD and create no phone microphone or camera capture source.
 Stop the current viewer before selecting another choice.
 
+
+Enable **Settings → Experimental video** to show video controls. This app preference is off by default; model restrictions and the additional testing opt-in still apply. Server camera support and a reachable TURN endpoint are required.
+
+The live HD/SD selector is hidden because an acknowledged request does not confirm a changed stream. Received dimensions remain visible in Options.

@@ -34,4 +34,15 @@ class FeatureSetFromInitStatusTest {
         assertFalse(isSmartPlanSupported(null))
         assertTrue(isSmartPlanSupported(fromRobot) == newFeatureBit(qrevo, 55))
     }
+
+    @Test
+    fun new_feature_info_is_read_as_a_long() {
+        // An S7's (a15, 02.16.12) answer, 2026-11-15: larger than an Int.
+        val s7 = Json.parseToJsonElement(
+            """[{"new_feature_info":636084721975295,"new_feature_info_str":"0000000000002000"}]""",
+        )
+        assertEquals(636084721975295L, newFeatureInfoFromInitStatus(s7))
+        assertNull(newFeatureInfoFromInitStatus(Json.parseToJsonElement("""{"other":1}""")))
+        assertNull(newFeatureInfoFromInitStatus(Json.parseToJsonElement("null")))
+    }
 }

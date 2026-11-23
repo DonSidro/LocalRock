@@ -3,6 +3,7 @@ package com.kodraliu.localrock.shared.onboarding
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class TzMappingTest {
 
@@ -12,6 +13,16 @@ class TzMappingTest {
         assertEquals("us", countryDomainFromIana("America/Los_Angeles"))
         assertEquals("CET-1CEST,M3.5.0,M10.5.0/3", posixTzFromIana("Europe/Berlin"))
         assertEquals("de", countryDomainFromIana("Europe/Berlin"))
+    }
+
+    @Test
+    fun puerto_rico_uses_ast_without_dst() {
+        // Puerto Rico is UTC-4 year-round and never observes DST, so the POSIX string must
+        // not carry US DST rules. Reusing EST5EDT would put the robot's clock and schedules
+        // an hour off for the whole US winter.
+        assertEquals("AST4", posixTzFromIana("America/Puerto_Rico"))
+        assertEquals("us", countryDomainFromIana("America/Puerto_Rico"))
+        assertTrue("America/Puerto_Rico" in supportedIanaTimezones())
     }
 
     @Test

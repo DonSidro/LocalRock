@@ -60,6 +60,12 @@ suspend fun VacuumSession.getCleanRecord(recordId: Long): V1Response =
 
 suspend fun VacuumSession.getCleanSummary(): V1Response = sendCommand("get_clean_summary")
 
+// The Curv 2 Flow answers a page of timeline events; the Qrevo Pro does not recognise the method.
+suspend fun VacuumSession.getCleanDetail(begin: Long, from: Int): V1Response = sendCommandRaw(
+    "get_clean_detail",
+    JsonObject(mapOf("begin" to JsonPrimitive(begin), "type" to JsonPrimitive(0), "id" to JsonPrimitive(0), "from" to JsonPrimitive(from))),
+)
+
 suspend fun VacuumSession.resetConsumable(field: String): V1Response =
     sendCommand("reset_consumable", listOf(JsonPrimitive(field)))
 
@@ -153,6 +159,24 @@ internal fun childLockParams(locked: Boolean): JsonObject =
 suspend fun VacuumSession.setChildLock(locked: Boolean): V1Response =
     sendCommandRaw(SET_CHILD_LOCK_STATUS, childLockParams(locked))
 
+// Newer firmware keeps many on/off options behind one pair of commands, picked by name:
+// app_get_robot_setting {"name": ...} answers {"status": n}, app_set_robot_setting takes {"name", "status"}.
+internal fun robotSettingReadParams(name: String): JsonObject = JsonObject(mapOf("name" to JsonPrimitive(name)))
+
+internal fun robotSettingWriteParams(name: String, on: Boolean): JsonObject = robotSettingWriteParams(name, if (on) 1 else 0)
+
+internal fun robotSettingWriteParams(name: String, status: Int): JsonObject =
+    JsonObject(mapOf("name" to JsonPrimitive(name), "status" to JsonPrimitive(status)))
+
+suspend fun VacuumSession.getRobotSetting(name: String): V1Response =
+    sendCommandRaw("app_get_robot_setting", robotSettingReadParams(name))
+
+suspend fun VacuumSession.setRobotSetting(name: String, on: Boolean): V1Response =
+    sendCommandRaw("app_set_robot_setting", robotSettingWriteParams(name, on))
+
+suspend fun VacuumSession.setRobotSetting(name: String, status: Int): V1Response =
+    sendCommandRaw("app_set_robot_setting", robotSettingWriteParams(name, status))
+
 suspend fun VacuumSession.getLedStatus(): V1Response = sendCommand("get_led_status")
 // The LED is the bare value `[1]`, the same shape get_led_status answers: an S8 Pro Ultra (a70) and a
 // Qrevo Curv 2 Flow (a245) answer `[{"led_status": 1}]` with -10005 "Invalid type".
@@ -167,12 +191,35 @@ suspend fun VacuumSession.setMopMode(mode: Int): V1Response =
 suspend fun VacuumSession.setCleanMotorMode(fanPower: Int, waterBoxMode: Int, mopMode: Int): V1Response =
     sendCommandRaw("set_clean_motor_mode", encodeCleanMotorModeParams(fanPower, waterBoxMode, mopMode))
 
+internal fun cleanSequenceTypeParams(
+    type: Int,
+    fanPower: Int,
+    waterBoxMode: Int,
+    mopMode: Int,
+    repeat: Int? = null,
+): JsonObject = JsonObject(buildMap {
+    put("type", JsonPrimitive(type))
+    put("fan_power", JsonPrimitive(fanPower))
+    put("water_box_mode", JsonPrimitive(waterBoxMode))
+    put("mop_mode", JsonPrimitive(mopMode))
+    if (type == 1 && repeat != null) put("repeat", JsonPrimitive(repeat))
+})
+
+suspend fun VacuumSession.setCleanSequenceType(
+    type: Int,
+    fanPower: Int,
+    waterBoxMode: Int,
+    mopMode: Int,
+    repeat: Int? = null,
+): V1Response = sendCommandRaw("app_set_clean_sequence_type", cleanSequenceTypeParams(type, fanPower, waterBoxMode, mopMode, repeat))
+
 suspend fun VacuumSession.appSetDryerStatus(on: Boolean): V1Response =
     sendCommandRaw("app_set_dryer_status", JsonObject(mapOf("status" to JsonPrimitive(if (on) 1 else 0))))
 
 suspend fun VacuumSession.getCarpetCleanMode(): V1Response = sendCommand("get_carpet_clean_mode")
+// A bare object like the official app; a Curv 2 Flow refuses the list form ("param is not an object").
 suspend fun VacuumSession.setCarpetCleanMode(mode: Int): V1Response =
-    sendCommand("set_carpet_clean_mode", listOf(JsonObject(mapOf("carpet_clean_mode" to JsonPrimitive(mode)))))
+    sendCommandRaw("set_carpet_clean_mode", JsonObject(mapOf("carpet_clean_mode" to JsonPrimitive(mode))))
 
 
 suspend fun VacuumSession.getWashTowelMode(): V1Response = sendCommand("get_wash_towel_mode")
