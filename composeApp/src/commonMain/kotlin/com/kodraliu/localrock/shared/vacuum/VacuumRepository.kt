@@ -118,9 +118,15 @@ class VacuumRepository(
     /** The robot's `new_feature_info` number from the same answer; null until it has answered. */
     val robotNewFeatureInfo: StateFlow<Long?> = _robotNewFeatureInfo
 
+    private val _robotIsFcc = MutableStateFlow<Boolean?>(null)
+
+    /** local_info.featureset bit 0 from app_get_init_status (FCC build); null until the robot has answered. */
+    val robotIsFcc: StateFlow<Boolean?> = _robotIsFcc
+
     suspend fun fetchRobotFeatureSet() {
         if (_robotFeatureSet.value != null && _robotNewFeatureInfo.value != null) return
         val result = session.getInitStatus().requireOk("app_get_init_status").result
+        _robotIsFcc.value = isFccBuild(result)
         _robotFeatureSet.value = featureSetFromInitStatus(result)
         _robotNewFeatureInfo.value = newFeatureInfoFromInitStatus(result)
     }
@@ -1013,18 +1019,14 @@ class VacuumRepository(
 
     /** Null when the robot did not reply at all, so a read that timed out is not mistaken for an answer. */
     private suspend fun readBetaFeature(def: BetaFeatureDef): BetaFeatureState? {
-        val resp = runCatching {
-            def.settingName?.let { session.getRobotSetting(it) } ?: session.sendCommand(def.getMethod)
-        }.getOrNull() ?: return null
+        val resp = runCatching { session.readFeatureRaw(def) }.getOrNull() ?: return null
         val parsed = parseFeatureReply(def, resp.result)
         return BetaFeatureState(
             def = def,
-            value = parsed?.value,
-            key = parsed?.key,
-            // A field of a larger reply (get_status) keeps only that field, not the whole status.
-            raw = if (def.readKey != null && parsed != null) parsed.value.toString() else resp.result?.toString() ?: resp.error?.toString(),
+            value = parsed?.second,
+            key = parsed?.first,
+            raw = resp.result?.toString() ?: resp.error?.toString(),
             answered = resp.error == null,
-            reply = parsed?.reply,
         )
     }
 
@@ -1068,33 +1070,31 @@ class VacuumRepository(
      * last time, then reads the option back so the screen shows what the robot holds. Throws the robot's
      * refusal, if any, after that.
      */
-    suspend fun setBetaFeature(id: String, on: Boolean) = writeBetaFeature(id, if (on) 1 else 0)
+    suspend fun setBetaFeature(id: String, on: Boolean) = setBetaChoice(id, if (on) 1 else 0)
 
-    /** Writes one value of a multi-choice option, then reads it back so the screen shows what the robot holds. */
-    suspend fun setBetaChoice(id: String, value: Int) = writeBetaFeature(id, value)
-
-    private suspend fun writeBetaFeature(id: String, value: Int) {
+    /** Writes one value of an option (FeatureCodecs.kt picks the shape), then reads it back so the screen shows what the robot holds. */
+    suspend fun setBetaChoice(id: String, value: Int) {
         val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
-        val method: String
-        val sent: V1Response?
-        val name = current.def.settingName
-        if (name != null) {
-            method = "app_set_robot_setting"
-            sent = session.setRobotSetting(name, value)
-        } else {
-            method = current.def.setMethod
-            val candidates = featureSetParamCandidates(current, value)
-            var last: V1Response? = null
-            for (i in betaSetTryOrder(candidates.size, betaSetAcceptedShape[id])) {
-                last = session.sendCommandRaw(method, candidates[i])
-                if (last.error == null) betaSetAcceptedShape[id] = i
-                if (last.error?.get("code")?.jsonPrimitive?.intOrNull !in BetaShapeRefusalCodes) break
+        val write = session.writeFeature(current.def, current.key, value, betaSetAcceptedShape[id])
+        write.acceptedShape?.let { betaSetAcceptedShape[id] = it }
+        // Rows sharing a read are refreshed too: turning avoidance off also clears the photo and snap bits.
+        val reads = featureReads(current.def)
+        val stale = _betaFeatures.value.filter { f -> f.def.id == id || featureReads(f.def).any { it in reads } }
+        for (f in stale) {
+            readBetaFeature(f.def)?.takeIf { it.answered && it.toggleable }?.let { updated ->
+                _betaFeatures.update { list -> list.map { if (it.def.id == f.def.id) updated else it } }
             }
-            sent = last
         }
-        // Read back before requireOk on purpose: a refused write still refreshes the row with the robot's real value.
-        refreshBetaFeature(current.def)
-        sent?.requireOk(method)
+        write.reply?.requireOk(write.method)
+    }
+
+    /** Reads [ids] again where already loaded, so the screen shows what the robot holds after a related write. */
+    suspend fun refreshBetaFeatures(ids: Set<String>) {
+        _betaFeatures.value.filter { it.def.id in ids }.forEach { current ->
+            readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }?.let { updated ->
+                _betaFeatures.update { list -> list.map { if (it.def.id == updated.def.id) updated else it } }
+            }
+        }
     }
 
     private suspend fun refreshBetaFeature(def: BetaFeatureDef) {
@@ -1114,7 +1114,8 @@ class VacuumRepository(
         val dryer = runCatching { session.getDryerSetting().requireOk("app_get_dryer_setting").result as? JsonObject }.getOrNull()
         (dryer?.get("status") as? JsonPrimitive)?.intOrNull?.let { status ->
             val seconds = ((dryer["on"] as? JsonObject)?.get("dry_time") as? JsonPrimitive)?.intOrNull
-            _dockSettings.update { it.copy(mopDrying = status == 1, dryTimeSeconds = seconds, dryerAnswer = dryer) }
+            // 1 is Auto and 2 Scheduled Drying; both mean the dock dries the mop.
+            _dockSettings.update { it.copy(mopDrying = status != 0, dryTimeSeconds = seconds, dryerAnswer = dryer) }
         }
         // The read answers {"wash_water_temperature": n}, where the setter takes {"values": n}.
         val temperature = runCatching { session.getWashWaterTemperature().requireOk("get_wash_water_temperature").result as? JsonObject }.getOrNull()
@@ -1194,6 +1195,13 @@ class VacuumRepository(
             throw IllegalStateException("Dock the robot and finish its current task before emptying its water tank")
         }
         session.emptyInbuiltWaterTank().requireOk(APP_EMPTY_INBUILT_WATER_TANK)
+    }
+
+
+    /** Starts the dock's cleaning tray self-cleaning; stops a running task first, as the official app does. */
+    suspend fun startTraySelfClean(endTaskFirst: Boolean) {
+        if (endTaskFirst) session.appStop().requireOk("app_stop")
+        session.startTraySelfClean().requireOk(APP_AMETHYST_SELF_CHECK)
     }
 
 

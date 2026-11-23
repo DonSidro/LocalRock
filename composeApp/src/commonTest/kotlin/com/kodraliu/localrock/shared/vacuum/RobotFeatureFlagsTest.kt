@@ -30,11 +30,13 @@ class RobotFeatureFlagsTest {
     fun the_robots_flags_offer_the_options_it_advertises() {
         val ids = supportedBetaFeatures(flags).map { it.id }.toSet()
         for (id in listOf(
-            "corner_mop_stretch", "carpet_deep_clean", "avoid_collision",
+            "corner_mop_stretch", "carpet_deep_clean", "less_collision_mode",
             "water_leak_check", "pet_supplies_deep_clean", "clean_fluid_delivery",
         )) {
             assertTrue(id in ids, "$id should be offered")
         }
+        // Bit 118 (two-gear avoidance) replaces Collision avoidance with Less Collision Mode, as in the official app.
+        assertFalse("avoid_collision" in ids)
         // Bits the a294 does not set stay hidden.
         for (id in listOf("right_brush_stretch", "gap_deep_clean", "dirty_object_detect", "voice_control_led")) {
             assertFalse(id in ids, "$id should not be offered")
@@ -51,7 +53,7 @@ class RobotFeatureFlagsTest {
     fun dock_options_follow_the_robots_flags() {
         val fromRobot = DockCapabilities("roborock.vacuum.a294", info?.toString(), flags)
         assertEquals(listOf("Smart", "Light", "Balanced", "Max"), fromRobot.autoEmptyModes.map { it.second })
-        assertEquals(WashFrequencyOption("Smart", 2), fromRobot.washFrequencyOptions.last())
+        assertEquals(WashFrequencyOption("Smart Mop Wash", 2), fromRobot.washFrequencyOptions.last())
 
         val serverOnly = DockCapabilities("roborock.vacuum.a294", null, null)
         assertTrue(serverOnly.autoEmptyModes.isEmpty())

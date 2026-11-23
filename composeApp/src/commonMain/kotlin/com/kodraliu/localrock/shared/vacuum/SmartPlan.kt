@@ -35,6 +35,13 @@ fun featureSetFromInitStatus(result: JsonElement?): String? {
     return text.takeIf { it.isNotEmpty() && it.all { c -> c.digitToIntOrNull(16) != null } }
 }
 
+/** local_info.featureset bit 0 of app_get_init_status (an FCC build), or null when the answer has no such field. */
+fun isFccBuild(result: JsonElement?): Boolean? {
+    val status = (if (result is JsonArray) result.firstOrNull() else result) as? JsonObject ?: return null
+    val bits = ((status["local_info"] as? JsonObject)?.get("featureset") as? JsonPrimitive)?.contentOrNull?.toULongOrNull() ?: return null
+    return bits and 1uL != 0uL
+}
+
 /**
  * The `new_feature_info` number from the same answer (python-roborock's robot_new_features), or null.
  * It can exceed an Int: an S7 on 02.16.12 reported 636084721975295.

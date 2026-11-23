@@ -60,6 +60,7 @@ internal fun squashForTilt(tiltDegrees: Float): Float = cos(tiltDegrees * (PI / 
 /**
  * The scale at which the floor plan fits the canvas. The 3D view turns freely, so it fits the plan's
  * diagonal and stays the same size at every heading; the flat view fits the plan as it is turned.
+ * Either way the plan keeps a margin of free space around it ([MAP_FRAME_FILL]).
  */
 internal fun fitScale(
     canvasW: Float, canvasH: Float,
@@ -80,7 +81,7 @@ internal fun fitScale(
         extentW = contentW * c + contentH * s
         extentH = (contentW * s + contentH * c) * squash
     }
-    return minOf(canvasW / extentW, canvasH / extentH)
+    return minOf(canvasW / extentW, canvasH / extentH) * MAP_FRAME_FILL
 }
 
 /**

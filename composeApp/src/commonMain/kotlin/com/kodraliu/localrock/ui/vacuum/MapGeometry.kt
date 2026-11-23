@@ -51,6 +51,15 @@ internal fun ParsedMap.mmToCanvas(xMm: Int, yMm: Int, canvasW: Float, canvasH: F
     return Offset(c.x * canvasW / width, c.y * canvasH / height)
 }
 
+/** True when the canvas point lands on room floor (not a wall and not unmapped space). */
+internal fun ParsedMap.isRoomFloorAt(p: Offset, canvasW: Float, canvasH: Float): Boolean {
+    if (canvasW <= 0f || canvasH <= 0f) return false
+    val x = (p.x * width / canvasW).toInt()
+    val row = (p.y * height / canvasH).toInt()
+    if (x !in 0 until width || row !in 0 until height) return false
+    return (grid[(height - 1 - row) * width + x].toInt() and 0xff) == 128
+}
+
 internal fun ParsedMap.canvasToMm(p: Offset, canvasW: Float, canvasH: Float): Pair<Int, Int> =
     cellToMm(Offset(p.x * width / canvasW, p.y * height / canvasH))
 
