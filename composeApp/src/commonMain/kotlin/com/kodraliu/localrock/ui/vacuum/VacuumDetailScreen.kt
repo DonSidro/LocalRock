@@ -296,13 +296,19 @@ fun VacuumDetailScreen(
 
     val activeRooms = activeRoomDisplayIds(reportedActiveRooms, parsedMap?.format,
         status.mapRunKind(), sessionRoomIds.toSet())
-    LaunchedEffect(status.state, status.mapRunKind()) {
+    LaunchedEffect(status.mapRunKind(), sessionRoomIds) {
         if (sessionRoomIds.isEmpty()) sessionRunObserved = false
-        else if (status.state in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE) ||
-            (sessionRunObserved && status.mapRunKind() != 3)) {
+        else if (status.mapRunKind() == 3) sessionRunObserved = true
+        else if (sessionRunObserved) {
             sessionRoomIds = emptyList()
             sessionRunObserved = false
-        } else if (status.mapRunKind() == 3) sessionRunObserved = true
+        }
+    }
+    LaunchedEffect(sessionRoomIds) {
+        if (sessionRoomIds.isNotEmpty() && !sessionRunObserved) {
+            kotlinx.coroutines.delay(30_000)
+            if (!sessionRunObserved) sessionRoomIds = emptyList()
+        }
     }
     val sessionRoomNames = activeRooms.map { id -> parsedMap?.rooms?.find { it.id == id }?.name ?: "Room $id" }
 
