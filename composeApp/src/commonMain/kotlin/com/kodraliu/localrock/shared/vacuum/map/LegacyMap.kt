@@ -26,8 +26,14 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     var segmentMaterials: Map<Int, Int> = emptyMap()
     var segmentMaterialDirections: Map<Int, Int> = emptyMap()
     val unmodeledRestrictionBlocks = mutableSetOf<Int>()
+    var pathFlags: List<Int> = emptyList()
+    var carpetMask: ByteArray? = null
     val obstacles = mutableListOf<MapObstacle>()
     val furnitureBlocks = mutableListOf<MapFurnitureBlock>()
+    var patrolPoints: List<PatrolPoint> = emptyList()
+    var patrolTaskId: Long? = null
+    var zoneBlock: Triple<Int, Int, Int>? = null
+    var eraserZones: List<MapZone> = emptyList()
 
     var off = headerLen
     while (off + 8 <= bytes.size) {
@@ -56,6 +62,14 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
                 if (pixelCount > 0 && pixelStart + pixelCount <= bytes.size) {
                     imagePixels = bytes.copyOfRange(pixelStart, pixelStart + pixelCount)
                 }
+            }
+            BLOCK_MOP_PATH -> {
+                val body = off + blockHeaderLen
+                pathFlags = List(blockDataLen) { bytes[body + it].toInt() and 0xff }
+            }
+            BLOCK_CARPET_MAP -> {
+                val body = off + blockHeaderLen
+                carpetMask = bytes.copyOfRange(body, body + blockDataLen)
             }
             BLOCK_CHARGER -> {
                 val body = off + blockHeaderLen
@@ -121,6 +135,12 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
                     }
                 }
             }
+            BLOCK_PATROL -> {
+                patrolTaskId = u32(bytes, off + 8).toLong() and 0xFFFFFFFFL
+                patrolPoints = parsePatrolPoints(bytes, off + blockHeaderLen, u32(bytes, off + 12), blockDataLen)
+            }
+            BLOCK_ZONE_LINES -> zoneBlock = Triple(off, blockHeaderLen, blockDataLen)
+            BLOCK_ERASER_ZONES -> eraserZones = parseEraserZones(bytes, off, blockHeaderLen, blockDataLen)
             in UNMODELED_RESTRICTION_BLOCKS ->
                 if (entryCount(bytes, off, blockHeaderLen, blockDataLen) > 0) unmodeledRestrictionBlocks += type
         }
@@ -138,6 +158,8 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
     val carpetsFromFlags = flaggedCarpets?.takeIf { it.size == carpetAreas.size }
     if (carpetsFromFlags != null) carpetAreas = carpetsFromFlags
 
+    val zoneLines = zoneBlock?.let { (o, h, d) -> parseZoneLines(bytes, o, h, d, imageLeft, imageTop) } ?: emptyList()
+
     val pixels = imagePixels ?: throw MapParseException("Legacy map has no IMAGE block")
     val grid = ByteArray(pixels.size)
     for (i in pixels.indices) {
@@ -149,26 +171,45 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         }
     }
 
-    val roomSumX = mutableMapOf<Int, Long>()
-    val roomSumY = mutableMapOf<Int, Long>()
-    val roomCount = mutableMapOf<Int, Int>()
-    for (y in 0 until imageHeight) {
-        for (x in 0 until imageWidth) {
-            val v = pixels[y * imageWidth + x].toInt() and 0xff
-            if ((v and 0x07) == 7) {
-                val roomId = (v ushr 3) and 0x1f
-                if (roomId > 0) {
-                    roomSumX[roomId] = (roomSumX[roomId] ?: 0L) + x
-                    roomSumY[roomId] = (roomSumY[roomId] ?: 0L) + y
-                    roomCount[roomId] = (roomCount[roomId] ?: 0) + 1
+    val roomAt = IntArray(imageWidth * imageHeight) { i ->
+        val v = pixels[i].toInt() and 0xff
+        if ((v and 0x07) == 7) (v ushr 3) and 0x1f else 0
+    }
+    val labelCells = roomLabelCells(roomAt, imageWidth, imageHeight)
+    val rooms = labelCells.keys.sorted().map { roomId ->
+        val (lx, ly) = labelCells.getValue(roomId)
+        // The middle of the label's pixel, so a tap on the label's centre finds this room.
+        val cx = ((lx + 0.5f) / imageWidth).coerceIn(0f, 1f)
+        val cy = ((imageHeight - 1 - ly + 0.5f) / imageHeight).coerceIn(0f, 1f)
+        // How far the room reaches sideways around its label, over a few rows so the gaps inside a room
+        // (furniture, unscanned patches) do not make it look narrower than it is.
+        var left = lx
+        var right = lx
+        for (row in (ly - LABEL_SPAN_ROWS)..(ly + LABEL_SPAN_ROWS)) {
+            if (row !in 0 until imageHeight) continue
+            for (x in 0 until imageWidth) {
+                if (roomAt[row * imageWidth + x] == roomId) {
+                    if (x < left) left = x
+                    if (x > right) right = x
                 }
             }
         }
-    }
-    val rooms = roomCount.entries.sortedBy { it.key }.map { (roomId, count) ->
-        val cx = (roomSumX[roomId]!! / count.toFloat() / imageWidth).coerceIn(0f, 1f)
-        val cy = ((imageHeight - 1 - roomSumY[roomId]!! / count.toFloat()) / imageHeight).coerceIn(0f, 1f)
-        ParsedMapRoom(id = roomId, name = "Room $roomId", labelNormX = cx, labelNormY = cy)
+        // The same reach up and down around the label, for a map turned a quarter turn.
+        var top = ly
+        var bottom = ly
+        for (col in (lx - LABEL_SPAN_ROWS)..(lx + LABEL_SPAN_ROWS)) {
+            if (col !in 0 until imageWidth) continue
+            for (y in 0 until imageHeight) {
+                if (roomAt[y * imageWidth + col] == roomId) {
+                    if (y < top) top = y
+                    if (y > bottom) bottom = y
+                }
+            }
+        }
+        ParsedMapRoom(
+            id = roomId, name = "Room $roomId", labelNormX = cx, labelNormY = cy,
+            labelSpanCells = right - left + 1, labelSpanCellsY = bottom - top + 1,
+        )
     }
 
     return ParsedMap(
@@ -195,6 +236,12 @@ fun parseLegacyMap(bytes: ByteArray): ParsedMap {
         obstacles = obstacles,
         furnitureBlocks = furnitureBlocks,
         originalGrid = pixels,
+        patrolPoints = patrolPoints,
+        patrolTaskId = patrolTaskId,
+        pathFlags = pathFlags.takeIf { it.size == path.size } ?: emptyList(),
+        carpetMask = carpetMask?.takeIf { it.size == grid.size },
+        zoneLines = zoneLines,
+        eraserZones = eraserZones,
     )
 }
 
@@ -226,6 +273,22 @@ private fun parseQuadZones(bytes: ByteArray, off: Int, headerLen: Int, dataLen: 
     }
 }
 
+/** Block 47: [entryCount] records of a u32 id and four corners of two `u16` values each, in robot millimetres. */
+private fun parseEraserZones(bytes: ByteArray, off: Int, headerLen: Int, dataLen: Int): List<MapZone> {
+    val count = minOf(entryCount(bytes, off, headerLen, dataLen), dataLen / 20)
+    val body = off + headerLen
+    return List(count) { i ->
+        val p = body + i * 20 + 4
+        MapZone(
+            x0 = u16(bytes, p), y0 = u16(bytes, p + 2),
+            x1 = u16(bytes, p + 4), y1 = u16(bytes, p + 6),
+            x2 = u16(bytes, p + 8), y2 = u16(bytes, p + 10),
+            x3 = u16(bytes, p + 12), y3 = u16(bytes, p + 14),
+            kind = ZoneKind.ERASER,
+        )
+    }
+}
+
 /**
  * Parse the carpet block with flags (39): [entryCount] quadrilaterals like block 22, followed by
  * one `u32` flags value per carpet in the same order.
@@ -251,12 +314,82 @@ private fun parseWalls(bytes: ByteArray, off: Int, headerLen: Int, dataLen: Int)
     }
 }
 
+/**
+ * A PATROL (37) block of a Cruise record: the header carries the task id and the point count, each
+ * record is u16 x, u16 y, u8 result, u8 photo count, then 32-byte NUL-padded photo ids (8 slots) and a
+ * 16-byte tail. Checked against a real Curv 2 Flow record map (3 points of 278 bytes).
+ */
+private fun parsePatrolPoints(bytes: ByteArray, body: Int, count: Int, dataLen: Int): List<PatrolPoint> {
+    if (count <= 0 || dataLen / count < PATROL_FIXED_BYTES) return emptyList()
+    val recordLen = dataLen / count
+    return List(count) { i ->
+        val p = body + i * recordLen
+        val slots = minOf(bytes[p + 5].toInt() and 0xff, (recordLen - PATROL_FIXED_BYTES) / PATROL_ID_BYTES)
+        PatrolPoint(
+            x = u16(bytes, p), y = u16(bytes, p + 2), result = bytes[p + 4].toInt() and 0xff,
+            photoIds = List(slots) { j ->
+                val start = p + PATROL_FIXED_BYTES + j * PATROL_ID_BYTES
+                bytes.decodeToString(start, start + PATROL_ID_BYTES).trimEnd(Char(0))
+            },
+        )
+    }
+}
+
+private const val BLOCK_PATROL = 37
+private const val PATROL_FIXED_BYTES = 6
+private const val PATROL_ID_BYTES = 32
+
+/**
+ * Block 55: u32 zone count at `off+8`, then per zone u16 segment, u16 point count, u16 point size and points of
+ * u16 x, u16 y, i16 type (mm); a zone that overruns the payload ends the block.
+ */
+private fun parseZoneLines(bytes: ByteArray, off: Int, headerLen: Int, dataLen: Int, left: Int, top: Int): List<FloorPlanZone> {
+    if (headerLen < 12) return emptyList()
+    val declared = u32(bytes, off + 8)
+    val zones = ArrayList<FloorPlanZone>()
+    var p = off + headerLen
+    val end = p + dataLen
+    while (zones.size < declared && p + ZONE_HEADER_BYTES <= end) {
+        val segment = u16(bytes, p)
+        val count = u16(bytes, p + 2)
+        val size = u16(bytes, p + 4)
+        p += ZONE_HEADER_BYTES
+        if (size < ZONE_POINT_MIN_BYTES || p + count.toLong() * size > end) break
+        if (count >= 3) {
+            zones += FloorPlanZone(
+                segment,
+                List(count) { i ->
+                    val q = p + i * size
+                    FloorPlanPoint(
+                        x = u16(bytes, q) / MM_PER_CELL - left,
+                        y = u16(bytes, q + 2) / MM_PER_CELL - top,
+                        type = u16(bytes, q + 4).toShort().toInt(),
+                    )
+                },
+            )
+        }
+        p += count * size
+    }
+    return zones
+}
+
+private const val BLOCK_ZONE_LINES = 55
+private const val BLOCK_ERASER_ZONES = 47
+private const val ZONE_HEADER_BYTES = 6
+private const val ZONE_POINT_MIN_BYTES = 6
+private const val MM_PER_CELL = 50
+
 private const val MAGIC_0 = 0x72.toByte()
 private const val MAGIC_1 = 0x72.toByte()
+
+/** Rows either side of a room's label that its width is read over. */
+private const val LABEL_SPAN_ROWS = 8
 
 private const val BLOCK_CHARGER = 1
 private const val BLOCK_IMAGE = 2
 private const val BLOCK_PATH = 3
+private const val BLOCK_CARPET_MAP = 17    // one byte per image cell, 1 on carpet
+private const val BLOCK_MOP_PATH = 18      // one flag byte per path point
 private const val BLOCK_ROBOT_POSITION = 8
 private const val BLOCK_FORBIDDEN_ZONES = 9        // persistent no-go zones
 private const val BLOCK_VIRTUAL_WALLS = 10
@@ -302,3 +435,68 @@ private fun u32(b: ByteArray, off: Int): Int =
         ((b[off + 1].toInt() and 0xff) shl 8) or
         ((b[off + 2].toInt() and 0xff) shl 16) or
         ((b[off + 3].toInt() and 0xff) shl 24)
+
+/**
+ * Where each room's name goes, as an (x, y) pixel of [roomAt] (a room id per pixel, 0 for none,
+ * row 0 at the bottom like the image): the floor pixel nearest the room's middle among those at
+ * least half as far from any wall, gap, other room or the image edge as the room's most open
+ * pixel. The middle alone can fall outside an L- or U-shaped room, on a gap or in the room next
+ * door; the most open pixel alone drifts away from furniture gaps toward one side of the room.
+ */
+internal fun roomLabelCells(roomAt: IntArray, width: Int, height: Int): Map<Int, Pair<Int, Int>> {
+    // City-block distance from each floor pixel to the nearest pixel that isn't the same room's
+    // floor (the image edge counts as one), in a forward and a backward pass.
+    val far = IntArray(roomAt.size)
+    fun sameRoom(i: Int, x: Int, y: Int) =
+        x in 0 until width && y in 0 until height && roomAt[y * width + x] == roomAt[i]
+    for (y in 0 until height) {
+        for (x in 0 until width) {
+            val i = y * width + x
+            if (roomAt[i] == 0) continue
+            val left = if (sameRoom(i, x - 1, y)) far[i - 1] else 0
+            val below = if (sameRoom(i, x, y - 1)) far[i - width] else 0
+            far[i] = minOf(left, below) + 1
+        }
+    }
+    for (y in height - 1 downTo 0) {
+        for (x in width - 1 downTo 0) {
+            val i = y * width + x
+            if (roomAt[i] == 0) continue
+            val right = if (sameRoom(i, x + 1, y)) far[i + 1] else 0
+            val above = if (sameRoom(i, x, y + 1)) far[i + width] else 0
+            far[i] = minOf(far[i], minOf(right, above) + 1)
+        }
+    }
+
+    val sumX = HashMap<Int, Long>()
+    val sumY = HashMap<Int, Long>()
+    val count = HashMap<Int, Int>()
+    for (i in roomAt.indices) {
+        val room = roomAt[i]
+        if (room == 0) continue
+        sumX[room] = (sumX[room] ?: 0L) + i % width
+        sumY[room] = (sumY[room] ?: 0L) + i / width
+        count[room] = (count[room] ?: 0) + 1
+    }
+
+    val mostOpen = HashMap<Int, Int>()
+    for (i in roomAt.indices) {
+        val room = roomAt[i]
+        if (room != 0 && far[i] > (mostOpen[room] ?: 0)) mostOpen[room] = far[i]
+    }
+    val best = HashMap<Int, Int>()
+    val bestDistance = HashMap<Int, Float>()
+    for (i in roomAt.indices) {
+        val room = roomAt[i]
+        if (room == 0 || far[i] < (mostOpen.getValue(room) + 1) / 2) continue
+        val n = count.getValue(room).toFloat()
+        val dx = i % width - sumX.getValue(room) / n
+        val dy = i / width - sumY.getValue(room) / n
+        val distance = dx * dx + dy * dy
+        if (distance < (bestDistance[room] ?: Float.MAX_VALUE)) {
+            best[room] = i
+            bestDistance[room] = distance
+        }
+    }
+    return best.mapValues { (_, i) -> (i % width) to (i / width) }
+}

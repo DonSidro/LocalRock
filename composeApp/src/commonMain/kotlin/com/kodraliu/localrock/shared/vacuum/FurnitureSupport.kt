@@ -32,3 +32,9 @@ internal fun furnitureSupportFromInitStatus(result: JsonElement?): FurnitureSupp
     val flags = text.toULongOrNull() ?: return FurnitureSupport.UNKNOWN
     return if (flags and (1uL shl 36) != 0uL) FurnitureSupport.SUPPORTED else FurnitureSupport.UNSUPPORTED
 }
+
+internal fun furnitureSupportFromFlags(flags: Long?): FurnitureSupport = when {
+    flags == null -> FurnitureSupport.UNKNOWN
+    flags and (1L shl 36) != 0L -> FurnitureSupport.SUPPORTED
+    else -> FurnitureSupport.UNSUPPORTED
+}
