@@ -53,6 +53,11 @@ fun newFeatureInfoFromInitStatus(result: JsonElement?): Long? {
 
 fun isSmartPlanSupported(newFeatureSet: String?): Boolean = newFeatureBit(newFeatureSet, SMART_CLEAN_MODE_SET_BIT)
 
+/** Bit of the fast mop route: python-roborock's `is_clean_route_fast_mode_supported` reads mask 256 of the last 8 hex characters. */
+private const val CLEAN_ROUTE_FAST_MODE_BIT = 8
+
+fun isFastRouteSupported(newFeatureSet: String?): Boolean = newFeatureBit(newFeatureSet, CLEAN_ROUTE_FAST_MODE_BIT)
+
 /** Water slide robots use their own water codes (221-250) and may not accept 201-203. */
 fun isWaterSlideSupported(newFeatureSet: String?): Boolean = newFeatureBit(newFeatureSet, WATER_SLIDE_MODE_BIT)
 

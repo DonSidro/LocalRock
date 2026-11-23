@@ -1,7 +1,21 @@
 package com.kodraliu.localrock.shared.vacuum
 
-// What one robot supports, as the settings screens ask it; screens test these flags, never bit numbers.
+/** The device page's bottom tabs, in official order. */
+enum class MainTab { FULL, ROOM, ZONE, ROUTINE }
+
+// What one robot supports, as the settings and device screens ask it; screens test these flags, never bit numbers.
 data class Capabilities(
+    // Device page.
+    val mainTabs: List<MainTab>,
+    val hasRoutineTab: Boolean,
+    val smartPlan: Boolean,
+    val petSearch: Boolean,
+    val waterSlide: Boolean,
+    /** Custom water slider offset (0 or 25) on robots with RNF bit 31; null without it. */
+    val customWaterOffset: Int? = null,
+    val fastRoute: Boolean,
+    val routes: RouteGates,
+    // Settings.
     val hasCarpetSettings: Boolean,
     val hasFloorSettings: Boolean,
     val hasFloorPattern: Boolean,
@@ -40,7 +54,16 @@ fun buildCapabilities(
     val betaFeatures = supportedBetaFeatures(nfs)
     val unlisted = unlistedAdvertisedFeatures(nfs)
     val settings = buildSettingsCapabilities(featureSet, nfs)
+    val hasRoutineTab = devicePageFlags(nfs).routineTabKnown
     return Capabilities(
+        mainTabs = listOf(MainTab.FULL, MainTab.ROOM, MainTab.ZONE) + if (hasRoutineTab) listOf(MainTab.ROUTINE) else emptyList(),
+        hasRoutineTab = hasRoutineTab,
+        smartPlan = isSmartPlanSupported(nfs),
+        petSearch = isPetSearchSupported(nfs),
+        waterSlide = isWaterSlideSupported(nfs),
+        customWaterOffset = CustomWater.offsetFor(model).takeIf { CustomWater.isSupported(featureSet) },
+        fastRoute = isFastRouteSupported(nfs),
+        routes = routeGates(model, featureSet, nfs),
         hasCarpetSettings = settings.hasCarpetSettings,
         hasFloorSettings = settings.hasFloorSettings,
         hasFloorPattern = settings.hasFloorPattern,

@@ -24,6 +24,30 @@ class CapabilitiesTest {
     }
 
     @Test
+    fun only_the_curv_searches_for_pets() {
+        assertTrue(curv.petSearch)
+        assertFalse(pro.petSearch)
+    }
+
+    @Test
+    fun cleaning_flags_follow_the_feature_bits() {
+        assertTrue(curv.smartPlan)
+        assertTrue(curv.waterSlide)
+        assertTrue(curv.fastRoute)
+        assertTrue(pro.smartPlan)
+        assertFalse(pro.waterSlide)
+        assertTrue(pro.fastRoute)
+    }
+
+    @Test
+    fun both_robots_show_the_routine_tab() {
+        for (c in listOf(curv, pro)) {
+            assertTrue(c.hasRoutineTab) // both set dynamic-zone bits 25 and 26
+            assertEquals(listOf(MainTab.FULL, MainTab.ROOM, MainTab.ZONE, MainTab.ROUTINE), c.mainTabs)
+        }
+    }
+
+    @Test
     fun only_the_curv_has_the_roller_mop() {
         assertTrue(curv.advertised.rollerMop)
         assertFalse(pro.advertised.rollerMop)
@@ -81,6 +105,8 @@ class CapabilitiesTest {
         assertTrue(stale.matter)
         val none = buildCapabilities(null, null, null, null)
         assertFalse(none.matter)
+        assertFalse(none.smartPlan)
+        assertEquals(listOf(MainTab.FULL, MainTab.ROOM, MainTab.ZONE), none.mainTabs)
         assertFalse(none.showsBetaFeatures)
     }
 }
