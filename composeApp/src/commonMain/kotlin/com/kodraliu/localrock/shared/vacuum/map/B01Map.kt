@@ -92,6 +92,9 @@ data class ParsedMap(
     val chargerMm: ParsedMapPoint? = null,
     val robotMm: ParsedMapPoint? = null,
     val pathMm: List<ParsedMapPoint> = emptyList(),
+    /** Active segment list reported in legacy block 11; null when unavailable/invalid. */
+    val reportedCleanSegments: Set<Int>? = null,
+    val legacyRevision: LegacyMapRevision? = null,
     val noGoZones: List<MapZone> = emptyList(),
     val noMopZones: List<MapZone> = emptyList(),
     val virtualWalls: List<VirtualWall> = emptyList(),
@@ -150,9 +153,12 @@ data class ParsedMap(
 
     override fun equals(other: Any?): Boolean =
         other is ParsedMap && other.width == width && other.height == height &&
+            other.resolution == resolution && other.pixelOffsetLeft == pixelOffsetLeft && other.pixelOffsetTop == pixelOffsetTop &&
+            (if (originalGrid == null) other.originalGrid == null else other.originalGrid?.contentEquals(originalGrid) == true) &&
             other.grid.contentEquals(grid) && other.rooms == rooms &&
             other.chargerMm == chargerMm && other.robotMm == robotMm &&
             other.pathMm == pathMm &&
+            other.reportedCleanSegments == reportedCleanSegments && other.legacyRevision == legacyRevision &&
             other.noGoZones == noGoZones && other.noMopZones == noMopZones &&
             other.virtualWalls == virtualWalls &&
             other.segmentMaterials == segmentMaterials &&
@@ -170,11 +176,17 @@ data class ParsedMap(
     override fun hashCode(): Int {
         var r = width
         r = 31 * r + height
+        r = 31 * r + resolution.hashCode()
+        r = 31 * r + pixelOffsetLeft
+        r = 31 * r + pixelOffsetTop
+        r = 31 * r + (originalGrid?.contentHashCode() ?: 0)
         r = 31 * r + grid.contentHashCode()
         r = 31 * r + rooms.hashCode()
         r = 31 * r + (chargerMm?.hashCode() ?: 0)
         r = 31 * r + (robotMm?.hashCode() ?: 0)
         r = 31 * r + pathMm.hashCode()
+        r = 31 * r + (reportedCleanSegments?.hashCode() ?: 0)
+        r = 31 * r + (legacyRevision?.hashCode() ?: 0)
         r = 31 * r + noGoZones.hashCode()
         r = 31 * r + noMopZones.hashCode()
         r = 31 * r + virtualWalls.hashCode()

@@ -280,7 +280,7 @@ fun ParsedMap.contentBoundsNorm(floorPlan: Boolean = true): MapContentBounds {
         val drawY = height - 1 - y
         for (x in 0 until width) {
             val gv = grid[rowOff + x].toInt() and 0xff
-            if (gv != 127 && gv != 128) continue
+            if (gv != 127 && gv != 128 && roomIdAtCell(rowOff + x) == null) continue
             if (erasedCells?.get(rowOff + x) == true) continue
             if (x < minX) minX = x
             if (x > maxX) maxX = x
@@ -500,14 +500,14 @@ private inline fun upright(canvas: Canvas, map: ParsedMap, point: ParsedMapPoint
 /**
  * The route and the two markers, drawn straight to the screen so they stay sharp at any zoom; [scale] is layer pixels per cell.
  */
-internal fun DrawScope.drawRouteAndMarkers(map: ParsedMap, view: MapView, scale: Int, dark: Boolean, faintRoute: Boolean = false) {
+internal fun DrawScope.drawRouteAndMarkers(map: ParsedMap, view: MapView, scale: Int, dark: Boolean, faintRoute: Boolean = false, showPath: Boolean = true) {
     val palette = if (dark) DarkPalette else LightPalette
     withTransform({
         // The same matrix as the floor, so the route lies on the rooms it ran over at any heading and tilt.
         transform(view.layerMatrix(0f))
         scale(scale.toFloat(), scale.toFloat(), Offset.Zero)
     }) {
-        if (map.pathMm.size >= 2) drawPath(drawContext.canvas, map, palette, faint = faintRoute)
+        if (showPath && map.pathMm.size >= 2) drawPath(drawContext.canvas, map, palette, faint = faintRoute)
         drawMarkers(drawContext.canvas, map, palette, view.yawDegrees, view.squash)
     }
 }

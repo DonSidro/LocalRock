@@ -92,6 +92,7 @@ class VacuumRepository(
      * be parsed; empty when the robot has no rooms assigned yet.
      */
     private var rawSegmentTable: List<SegmentEntry>? = null
+    private var rawSegmentTableFloor: Int? = null
 
     private val _consumableStatus = MutableStateFlow<ConsumableStatus?>(null)
     val consumableStatus: StateFlow<ConsumableStatus?> = _consumableStatus
@@ -158,6 +159,15 @@ class VacuumRepository(
     val roomCleanModes: StateFlow<List<RoomCleanMode>> = _roomCleanModes
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val runRooms = MutableStateFlow(ActiveRunRooms())
+    val activeRunRoomIds: StateFlow<Set<Int>?> = runRooms.map { it.roomIds }
+        .stateIn(scope, SharingStarted.Eagerly, null)
+
+    private fun updateStatus(fresh: VacuumStatus) {
+        _status.update { it.merge(fresh) }
+        // Map emphasis needs fresh scope fields, not values retained for the status controls.
+        runRooms.update { it.withStatus(fresh) }
+    }
 
     /** The loaded map's mapFlag, from the robot's map_status when it reports one. */
     val currentFloorFlag: StateFlow<Int> = combine(_status, _currentFloorFlag) { status, loadedHere ->
@@ -190,6 +200,7 @@ class VacuumRepository(
                 println("[VacLocal] dps push: ${dps.keys}")
                 unansweredPolls.heardFromRobot()
                 _status.update { it.applyDpsPush(dps) }
+                runRooms.update { it.withStatePush((dps[121] as? JsonPrimitive)?.intOrNull) }
             }
         }
         pollJob = scope.launch {
@@ -206,12 +217,14 @@ class VacuumRepository(
                         unansweredPolls.heardFromRobot()
                         if (fresh != null) {
                             println("[VacLocal] get_status ok: state=${fresh.state} battery=${fresh.battery}")
-                            _status.update { it.merge(fresh) }
+                            updateStatus(fresh)
                         } else {
+                            runRooms.update { it.invalidate() }
                             println("[VacLocal] get_status returned null (empty result)")
                         }
                     }
                     .onFailure { e ->
+                        runRooms.update { it.invalidate() }
                         consecutiveFailures++
                         unansweredPolls.pollFailed()
                         println("[VacLocal] get_status FAILED (#$consecutiveFailures): ${e::class.simpleName}: ${e.message}")
@@ -261,14 +274,12 @@ class VacuumRepository(
 
 
     suspend fun refreshStatus() {
-        runCatching { session.getStatus() }.getOrNull()
-            ?.let { fresh ->
-                unansweredPolls.heardFromRobot()
-                _status.update { it.merge(fresh) }
-            }
+        val fresh = runCatching { session.getStatus() }.getOrNull()
+        if (fresh != null) { unansweredPolls.heardFromRobot(); updateStatus(fresh) } else runRooms.update { it.invalidate() }
     }
 
     fun detach() {
+        runRooms.update { it.invalidate() }
         pollJob?.cancel(); pollJob = null
         dpsJob?.cancel(); dpsJob = null
         mapPollJob?.cancel(); mapPollJob = null
@@ -282,7 +293,7 @@ class VacuumRepository(
 
     suspend fun resumeCleaning(): V1Response {
         val fresh = session.getStatus() ?: throw IllegalStateException("The robot's current task is unavailable")
-        _status.update { it.merge(fresh) }
+        updateStatus(fresh)
         return when (fresh.inCleaning) {
             1 -> session.appStart().requireOk("app_start")
             2 -> session.sendCommand("resume_zoned_clean").requireOk("resume_zoned_clean")
@@ -293,18 +304,20 @@ class VacuumRepository(
 
 
     suspend fun rooms(): V1Response {
+        val requestedFloor = currentFloorFlag.value
         val resp = session.appRooms()
         val result = resp.result
         rawSegmentTable = parseSegmentTable(result)
+        rawSegmentTableFloor = requestedFloor.takeIf { it == currentFloorFlag.value }
         if (result is JsonArray) {
             // Names resolve from the first two columns, which every firmware returns.
             val mapping = parseRoomMapping(result)
             if (mapping.isNotEmpty()) {
                 segmentToRoomId = mapping
                 println("[VacLocal] room mapping seg->roomId=$mapping resolved=${mapping.mapValues { homeRoomNames[it.value] ?: "(no home name)" }}")
-                applyRoomNames()
             }
         }
+        applyRoomNames()
         return resp
     }
 
@@ -316,7 +329,7 @@ class VacuumRepository(
     }
 
     private fun applyRoomNames() {
-        fun ParsedMapRoom.resolved() = withRoomTable(segmentToRoomId, homeRoomNames, rawSegmentTable)
+        fun ParsedMapRoom.resolved() = withRoomTable(segmentToRoomId, homeRoomNames, rawSegmentTable.takeIf { rawSegmentTableFloor == currentFloorFlag.value } ?: emptyList())
         _parsedMap.update { pm -> pm?.copy(rooms = pm.rooms.map { it.resolved() }) }
         _rooms.update { list -> list.map { it.resolved() } }
     }
@@ -1278,6 +1291,7 @@ class VacuumRepository(
     suspend fun switchFloor(mapFlag: Int) {
         mapManageBlockedReason()?.let { throw MapEditException(it) }
         session.loadMultiMap(mapFlag)
+        runRooms.update { it.invalidate() }
         _currentFloorFlag.value = mapFlag
         runCatching { refreshStatus() }
         rawSegmentTable = null
@@ -1355,6 +1369,7 @@ class VacuumRepository(
         }
         _mapStatus.value = "requesting…"
         val sd = createSecurityData(rriotKeyProvider())
+        val requestedGeneration = runRooms.value.generation
         try {
             val resp = session.fetchMap(sd, timeoutMs = 60_000L)
             _mapBytes.value = resp.data
@@ -1364,6 +1379,7 @@ class VacuumRepository(
             val parsed = b01.getOrNull()
                 ?: runCatching { parseLegacyMap(resp.data) }.getOrNull()
             _parsedMap.value = parsed
+            runRooms.update { it.withMap(parsed, requestedGeneration) }
             if (parsed != null && parsed.rooms.isNotEmpty()) {
                 _rooms.value = parsed.rooms
             }
@@ -1382,6 +1398,7 @@ class VacuumRepository(
             }
             return resp
         } catch (e: Throwable) {
+            runRooms.update { it.invalidate() }
             _mapStatus.value = "failed: ${e::class.simpleName}: ${e.message ?: "(no message)"}"
             throw e
         }
