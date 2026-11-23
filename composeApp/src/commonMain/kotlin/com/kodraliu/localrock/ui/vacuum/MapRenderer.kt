@@ -280,7 +280,7 @@ fun ParsedMap.contentBoundsNorm(floorPlan: Boolean = true): MapContentBounds {
         val drawY = height - 1 - y
         for (x in 0 until width) {
             val gv = grid[rowOff + x].toInt() and 0xff
-            if (gv != 127 && gv != 128) continue
+            if (gv != 127 && gv != 128 && roomIdAtCell(rowOff + x) == null) continue
             if (erasedCells?.get(rowOff + x) == true) continue
             if (x < minX) minX = x
             if (x > maxX) maxX = x
