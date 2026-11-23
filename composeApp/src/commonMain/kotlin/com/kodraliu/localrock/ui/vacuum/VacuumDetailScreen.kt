@@ -273,6 +273,7 @@ fun VacuumDetailScreen(
 
     val reportedActiveRooms by viewModel.repository.activeRunRoomIds.collectAsState()
     var sessionRoomIds by remember(viewModel, currentFloorFlag) { mutableStateOf(emptyList<Int>()) }
+    var sessionRunObserved by remember(viewModel, currentFloorFlag) { mutableStateOf(false) }
     var panel by remember { mutableStateOf<DetailPanel?>(null) }
     var openObstacle by remember { mutableStateOf<MapObstacle?>(null) }
     val twoPane = LocalWindowLayout.current.twoPane
@@ -295,8 +296,13 @@ fun VacuumDetailScreen(
 
     val activeRooms = activeRoomDisplayIds(reportedActiveRooms, parsedMap?.format,
         status.mapRunKind(), sessionRoomIds.toSet())
-    LaunchedEffect(status.state) {
-        if (status.state in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE)) sessionRoomIds = emptyList()
+    LaunchedEffect(status.state, status.mapRunKind()) {
+        if (sessionRoomIds.isEmpty()) sessionRunObserved = false
+        else if (status.state in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE) ||
+            (sessionRunObserved && status.mapRunKind() != 3)) {
+            sessionRoomIds = emptyList()
+            sessionRunObserved = false
+        } else if (status.mapRunKind() == 3) sessionRunObserved = true
     }
     val sessionRoomNames = activeRooms.map { id -> parsedMap?.rooms?.find { it.id == id }?.name ?: "Room $id" }
 
@@ -410,10 +416,13 @@ fun VacuumDetailScreen(
                 },
                 onCleanRooms = {
                     val toClean = selectedRoomIds
-                    sessionRoomIds = toClean
                     selectedRoomIds = emptyList()
                     panel = null
-                    viewModel.run { it.cleanRooms(toClean, if (status.cleanSequenceType == 1) 1 else cleaningCount) }
+                    viewModel.run {
+                    it.cleanRooms(toClean, if (status.cleanSequenceType == 1) 1 else cleaningCount)
+                    sessionRunObserved = false
+                    sessionRoomIds = toClean
+                }
                 },
                 onLoadMap = {
                     panel = null
@@ -598,9 +607,12 @@ fun VacuumDetailScreen(
             },
             onCleanRooms = {
                 val toClean = selectedRoomIds
-                sessionRoomIds = toClean
                 selectedRoomIds = emptyList()
-                viewModel.run { it.cleanRooms(toClean, if (status.cleanSequenceType == 1) 1 else cleaningCount) }
+                viewModel.run {
+                    it.cleanRooms(toClean, if (status.cleanSequenceType == 1) 1 else cleaningCount)
+                    sessionRunObserved = false
+                    sessionRoomIds = toClean
+                }
             },
             onClearSelection = { selectedRoomIds = emptyList() },
             onPause = { viewModel.run { it.pause() } },
@@ -799,6 +811,7 @@ fun VacuumDetailScreen(
 }
 
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MapHeroSection(
     deviceId: String,
@@ -1061,18 +1074,6 @@ private fun VacuumMapImage(
     val floorShapes = remember(map.floorKey()) { map.floorPlanShapes() }
     val wallHeight = WALL_HEIGHT_CELLS * scale
     val labelRooms = remember(map.rooms, map.eraserZones) { map.rooms.filter { it.labelNormX != null && it.labelNormY != null && it.id !in map.erasedRoomIds } }
-    val textMeasurer = rememberTextMeasurer()
-    // Labels follow the scheme rather than being a fixed black scrim: over a light map a dark
-    // scrim reads as a scattering of heavy blobs and dominates the surface it sits on.
-    val labelStyle = TextStyle(
-        fontSize = 11.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = Color(0xFF0E1A26),
-    )
-    val selectedBgColor = MaterialTheme.colorScheme.primary
-    // In dark mode `primary` is a bright cyan, so white-on-primary would be unreadable.
-    val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary)
-    val roomIcons = rememberRoomIconPainters()
     val roomEdges = remember(map.floorKey(), selectedRoomIds, activeRoomIds) {
         val targets = selectedRoomIds.toSet() + activeRoomIds
         buildList {

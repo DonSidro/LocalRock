@@ -13,4 +13,6 @@ The Layers menu controls room icons, cleaning path, restrictions and detected ob
 Map appearance does not modify the robot's room boundaries, restrictions or saved map.
 
 During an active cleaning task, room emphasis follows the targets reported by the
-robot. Room selection becomes available again when the task finishes.
+robot. On B01 robots that do not report targets, LocalRock can show the rooms
+started from this screen for the current room-cleaning task. Room selection remains
+available and does not alter a running task.
