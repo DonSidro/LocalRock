@@ -1106,7 +1106,8 @@ private val TOOL_SPECS = listOf(
 private fun ToolDock(toolEnabled: (Tool) -> Boolean, onAdd: (Tool) -> Unit, vertices: Int,
     furnitureVisible: Boolean, furnitureEnabled: Boolean, furnitureSupportMessage: String?,
     onRetryFurniture: (() -> Unit)?,
-    onFurniture: () -> Unit) {
+    onFurniture: () -> Unit, note: String? = null,
+    unsupportedReason: (Tool) -> String? = { null }, onUnsupported: (String) -> Unit = {}) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Add to map", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -1128,7 +1129,7 @@ private fun ToolDock(toolEnabled: (Tool) -> Boolean, onAdd: (Tool) -> Unit, vert
                 )
             }
         }
-        if (furnitureVisible) Text("Furniture editing requires one saved map at map flag 0.",
+        if (furnitureVisible) Text("Furniture editing requires a single saved map and is limited to the first map.",
             style = MaterialTheme.typography.bodySmall)
         if (furnitureVisible) Row(Modifier.fillMaxWidth()) {
             ToolTile(label = "Furniture", icon = Icons.Default.Chair, color = MaterialTheme.colorScheme.primary,
@@ -1150,7 +1151,7 @@ private fun ToolDock(toolEnabled: (Tool) -> Boolean, onAdd: (Tool) -> Unit, vert
 
 @Composable
 private fun ToolTile(spec: ToolSpec, enabled: Boolean, onClick: () -> Unit, explainOnly: Boolean = false) {
-    ToolTile(spec.label, spec.icon, spec.color, enabled, "Add ${spec.label.lowercase()}", onClick, explainOnly)
+    ToolTile(spec.label, spec.icon, spec.color, enabled, if (explainOnly) "Why ${spec.label.lowercase()} is unavailable" else "Add ${spec.label.lowercase()}", onClick, explainOnly)
 }
 
 @Composable
