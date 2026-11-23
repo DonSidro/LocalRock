@@ -232,6 +232,13 @@ class AppSettings(private val settings: Settings) {
         if (!value) settings.remove("map_3d_$duid") else settings.putBoolean("map_3d_$duid", true)
     }
 
+    /** The Map Details switches for one robot as a bit set; null until the user changes one. */
+    fun mapDetails(duid: String): Int? = if (settings.hasKey("map_details_$duid")) settings.getInt("map_details_$duid", 0) else null
+
+    fun setMapDetails(duid: String, flags: Int) {
+        settings.putInt("map_details_$duid", flags)
+    }
+
     internal fun readUserDataJson(): String? = settings.getStringOrNull(KEY_USER_DATA)
 
     internal fun writeUserDataJson(json: String?) {

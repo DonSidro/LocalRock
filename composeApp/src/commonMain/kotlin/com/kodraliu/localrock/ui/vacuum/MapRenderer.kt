@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.TextMeasurer
 import com.kodraliu.localrock.shared.vacuum.map.MapZone
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapPoint
@@ -100,12 +101,21 @@ private val DarkPalette = MapPalette(
  * the raw system setting, so the map never disagrees with the surface it sits on.
  */
 @Composable
-fun rememberMapBitmap(map: ParsedMap, drawRestrictions: Boolean = true, floorPlan: Boolean = true): ImageBitmap {
+fun rememberMapBitmap(
+    map: ParsedMap,
+    drawRestrictions: Boolean = true,
+    floorPlan: Boolean = true,
+    textures: Boolean = true,
+    showErased: Boolean = false,
+): ImageBitmap {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return remember(map, dark, drawRestrictions, floorPlan) {
-        renderMap(map, if (dark) DarkPalette else SurfaceLightPalette, drawRestrictions, floorPlan)
+    return remember(map, dark, drawRestrictions, floorPlan, textures, showErased) {
+        renderMap(map, if (dark) DarkPalette else SurfaceLightPalette, drawRestrictions, FloorLook(floorPlan, textures, showErased))
     }
 }
+
+/** How the floor is painted: [floorPlan] polygons or raw cells, [textures] for floor type and carpet, [showErased] for the Remove tool. */
+private data class FloorLook(val floorPlan: Boolean = true, val textures: Boolean = true, val showErased: Boolean = false)
 
 /**
  * How many times larger than the grid the detail screen draws its layers: as large as keeps the
@@ -120,15 +130,16 @@ internal fun supersampleFor(map: ParsedMap): Int = (2400 / maxOf(map.width, map.
  * under it.
  */
 @Composable
-fun rememberMapLayers(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap> {
+fun rememberMapLayers(map: ParsedMap, scale: Int, display: MapDisplay = MapDisplay.Default): Pair<ImageBitmap, ImageBitmap> {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val palette = if (dark) DarkPalette else LightPalette
     // A live update replaces the map object every few seconds. The floor and the zones only depend on the
     // grid, rooms and restrictions, so neither is redrawn for a robot that has merely moved; the route and
     // the markers are drawn as vectors on top.
+    val look = FloorLook(floorPlan = display.homeLayout, textures = display.floorType)
     val floorKey = remember(map) { map.floorKey() }
-    val floor = remember(floorKey, dark, scale) { renderLayer(map, palette, scale, overlay = false) }
-    val overlay = remember(map.restrictionsKey(), dark, scale) { renderLayer(map, palette, scale, overlay = true) }
+    val floor = remember(floorKey, dark, scale, look) { renderLayer(map, palette, scale, overlay = false, look) }
+    val overlay = remember(map.restrictionsKey(), dark, scale) { renderLayer(map, palette, scale, overlay = true, look) }
     return floor to overlay
 }
 
@@ -267,9 +278,12 @@ class MapContentBounds(val left: Float, val top: Float, val right: Float, val bo
     val width: Float get() = right - left
     val height: Float get() = bottom - top
     val isUsable: Boolean get() = width > 0.01f && height > 0.01f
+
+    /** The same box grown by [by] of the map on every side, kept inside the map. */
+    fun padded(by: Float) = MapContentBounds((left - by).coerceAtLeast(0f), (top - by).coerceAtLeast(0f), (right + by).coerceAtMost(1f), (bottom + by).coerceAtMost(1f))
 }
 
-fun ParsedMap.contentBoundsNorm(floorPlan: Boolean = true): MapContentBounds {
+fun ParsedMap.contentBoundsNorm(floorPlan: Boolean = true, includeErased: Boolean = false): MapContentBounds {
     var minX = width
     var maxX = -1
     var minY = height
@@ -281,14 +295,14 @@ fun ParsedMap.contentBoundsNorm(floorPlan: Boolean = true): MapContentBounds {
         for (x in 0 until width) {
             val gv = grid[rowOff + x].toInt() and 0xff
             if (gv != 127 && gv != 128) continue
-            if (erasedCells?.get(rowOff + x) == true) continue
+            if (!includeErased && erasedCells?.get(rowOff + x) == true) continue
             if (x < minX) minX = x
             if (x > maxX) maxX = x
             if (drawY < minY) minY = drawY
             if (drawY > maxY) maxY = drawY
         }
     }
-    val cells = if (maxX < 0 || maxY < 0) {
+    val cellBounds = if (maxX < 0 || maxY < 0) {
         null
     } else {
         MapContentBounds(
@@ -298,16 +312,35 @@ fun ParsedMap.contentBoundsNorm(floorPlan: Boolean = true): MapContentBounds {
             bottom = (maxY + 1).toFloat() / height,
         )
     }
+    val cells = if (includeErased && eraserZones.isNotEmpty()) withEraserZones(cellBounds) else cellBounds
     val zones = if (floorPlan) zoneLines.filter { it.segment !in erasedRoomIds } else emptyList()
     if (zones.isEmpty()) return cells ?: MapContentBounds(0f, 0f, 1f, 1f)
     return floorPlanBoundsNorm(cells, zones, width, height, FLOOR_PLAN_OUTER_WIDTH_CELLS)
 }
 
+/** The bounds grown to take in every eraser zone, since the cells under a removed area need not be floor. */
+private fun ParsedMap.withEraserZones(cells: MapContentBounds?): MapContentBounds {
+    var left = cells?.left ?: 1f
+    var top = cells?.top ?: 1f
+    var right = cells?.right ?: 0f
+    var bottom = cells?.bottom ?: 0f
+    for (z in eraserZones) {
+        for ((x, y) in listOf(z.x0 to z.y0, z.x1 to z.y1, z.x2 to z.y2, z.x3 to z.y3)) {
+            val c = mmToCell(x, y)
+            left = minOf(left, (c.x / width).coerceIn(0f, 1f))
+            right = maxOf(right, ((c.x + 1f) / width).coerceIn(0f, 1f))
+            top = minOf(top, (c.y / height).coerceIn(0f, 1f))
+            bottom = maxOf(bottom, ((c.y + 1f) / height).coerceIn(0f, 1f))
+        }
+    }
+    return MapContentBounds(left, top, right, bottom)
+}
+
 /** [drawRestrictions] is false for the editor, which draws the shapes it is editing itself. */
-private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean, floorPlan: Boolean): ImageBitmap {
+private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean, look: FloorLook): ImageBitmap {
     val bitmap = ImageBitmap(map.width, map.height)
     val canvas = Canvas(bitmap)
-    drawFloor(canvas, map, palette, floorPlan)
+    drawFloor(canvas, map, palette, look)
     drawOverlays(canvas, map, palette, drawRestrictions)
     return bitmap
 }
@@ -318,11 +351,11 @@ private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boo
  * room never hides the path across it. Drawn larger, a thin path or a marker's edge stays crisp
  * when zoomed in instead of being one blurred grid cell.
  */
-private fun renderLayer(map: ParsedMap, palette: MapPalette, scale: Int, overlay: Boolean): ImageBitmap {
+private fun renderLayer(map: ParsedMap, palette: MapPalette, scale: Int, overlay: Boolean, look: FloorLook): ImageBitmap {
     val bitmap = ImageBitmap(map.width * scale, map.height * scale)
     val canvas = Canvas(bitmap)
     canvas.scale(scale.toFloat(), scale.toFloat())
-    if (overlay) drawOverlays(canvas, map, palette, drawRestrictions = true, includeRoute = false) else drawFloor(canvas, map, palette, strokes = false)
+    if (overlay) drawOverlays(canvas, map, palette, drawRestrictions = true, includeRoute = false) else drawFloor(canvas, map, palette, look, strokes = false)
     return bitmap
 }
 
@@ -330,7 +363,7 @@ private fun renderLayer(map: ParsedMap, palette: MapPalette, scale: Int, overlay
 internal fun ParsedMap.floorPlanShapes(floorPlan: Boolean = true): List<FloorPlanShape> =
     if (originalGrid != null && floorPlan) buildFloorPlan(zoneLines.filter { it.segment !in erasedRoomIds }, FloorPlanFrame(height)) else emptyList()
 
-private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, floorPlan: Boolean = true, strokes: Boolean = true) {
+private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, look: FloorLook, strokes: Boolean = true) {
     // The cells are masked by a rounded outline of the plan, so its edges are smooth rather than
     // stair steps. The mask is a path drawn over them, which anti-aliases where a clip would not.
     canvas.saveLayer(Rect(0f, 0f, map.width.toFloat(), map.height.toFloat()), Paint())
@@ -342,10 +375,11 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, floor
     val h = map.height
     val grid = map.grid
     val raw = map.originalGrid
-    val carpet = map.carpetMask
+    val carpet = if (look.textures) map.carpetMask else null
     // Rooms that have a floor-plan polygon are painted from it; the others, and every map without block 55, from the cells.
-    val erased = map.erasedCells
-    val shapes = map.floorPlanShapes(floorPlan)
+    val erased = if (look.showErased) null else map.erasedCells
+    val shapes = map.floorPlanShapes(look.floorPlan)
+    fun patternOf(room: Int) = if (!look.textures) FloorPattern.NONE else floorPattern(map.segmentMaterials[room], map.segmentMaterialDirections[room])
     val zoned = shapes.mapTo(HashSet()) { it.segment }
     for (shape in shapes) {
         val room = shape.segment
@@ -357,7 +391,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, floor
         }
         roomPaint.color = base
         canvas.drawPath(outline, roomPaint)
-        val pattern = patterns.getOrPut(room) { floorPattern(map.segmentMaterials[room], map.segmentMaterialDirections[room]) }
+        val pattern = patterns.getOrPut(room) { patternOf(room) }
         if (pattern == FloorPattern.NONE && carpet == null) continue
         // The texture and carpet hatching are laid cell by cell, clipped to the polygon so no ragged edge shows.
         canvas.save()
@@ -394,9 +428,7 @@ private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, floor
                         val roomId = if (gv == 127) (flatWallRoom(grid, raw, w, h, x, y) ?: continue) else (raw[rowOff + x].toInt() ushr 3) and 0x1f
                         if (roomId in zoned) continue
                         val base = palette.rooms[slots[roomId] ?: 0]
-                        val pattern = patterns.getOrPut(roomId) {
-                            floorPattern(map.segmentMaterials[roomId], map.segmentMaterialDirections[roomId])
-                        }
+                        val pattern = patterns.getOrPut(roomId) { patternOf(roomId) }
                         val floor = if (pattern == FloorPattern.NONE) base else shaded(base, textureShade(pattern, x, y))
                         roomPaint.color = if (carpet != null && (carpet[rowOff + x].toInt() and 1) == 1) shaded(floor, carpetShade(x, y)) else floor
                         roomPaint
@@ -500,16 +532,26 @@ private inline fun upright(canvas: Canvas, map: ParsedMap, point: ParsedMapPoint
 /**
  * The route and the two markers, drawn straight to the screen so they stay sharp at any zoom; [scale] is layer pixels per cell.
  */
-internal fun DrawScope.drawRouteAndMarkers(map: ParsedMap, view: MapView, scale: Int, dark: Boolean, faintRoute: Boolean = false) {
+internal fun DrawScope.drawRouteAndMarkers(
+    map: ParsedMap,
+    view: MapView,
+    scale: Int,
+    dark: Boolean,
+    faintRoute: Boolean = false,
+    route: Boolean = true,
+    pinLabels: TextMeasurer? = null,
+) {
     val palette = if (dark) DarkPalette else LightPalette
     withTransform({
         // The same matrix as the floor, so the route lies on the rooms it ran over at any heading and tilt.
         transform(view.layerMatrix(0f))
         scale(scale.toFloat(), scale.toFloat(), Offset.Zero)
     }) {
-        if (map.pathMm.size >= 2) drawPath(drawContext.canvas, map, palette, faint = faintRoute)
+        if (route && map.pathMm.size >= 2) drawPath(drawContext.canvas, map, palette, faint = faintRoute)
         drawMarkers(drawContext.canvas, map, palette, view.yawDegrees, view.squash)
     }
+    // Numbered cruise pins stay upright and a constant size, so they are drawn in screen space.
+    drawCruisePins(map, pinLabels) { cell -> view.toScreen(cell.x * scale, cell.y * scale) }
 }
 
 private fun drawZone(canvas: Canvas, map: ParsedMap, zone: MapZone, fill: Color, stroke: Color) {

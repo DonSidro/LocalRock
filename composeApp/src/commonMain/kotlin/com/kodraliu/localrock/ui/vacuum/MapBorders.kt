@@ -31,6 +31,9 @@ internal const val FLOOR_TEXTURE_STRENGTH = 0.25f
 /** Carpet hatching contrast as a share of the full pattern: softer than before but still recognisable. */
 internal const val CARPET_HATCH_STRENGTH = 0.45f
 
+/** Share of the map area the framed plan fills, leaving about 6.5 percent free on each side as the official app does. */
+internal const val MAP_FRAME_FILL = 0.87f
+
 /** Background behind the map in the detail hero. */
 internal val MAP_HERO_BACKGROUND = Color(0xFF000000)
 

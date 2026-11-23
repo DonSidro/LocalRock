@@ -105,8 +105,8 @@ class MapViewTest {
         val upright = fitScale(400f, 600f, 300f, 100f, yawDegrees = 0f, squash = 1f, freeTurning = false)
         val turned = fitScale(400f, 600f, 300f, 100f, yawDegrees = 90f, squash = 1f, freeTurning = false)
 
-        assertNear(400f / 300f, upright)
-        assertNear(2f, turned)
+        assertNear(400f / 300f * MAP_FRAME_FILL, upright)
+        assertNear(2f * MAP_FRAME_FILL, turned)
     }
 
     @Test

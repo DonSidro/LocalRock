@@ -143,6 +143,28 @@ class ErasedBoundsTest {
     }
 
     @Test
+    fun the_remove_tool_frames_the_cells_it_shows_including_erased_ones() {
+        assertEquals(0.5f, map(true).contentBoundsNorm(floorPlan = false).left, 1e-4f)
+        assertEquals(0f, map(true).contentBoundsNorm(floorPlan = false, includeErased = true).left)
+    }
+
+    @Test
+    fun an_erased_area_over_empty_cells_still_counts_for_the_remove_framing() {
+        val m = map(false).copy(grid = ByteArray(20) { i -> if (i % 10 < 5) 0 else 128.toByte() }, eraserZones = listOf(MapZone.rect(100, 50, 350, 250, ZoneKind.ERASER)))
+        assertEquals(0.5f, m.contentBoundsNorm(floorPlan = false).left, 1e-4f)
+        assertEquals(0f, m.contentBoundsNorm(floorPlan = false, includeErased = true).left, 1e-4f)
+    }
+
+    @Test
+    fun padding_grows_the_bounds_but_stays_inside_the_map() {
+        val p = MapContentBounds(0f, 0.1f, 0.5f, 0.99f).padded(0.02f)
+        assertEquals(0f, p.left)
+        assertEquals(0.08f, p.top, 1e-4f)
+        assertEquals(0.52f, p.right, 1e-4f)
+        assertEquals(1f, p.bottom)
+    }
+
+    @Test
     fun the_raw_cell_view_frames_by_its_cells_alone() {
         val m = map(false).copy(zoneLines = listOf(FloorPlanZone(1, listOf(FloorPlanPoint(0, 0, 1), FloorPlanPoint(5, 0, 1), FloorPlanPoint(5, 2, 1)))))
         assertEquals(0f, m.contentBoundsNorm(floorPlan = false).left)
