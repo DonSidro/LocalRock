@@ -35,7 +35,7 @@ leaving the screen or backgrounding the app. Unchecking it cancels a pending
 credential check and clears the entry. No credential check or video connection is
 started without opting in. Retries and connection tests use the same permission.
 
-Experimental models have video viewing, quality selection, fullscreen framing and
+Experimental models have video viewing, fullscreen framing and
 audio calls on iPhone under the same opt-in. Opening video leaves audio off; tap
 the microphone icon to start a call explicitly. Microphone, robot-audio mute and
 speaker-volume controls are available during the call. Audio behavior can differ
@@ -67,6 +67,8 @@ it to `CameraModelSupport.kt` and its tests, and keep it experimental until test
 Activate remote viewing in the official Roborock app while connected to Roborock's
 servers, before switching to the local server. Keep your existing camera PIN or
 pattern. The robot, phone and server must be able to reach the configured TURN endpoint.
+
+Enable **Settings → Experimental video** first. This preference is off by default.
 
 Tap the **video icon beside Settings** (or **More → Video (experimental)**) and
 opt in if prompted, then draw your existing pattern. Pattern entry is the default; an accepted pattern opens
@@ -117,9 +119,8 @@ its stage and command, plus a numeric robot error code when available. Check the
 robot before retrying. Other viewers' navigation and existing cleaning tasks are
 not taken over by a direction press.
 
-Tap **HD/SD** to change the requested quality. Video settings also show the received
-frame dimensions when available, updating while the settings dialog is open.
-The quality label confirms a request; received dimensions describe the actual stream.
+Open **Options** to see received frame dimensions when available, updating while
+the settings dialog is open.
 If HD cannot connect, choose **Retry in SD**.
 ## Voice calls on iPhone
 
@@ -145,8 +146,8 @@ does not reset the PIN or take over another viewer.
 
 ## Known limitations
 
-- HD/SD switching does not reliably change the received stream on the S7 MaxV.
-  The selected label confirms the requested setting, not a verified quality change.
+- Live HD/SD switching is unavailable because a quality request does not reliably
+  change the received stream on the S7 MaxV.
 - Enabling or disabling remote viewing is unavailable in LocalRock. Use the
   official app for initial activation as described above; the disabled controls
   send no commands.
@@ -175,7 +176,3 @@ The **Connection tests (SD)** section keeps these diagnostic choices available:
 All choices request SD and create no phone microphone or camera capture source.
 Stop the current viewer before selecting another choice.
 
-
-Enable **Settings → Experimental video** to show video controls. This app preference is off by default; model restrictions and the additional testing opt-in still apply. Server camera support and a reachable TURN endpoint are required.
-
-The live HD/SD selector is hidden because an acknowledged request does not confirm a changed stream. Received dimensions remain visible in Options.

@@ -381,34 +381,51 @@ internal fun cameraTargetAt(map: ParsedMap, normalized: Offset): Pair<Int,Int>? 
 private fun CameraTargetMap(map: ParsedMap,floor:Int,target:Pair<Int,Int>?,enabled:Boolean,onTarget:(Pair<Int,Int>)->Unit,modifier:Modifier) {
     val bitmap=rememberMapBitmap(map)
     val viewport=remember { LiveMapViewport() }
-    var measured by remember { mutableStateOf(Size.Zero) }
-    val identity=map.viewportIdentity(floor)
-    val fit=remember(map,measured) { if(measured.width>0f && measured.height>0f) frameMap(map.contentBoundsNorm(),map.fittedSize(measured),measured) else null }
-    LaunchedEffect(identity,measured,fit) { viewport.frameIfNeeded(identity,measured,fit) }
+    val identity = map.viewportIdentity(floor)
+    val bounds = remember(identity) { map.contentBoundsNorm() }
+    LaunchedEffect(identity) { viewport.frameIfNeeded(identity) }
     val currentMap by rememberUpdatedState(map)
     val selected by rememberUpdatedState(onTarget)
-    Canvas(modifier.clipToBounds().onSizeChanged {measured=it.toSize()}
-        .pointerInput(identity) {detectTransformGestures {center,pan,zoom,_->
-            val next=zoomMap(viewport.scale,viewport.offset,center,pan,zoom,currentMap.fittedSize(size.toSize()),size.toSize())
-            viewport.scale=next.first;viewport.offset=next.second
+    fun viewFor(size: Size): MapView {
+        val fit = fitScale(size.width, size.height, bounds.width * bitmap.width,
+            bounds.height * bitmap.height, 0f, 1f, false)
+        return framedView(size.width, size.height,
+            bounds.center.x * bitmap.width, bounds.center.y * bitmap.height,
+            fit, viewport.zoom, viewport.pan, 0f, 1f)
+    }
+    val currentViewFor by rememberUpdatedState(::viewFor)
+    val drawn = remember { DrawnView() }
+    Canvas(modifier.clipToBounds()
+        .pointerInput(identity) { detectTransformGestures { center, pan, zoom, _ ->
+            val next = (viewport.zoom * zoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
+            val view = drawn.forHitTest { currentViewFor(size.toSize()) }
+            val fit = view.k / viewport.zoom
+            val canvasCenter = Offset(size.width / 2f, size.height / 2f)
+            val moved = (center - canvasCenter) -
+                ((center - canvasCenter) - viewport.pan * fit) * (next / viewport.zoom) + pan
+            viewport.pan = Offset(moved.x.coerceIn(-size.width.toFloat(), size.width.toFloat()),
+                moved.y.coerceIn(-size.height.toFloat(), size.height.toFloat())) / fit
+            viewport.zoom = next
         }}
-        .pointerInput(identity,enabled) {if(enabled) detectTapGestures(onTap={p->
-            val content=currentMap.fittedSize(size.toSize())
-            if(content.width>0f && content.height>0f) {
-                val local=(p-viewport.offset)/viewport.scale
-                cameraTargetAt(currentMap,Offset(local.x/content.width,local.y/content.height))?.let(selected)
-            }
-        })}) {
-        val content=map.fittedSize(size)
-        withTransform({translate(viewport.offset.x,viewport.offset.y);scale(viewport.scale,viewport.scale,pivot=Offset.Zero)}) {
-            drawImage(bitmap,srcOffset=IntOffset.Zero,srcSize=IntSize(bitmap.width,bitmap.height),dstOffset=IntOffset.Zero,
-                dstSize=IntSize(content.width.toInt(),content.height.toInt()),filterQuality=FilterQuality.None)
+        .pointerInput(identity, enabled) { if (enabled) detectTapGestures(
+            onDoubleTap = { viewport.reset() },
+            onTap = { p ->
+                val view = drawn.forHitTest { currentViewFor(size.toSize()) }
+                val local = view.toBitmap(p.x, p.y)
+                cameraTargetAt(currentMap, Offset(local.x / bitmap.width, local.y / bitmap.height))?.let(selected)
+            },
+        ) }) {
+        val view = viewFor(size)
+        drawn.view = view
+        val origin = view.toScreen(0f, 0f)
+        withTransform({ translate(origin.x, origin.y); scale(view.k, view.k, pivot = Offset.Zero) }) {
+            drawImage(bitmap, srcOffset = IntOffset.Zero, srcSize = IntSize(bitmap.width, bitmap.height),
+                dstOffset = IntOffset.Zero, dstSize = IntSize(bitmap.width, bitmap.height), filterQuality = FilterQuality.None)
             target?.let {
-                val p=map.mmToCanvas(it.first,it.second,content.width,content.height)
-                drawCircle(Color.White,10.dp.toPx()/viewport.scale,p,style=Stroke(3.dp.toPx()/viewport.scale))
-                drawCircle(Color(0xff3185ff),5.dp.toPx()/viewport.scale,p)
+                val p = map.mmToCanvas(it.first, it.second, bitmap.width.toFloat(), bitmap.height.toFloat())
+                drawCircle(Color.White, 10.dp.toPx() / view.k, p, style = Stroke(3.dp.toPx() / view.k))
+                drawCircle(Color(0xff3185ff), 5.dp.toPx() / view.k, p)
             }
         }
     }
 }
-
