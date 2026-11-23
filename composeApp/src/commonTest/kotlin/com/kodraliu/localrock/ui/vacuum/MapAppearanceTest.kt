@@ -78,11 +78,10 @@ class MapAppearanceTest {
             rooms = listOf(ParsedMapRoom(1, "Room", tag = 1)), reportedCleanSegments = setOf(1))
         assertNotEquals(first, updated)
         val viewport = LiveMapViewport()
-        val size = Size(320f, 500f)
-        viewport.frameIfNeeded(first.viewportIdentity("robot/floor"), size, 2f to Offset.Zero)
-        viewport.scale = 4f; viewport.offset = Offset(-60f, -80f)
-        viewport.frameIfNeeded(updated.viewportIdentity("robot/floor"), size, 3f to Offset(10f, 20f))
-        assertEquals(4f, viewport.scale)
-        assertEquals(Offset(-60f, -80f), viewport.offset)
+        viewport.frameIfNeeded(first.viewportIdentity("robot/floor"))
+        viewport.zoom = 4f; viewport.pan = Offset(-60f, -80f)
+        viewport.frameIfNeeded(updated.viewportIdentity("robot/floor"))
+        assertEquals(4f, viewport.zoom)
+        assertEquals(Offset(-60f, -80f), viewport.pan)
     }
 }
