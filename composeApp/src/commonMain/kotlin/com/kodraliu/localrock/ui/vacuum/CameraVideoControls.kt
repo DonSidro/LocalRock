@@ -397,7 +397,7 @@ private fun CameraTargetMap(map: ParsedMap,floor:Int,target:Pair<Int,Int>?,enabl
     val drawn = remember { DrawnView() }
     Canvas(modifier.clipToBounds()
         .pointerInput(identity) { detectTransformGestures { center, pan, zoom, _ ->
-            val next = (viewport.zoom * zoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
+            val next = (viewport.zoom * zoom).coerceIn(0.4f, 8f)
             val view = drawn.forHitTest { currentViewFor(size.toSize()) }
             val fit = view.k / viewport.zoom
             val canvasCenter = Offset(size.width / 2f, size.height / 2f)
