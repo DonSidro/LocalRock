@@ -24,6 +24,7 @@ import kotlinx.serialization.Serializable
 
 // Pages the settings hub opens, inside VacuumGraph.
 @Serializable data object VacuumMaintenance
+@Serializable data class VacuumMaintenanceDetail(val consumable: String)
 @Serializable data object VacuumFirmware
 @Serializable data object VacuumSettingsDock
 @Serializable data object VacuumSettingsWashingMode

@@ -14,6 +14,9 @@ data class ConsumableStatus(
     // others, the "_times" ones count runs since the last reset, not seconds.
     @SerialName("cleaning_brush_work_times") val cleaningBrushWorkTime: Long? = null,
     @SerialName("strainer_work_times") val strainerWorkTime: Long? = null,
+    @SerialName("filter_element_work_time") val filterElementWorkTime: Long? = null,
+    @SerialName("moproller_work_time") val moprollerWorkTime: Long? = null,
+    @SerialName("dust_collection_work_times") val dustCollectionWorkTimes: Long? = null,
 ) {
     companion object {
         const val MAIN_BRUSH_LIFETIME_S = 300L * 3600

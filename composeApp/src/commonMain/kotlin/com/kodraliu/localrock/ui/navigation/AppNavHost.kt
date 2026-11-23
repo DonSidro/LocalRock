@@ -39,8 +39,8 @@ import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import com.kodraliu.localrock.ui.vacuum.FirmwareUpdateScreen
-import com.kodraliu.localrock.ui.vacuum.LegacySettingsPage
-import com.kodraliu.localrock.ui.vacuum.LegacyVacuumSettingsScreen
+import com.kodraliu.localrock.ui.vacuum.VacuumMaintenanceDetailScreen
+import com.kodraliu.localrock.ui.vacuum.VacuumMaintenanceScreen
 import com.kodraliu.localrock.ui.vacuum.settings.VacuumBetaFeaturesScreen
 import com.kodraliu.localrock.ui.vacuum.settings.VacuumCarpetScreen
 import com.kodraliu.localrock.ui.vacuum.settings.VacuumChargingModeScreen
@@ -243,7 +243,10 @@ fun AppNavHost() {
                 VacuumSettingsScreen(viewModel = it, onBack = back, onNavigate = open)
             }
             vacuumComposable<VacuumMaintenance>(navController, container) {
-                LegacyVacuumSettingsScreen(viewModel = it, onBack = back, startAt = LegacySettingsPage.MAINTENANCE)
+                VacuumMaintenanceScreen(viewModel = it, onBack = back, onOpen = { name -> open(VacuumMaintenanceDetail(name)) })
+            }
+            vacuumComposable<VacuumMaintenanceDetail>(navController, container) { viewModel ->
+                VacuumMaintenanceDetailScreen(viewModel = viewModel, consumable = toRoute<VacuumMaintenanceDetail>().consumable, onBack = back)
             }
             vacuumComposable<VacuumFirmware>(navController, container) { FirmwareUpdateScreen(viewModel = it, onBack = back) }
             vacuumComposable<VacuumSettingsDock>(navController, container) { VacuumDockSettingsScreen(viewModel = it, onBack = back, onNavigate = open) }
