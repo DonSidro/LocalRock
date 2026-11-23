@@ -47,7 +47,7 @@ import com.kodraliu.localrock.ui.components.SettingsCategoryRow
 import com.kodraliu.localrock.ui.navigation.VacuumFirmware
 import com.kodraliu.localrock.ui.navigation.VacuumHistory
 import com.kodraliu.localrock.ui.navigation.VacuumMaintenance
-import com.kodraliu.localrock.ui.navigation.VacuumMapEdit
+import com.kodraliu.localrock.ui.navigation.VacuumManageMaps
 import com.kodraliu.localrock.ui.navigation.VacuumPinGo
 import com.kodraliu.localrock.ui.navigation.VacuumRemote
 import com.kodraliu.localrock.ui.navigation.VacuumSchedule
@@ -132,7 +132,7 @@ fun VacuumSettingsScreen(
         item {
             SettingGroup {
                 SettingsCategoryRow(Icons.Default.Map, AppColors.AccentCyan, SettingsStrings.MANAGE_MAPS, SettingsStrings.MANAGE_MAPS_DETAIL) {
-                    onNavigate(VacuumMapEdit)
+                    onNavigate(VacuumManageMaps)
                 }
                 RowDivider()
                 SettingsCategoryRow(

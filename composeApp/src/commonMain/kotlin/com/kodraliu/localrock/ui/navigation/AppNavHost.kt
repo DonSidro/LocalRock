@@ -34,6 +34,7 @@ import com.kodraliu.localrock.ui.vacuum.VacuumRemoteScreen
 import com.kodraliu.localrock.ui.vacuum.settings.VacuumSettingsScreen
 import com.kodraliu.localrock.ui.vacuum.VacuumViewModel
 import com.kodraliu.localrock.ui.vacuum.MapEditScreen
+import com.kodraliu.localrock.ui.vacuum.MapDetailsScreen
 import com.kodraliu.localrock.ui.vacuum.ZoneCleanScreen
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraphBuilder
@@ -190,7 +191,7 @@ fun AppNavHost() {
                     onBack = { navController.popBackStack<VacuumGraph>(inclusive = true) },
                     onSettings = { navController.navigate(VacuumSettings) },
                     onZoneClean = { navController.navigate(VacuumZoneClean) },
-                    onMapEdit = { navController.navigate(VacuumMapEdit) },
+                    onMapEdit = { navController.navigate(VacuumManageMaps) },
                     onSchedule = { navController.navigate(VacuumSchedule) },
                     onCamera = { navController.navigate(VacuumCamera) },
                     onRemote = { navController.navigate(VacuumRemote) },
@@ -271,11 +272,21 @@ fun AppNavHost() {
                 )
             }
 
-            composable<VacuumMapEdit> { entry ->
+            composable<VacuumManageMaps> { entry ->
                 val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
                 val duid = graphEntry.toRoute<VacuumGraph>().duid
                 val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
                 MapEditScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable<VacuumMapDetails> { entry ->
+                val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
+                val duid = graphEntry.toRoute<VacuumGraph>().duid
+                val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
+                MapDetailsScreen(
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
                 )

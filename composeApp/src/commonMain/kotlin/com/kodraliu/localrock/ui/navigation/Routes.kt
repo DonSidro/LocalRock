@@ -15,7 +15,8 @@ import kotlinx.serialization.Serializable
 @Serializable data object VacuumMain
 @Serializable data object VacuumSettings
 @Serializable data object VacuumZoneClean
-@Serializable data object VacuumMapEdit
+@Serializable data object VacuumManageMaps
+@Serializable data object VacuumMapDetails
 @Serializable data object VacuumSchedule
 @Serializable data object VacuumCamera
 @Serializable data object VacuumRemote
