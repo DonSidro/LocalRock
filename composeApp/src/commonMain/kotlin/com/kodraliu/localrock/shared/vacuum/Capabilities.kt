@@ -18,7 +18,10 @@ data class Capabilities(
     val matter: Boolean,
     val remoteControl: Boolean,
     val pinNGo: Boolean,
+    val cruiseHistory: Boolean,
     val firmwareUpdates: Boolean,
+    val autoFirmwareUpdates: Boolean,
+    val dirtMap: Boolean,
     val dock: DockCapabilities,
     // Switches the robot reports, and the advertised bits with no control yet (ghost rows).
     val betaFeatures: List<BetaFeatureDef>,
@@ -40,6 +43,7 @@ fun buildCapabilities(
     val betaFeatures = supportedBetaFeatures(nfs)
     val unlisted = unlistedAdvertisedFeatures(nfs)
     val settings = buildSettingsCapabilities(featureSet, nfs)
+    val secondary = secondaryFlags(nfs, newFeatureBit(nfs, VIDEO_PATROL_FEATURE_BIT))
     return Capabilities(
         hasCarpetSettings = settings.hasCarpetSettings,
         hasFloorSettings = settings.hasFloorSettings,
@@ -57,7 +61,10 @@ fun buildCapabilities(
         matter = isMatterSupported(nfs),
         remoteControl = true, // official gate is apiLevel >= 10003, which every LocalRock robot meets
         pinNGo = true,
-        firmwareUpdates = true, // isSupportFirmwareUpdate is a host-app check; LocalRock always offers its server update
+        cruiseHistory = secondary.cruiseHistory,
+        firmwareUpdates = secondary.firmwareUpdates,
+        autoFirmwareUpdates = secondary.autoFirmwareUpdates,
+        dirtMap = secondary.dirtMap,
         dock = DockCapabilities(model, featureSet, nfs),
         betaFeatures = betaFeatures,
         unlistedFeatures = unlisted,

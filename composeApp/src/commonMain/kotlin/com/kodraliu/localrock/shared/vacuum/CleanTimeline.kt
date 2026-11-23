@@ -28,7 +28,14 @@ sealed interface CleanTimelineStep {
 
     /** [scope]: 1 whole home, 2 drawn zone, 3 selected rooms. */
     data class Start(override val time: Long, val scope: Int, val settings: CleanStartSettings?) : CleanTimelineStep
-    data class Room(override val time: Long, val segmentId: Int, val roomTypeTag: Int?) : CleanTimelineStep
+    /** [unreachable] marks the official "Cleaning path abnormal." node (event 42 with e[424] = 0). */
+    data class Room(
+        override val time: Long,
+        val segmentId: Int,
+        val roomTypeTag: Int?,
+        val settings: CleanStartSettings? = null,
+        val unreachable: Boolean = false,
+    ) : CleanTimelineStep
     data class WashMop(override val time: Long, val mode: Int) : CleanTimelineStep
     data class AutoEmptying(override val time: Long, val mode: Int) : CleanTimelineStep
     data class MopLiftedForCarpet(override val time: Long) : CleanTimelineStep
@@ -88,15 +95,15 @@ object CleanTimeline {
         var lastError: Pair<Int, Int>? = null
         for (e in sorted) {
             when (e.type) {
-                25 -> e.int(252)?.let { scope ->
-                    val settings = if (e.int(3) != null) {
-                        CleanStartSettings(e.int(3) ?: 0, e.int(4) ?: 0, e.int(5) ?: 0, e.int(6) ?: 1)
-                    } else null
-                    steps += CleanTimelineStep.Start(e.time, scope, settings)
-                }
+                25 -> e.int(252)?.let { scope -> steps += CleanTimelineStep.Start(e.time, scope, settingsOf(e)) }
                 // 42 with a clean preference (421) opens a room; ids from 35 up are extra passes shown through event 61.
-                42 -> e.int(2)?.takeIf { it in 1..30 && e.int(421) != null }?.let {
-                    steps += CleanTimelineStep.Room(e.time, it, e.int(422))
+                42 -> e.int(2)?.takeIf { it in 1..30 }?.let { seg ->
+                    if (e.int(424) == 0) {
+                        val tag = steps.filterIsInstance<CleanTimelineStep.Room>().lastOrNull { it.segmentId == seg }?.roomTypeTag
+                        steps += CleanTimelineStep.Room(e.time, seg, tag, unreachable = true)
+                    } else if (e.int(421) != null) {
+                        steps += CleanTimelineStep.Room(e.time, seg, e.int(422), settingsOf(e))
+                    }
                 }
                 52 -> e.int(521)?.let { steps += CleanTimelineStep.WashMop(e.time, it) }
                 54 -> steps += CleanTimelineStep.AutoEmptying(e.time, e.int(541) ?: -1)
@@ -112,6 +119,15 @@ object CleanTimeline {
         }
         if (endEpoch > 0L) steps += CleanTimelineStep.Finished(endEpoch)
         return steps
+    }
+
+    private fun settingsOf(e: CleanTimelineEvent): CleanStartSettings? =
+        if (e.int(3) != null) CleanStartSettings(e.int(3) ?: 0, e.int(4) ?: 0, e.int(5) ?: 0, e.int(6) ?: 1) else null
+
+    /** Official big nodes (time, filled circle, bold title); everything else is a small hollow-dot node. */
+    fun isMajor(step: CleanTimelineStep): Boolean = when (step) {
+        is CleanTimelineStep.Start, is CleanTimelineStep.Room, is CleanTimelineStep.ExtraClean, is CleanTimelineStep.Finished -> true
+        else -> false
     }
 }
 
@@ -149,10 +165,27 @@ object CleanTimelineLabels {
         is CleanTimelineStep.Finished -> "Cleaning Finished"
     }
 
+    /** The official mode chip: mode name, suction, water, route and passes ("Vac & Mop | Standard | Level 15 | Standard | x1"). */
+    fun chipParts(s: CleanStartSettings): List<String> = listOf(
+        modeName(s),
+        SUCTION[s.suction] ?: "${s.suction}",
+        waterText(s.water),
+        ROUTE[s.route] ?: "${s.route}",
+        "x${s.repeat.coerceAtLeast(1)}",
+    )
+
+    // The plugin reads cleanMode = e[3] + 100 and waterMode = e[4] + 200: 105 is suction off, 200 water off.
+    fun modeName(s: CleanStartSettings): String = when {
+        s.water == 0 -> "Vacuum"
+        s.suction == 5 -> "Mop"
+        else -> "Vac & Mop"
+    }
+
     /** A second line for the steps that carry settings or a cause, or null. */
     fun detail(step: CleanTimelineStep): String? = when (step) {
         is CleanTimelineStep.Start -> step.settings?.let(::settingsText)
         is CleanTimelineStep.AutoEmptying -> AUTO_EMPTY_MODES.getOrNull(step.mode)
+        is CleanTimelineStep.Room -> if (step.unreachable) "Cleaning path abnormal." else null
         is CleanTimelineStep.Error -> VacuumErrorCodes.describe(step.code).takeIf { it.isNotEmpty() }
         else -> null
     }
@@ -171,9 +204,11 @@ object CleanTimelineLabels {
     private val ROUTE = mapOf(0 to "Standard", 1 to "Deep", 2 to "Custom", 3 to "Deep+", 4 to "Fast")
     private val WATER = mapOf(0 to "Off", 1 to "Low", 2 to "Medium", 3 to "High", 4 to "Custom")
 
+    private fun waterText(water: Int): String = WATER[water] ?: if (water in 21..50) "Level ${water - 20}" else "Water $water"
+
     private fun settingsText(s: CleanStartSettings): String {
         // Water 21..50 is the 30-step flow (codes 221-250).
-        val water = WATER[s.water] ?: if (s.water in 21..50) "Level ${s.water - 20}" else "Water ${s.water}"
+        val water = waterText(s.water)
         val parts = mutableListOf(
             "Suction ${SUCTION[s.suction] ?: s.suction}",
             "Water $water",

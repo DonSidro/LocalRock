@@ -1020,7 +1020,7 @@ private val LABEL_PILL_FLAT = Color.White.copy(alpha = 0.8f)
 private val LABEL_PILL_3D = Color.Black.copy(alpha = 0.6f)
 
 @Composable
-private fun VacuumMapImage(
+internal fun VacuumMapImage(
     map: ParsedMap,
     selectedRoomIds: List<Int>,
     onRoomTap: (Int) -> Unit,

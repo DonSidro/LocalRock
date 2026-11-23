@@ -24,6 +24,15 @@ class CapabilitiesTest {
     }
 
     @Test
+    fun the_secondary_page_flags_follow_the_advertised_bits() {
+        assertTrue(curv.firmwareUpdates && pro.firmwareUpdates)
+        assertEquals(newFeatureBit(CURV_NEW_FEATURE_SET, 48), curv.cruiseHistory)
+        assertEquals(newFeatureBit(CURV_NEW_FEATURE_SET, 34), curv.dirtMap)
+        assertEquals(newFeatureBit(PRO_NEW_FEATURE_SET, 6), pro.autoFirmwareUpdates)
+        assertFalse(buildCapabilities(null, null, null, null).dirtMap)
+    }
+
+    @Test
     fun only_the_curv_has_the_roller_mop() {
         assertTrue(curv.advertised.rollerMop)
         assertFalse(pro.advertised.rollerMop)

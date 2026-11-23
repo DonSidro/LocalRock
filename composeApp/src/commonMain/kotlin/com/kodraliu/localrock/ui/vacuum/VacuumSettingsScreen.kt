@@ -403,37 +403,6 @@ fun VacuumPinGoScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     )
 }
 
-@Composable
-fun VacuumHistoryScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
-    val repository = viewModel.repository
-    val mapRotation = 0 // the live map has no rotation setting yet (#81 adds it)
-    val scope = rememberCoroutineScope()
-    val cleanHistory by repository.cleanHistory.collectAsState()
-    val cleanSummary by repository.cleanSummary.collectAsState()
-    val rooms by repository.rooms.collectAsState()
-    LaunchedEffect(Unit) {
-        runCatching { repository.fetchCleanHistory() }
-        runCatching { repository.fetchCleanSummary() }
-    }
-    HistoryScreen(
-        records = cleanHistory,
-        summary = cleanSummary,
-        loadMap = { repository.fetchCleanRecordMap(it) },
-        loadThumbnails = { task, x, y -> repository.fetchPatrolThumbnails(task, x, y) },
-        mapRotation = mapRotation,
-        loadTimeline = repository::fetchCleanTimeline,
-        roomName = { id -> rooms.firstOrNull { it.id == id }?.name },
-        onRefresh = {
-            scope.launch {
-                runCatching { repository.fetchCleanHistory() }
-                runCatching { repository.fetchCleanSummary() }
-            }
-        },
-        onBack = onBack,
-    )
-}
-
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsRootScreen(
