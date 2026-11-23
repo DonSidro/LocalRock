@@ -65,3 +65,9 @@ internal data class ActiveRunRooms(
         return copy(roomIds = ids, lastMapRevision = map?.legacyRevision ?: lastMapRevision)
     }
 }
+
+/** A B01 map has no native target block; retain only this screen's known current-session targets. */
+internal fun activeRoomDisplayIds(reported: Set<Int>?, format: com.kodraliu.localrock.shared.vacuum.map.MapFormat?,
+    runKind: Int?, sessionTargets: Set<Int>): Set<Int> = reported ?: if (
+        format == com.kodraliu.localrock.shared.vacuum.map.MapFormat.B01 && runKind == 3
+    ) sessionTargets else emptySet()

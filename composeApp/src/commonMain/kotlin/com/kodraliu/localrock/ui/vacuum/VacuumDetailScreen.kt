@@ -10,7 +10,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -35,6 +34,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import com.kodraliu.localrock.shared.vacuum.activeRoomDisplayIds
+import com.kodraliu.localrock.shared.vacuum.mapRunKind
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.BatteryUnknown
@@ -65,10 +67,12 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.SelectAll
@@ -128,28 +132,40 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.runtime.saveable.rememberSaveable
-import com.kodraliu.localrock.shared.vacuum.mapRunKind
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.toSize
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.sin
+import kotlin.math.sqrt
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kodraliu.localrock.shared.model.Scene
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
+import com.kodraliu.localrock.shared.http.currentEpochSeconds
+import kotlinx.datetime.Instant
 import com.kodraliu.localrock.shared.vacuum.DockErrorCodes
 import com.kodraliu.localrock.shared.vacuum.DockSettings
 import com.kodraliu.localrock.shared.vacuum.FloorMap
@@ -170,6 +186,7 @@ import com.kodraliu.localrock.shared.vacuum.washFrequencyLabel
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
 import com.kodraliu.localrock.shared.vacuum.map.MapObstacle
+import com.kodraliu.localrock.shared.vacuum.modelSubtitle
 import com.kodraliu.localrock.shared.vacuum.map.roomAtNorm
 import com.kodraliu.localrock.ui.AppColors
 import com.kodraliu.localrock.ui.adaptive.LocalWindowLayout
@@ -225,9 +242,25 @@ fun VacuumDetailScreen(
 ) {
     val status by viewModel.status.collectAsState()
     val busy by viewModel.busy.collectAsState()
+    val mapRotation by viewModel.mapRotation.collectAsState()
+    val map3DYaw by viewModel.map3DYaw.collectAsState()
+    val map3DTilt by viewModel.map3DTilt.collectAsState()
+    val map3D by viewModel.map3D.collectAsState()
     val supportsSmartPlan by viewModel.supportsSmartPlan.collectAsState()
     val supportsWaterSlide by viewModel.supportsWaterSlide.collectAsState()
-    val parsedMap by viewModel.repository.parsedMap.collectAsState()
+    val supportsVacuumThenMop by viewModel.supportsVacuumThenMop.collectAsState()
+    val supportsVacuumThenMopRepeat by viewModel.supportsVacuumThenMopRepeat.collectAsState()
+    val supportsCleanEfficiency by viewModel.supportsCleanEfficiency.collectAsState()
+    val supportsPetSearch by viewModel.supportsPetSearch.collectAsState()
+    val liveMap by viewModel.repository.parsedMap.collectAsState()
+    val lastKnown by viewModel.lastKnown.collectAsState()
+    val lastKnownMap by viewModel.lastKnownMap.collectAsState()
+    // A robot carried to its dock keeps its old map position until it re-localizes, so draw it at the charger.
+    // While the robot does not answer, its last map (with where it was last seen) stands in.
+    val parsedMap = remember(liveMap, status.state) { liveMap?.withRobotOnDock(isDocked(status.state)) } ?: lastKnownMap
+    val offlineLines = remember(lastKnown) {
+        lastKnown?.let { lastKnownLines(it, Instant.fromEpochSeconds(currentEpochSeconds())) } ?: emptyList()
+    }
     val floorMaps by viewModel.repository.floorMaps.collectAsState()
     val currentFloorFlag by viewModel.repository.currentFloorFlag.collectAsState()
     val maxFloorMaps by viewModel.repository.maxFloorMaps.collectAsState()
@@ -235,11 +268,12 @@ fun VacuumDetailScreen(
     val mopMode by viewModel.repository.mopMode.collectAsState()
     val roomCleanModes by viewModel.repository.roomCleanModes.collectAsState()
     val dockSettings by viewModel.repository.dockSettings.collectAsState()
+    val dockCapabilities by viewModel.dockCapabilities.collectAsState()
     var selectedRoomIds by remember { mutableStateOf(emptyList<Int>()) }
 
+    val reportedActiveRooms by viewModel.repository.activeRunRoomIds.collectAsState()
+    var sessionRoomIds by remember(viewModel, currentFloorFlag) { mutableStateOf(emptyList<Int>()) }
     var panel by remember { mutableStateOf<DetailPanel?>(null) }
-    val activeRunRoomIds by viewModel.repository.activeRunRoomIds.collectAsState()
-    val mapRunActive = status.mapRunKind() != null || status.state in ACTIVE_CLEANING_STATES || status.state == VacuumStateCodes.PAUSED
     var openObstacle by remember { mutableStateOf<MapObstacle?>(null) }
     val twoPane = LocalWindowLayout.current.twoPane
     BackHandler(enabled = twoPane && sidePaneShowsPanel(panel)) { panel = null }
@@ -257,20 +291,20 @@ fun VacuumDetailScreen(
     var cleaningCount by remember { mutableIntStateOf(1) }
     // The map's pan/zoom lives here so it survives the compact ↔ two-pane switch.
     val mapViewport = remember { LiveMapViewport() }
-    var layers by rememberSaveable(viewModel.repository.duid, stateSaver = MapLayerVisibility.Saver) { mutableStateOf(MapLayerVisibility()) }
 
 
-    val sessionRoomNames = remember(activeRunRoomIds, parsedMap) {
-        val byId = parsedMap?.rooms?.associateBy { it.id }.orEmpty()
-        activeRunRoomIds.orEmpty().mapNotNull { byId[it]?.name }
+    val activeRooms = activeRoomDisplayIds(reportedActiveRooms, parsedMap?.format,
+        status.mapRunKind(), sessionRoomIds.toSet())
+    LaunchedEffect(status.state) {
+        if (status.state in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE)) sessionRoomIds = emptyList()
     }
-    LaunchedEffect(currentFloorFlag) {
-        selectedRoomIds = emptyList()
-        runCatching { viewModel.repository.rooms() }
-    }
+    val sessionRoomNames = activeRooms.map { id -> parsedMap?.rooms?.find { it.id == id }?.name ?: "Room $id" }
 
     LaunchedEffect(status.cleanArea) {
         if ((status.cleanArea ?: 0L) > 0L) lastCleanArea = status.cleanArea
+    }
+    LaunchedEffect(status.cleanSequenceType) {
+        if (status.cleanSequenceType == 1) cleaningCount = 1
     }
     // The first request can go out before the robot link is up, so retry until the list arrives.
     // map_status and lab_status change when a map is saved, deleted or switched (also from the
@@ -309,6 +343,7 @@ fun VacuumDetailScreen(
         }
     }
 
+    var confirmFindPet by remember { mutableStateOf(false) }
     val onMoreAction: (MoreAction) -> Unit = { action ->
         when (action) {
             MoreAction.ROOMS -> panel = DetailPanel.Rooms
@@ -322,13 +357,29 @@ fun VacuumDetailScreen(
             MoreAction.CAMERA -> { panel = null; onCamera() }
             MoreAction.HISTORY -> { panel = null; onHistory() }
             MoreAction.EDIT_MAP -> { panel = null; onMapEdit() }
+            MoreAction.FIND_PET -> { panel = null; confirmFindPet = true }
         }
+    }
+
+    if (confirmFindPet) {
+        AlertDialog(
+            onDismissRequest = { confirmFindPet = false },
+            title = { Text("Find my pet?") },
+            text = { Text("The robot leaves its dock and patrols the home with its camera. It can only start while docked and not cleaning.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmFindPet = false
+                    viewModel.run("Looking for your pet") { it.startPetSearch() }
+                }) { Text("Start") }
+            },
+            dismissButton = { TextButton(onClick = { confirmFindPet = false }) { Text("Cancel") } },
+        )
     }
 
     val onLoadMap: () -> Unit = { viewModel.refreshMap() }
     val onRecover: () -> Unit = { panel = DetailPanel.Maps }
     val onRoomTap: (Int) -> Unit = { roomId ->
-        if (!mapRunActive) selectedRoomIds = if (roomId in selectedRoomIds)
+        selectedRoomIds = if (roomId in selectedRoomIds)
             selectedRoomIds.filter { it != roomId }
         else selectedRoomIds + roomId
     }
@@ -336,7 +387,7 @@ fun VacuumDetailScreen(
 
     val PanelBody: @Composable (DetailPanel) -> Unit = { currentPanel ->
         when (currentPanel) {
-            DetailPanel.More -> MoreActionsSheetContent(onAction = onMoreAction)
+            DetailPanel.More -> MoreActionsSheetContent(showFindPet = supportsPetSearch, onAction = onMoreAction)
 
             DetailPanel.Routines -> RoutinesSheetContent(
                 state = routines,
@@ -359,9 +410,10 @@ fun VacuumDetailScreen(
                 },
                 onCleanRooms = {
                     val toClean = selectedRoomIds
+                    sessionRoomIds = toClean
                     selectedRoomIds = emptyList()
                     panel = null
-                    viewModel.run { it.cleanRooms(toClean, cleaningCount) }
+                    viewModel.run { it.cleanRooms(toClean, if (status.cleanSequenceType == 1) 1 else cleaningCount) }
                 },
                 onLoadMap = {
                     panel = null
@@ -390,7 +442,7 @@ fun VacuumDetailScreen(
                 status = status,
                 busy = busy,
                 dockSettings = dockSettings,
-                dockCapabilities = viewModel.dockCapabilities,
+                dockCapabilities = dockCapabilities,
                 onEmptyDustbin = { panel = null; viewModel.run { it.collectDust() } },
                 onWashMop = { panel = null; viewModel.run { it.washMop() } },
                 // Dry keeps the sheet open so the drying status row appears in place.
@@ -402,6 +454,11 @@ fun VacuumDetailScreen(
             )
 
             DetailPanel.CleaningMode -> {
+                val vacuumThenMop = status.cleanSequenceType == 1
+                val fan = status.fanPower?.takeUnless { it == VacuumFanPower.OFF } ?: VacuumFanPower.BALANCED
+                val water = status.waterBoxCustomMode?.takeUnless { it == WaterBoxMode.OFF }
+                    ?: if (supportsWaterSlide) WaterBoxMode.SLIDE_MEDIUM else WaterBoxMode.LOW
+                val route = mopMode ?: MopRoute.STANDARD
                 // A refusal is shown in the sheet; the screen's own message would be behind it.
                 var modeError by remember { mutableStateOf<String?>(null) }
                 fun runMode(successMessage: String? = null, action: suspend (VacuumRepository) -> Unit) {
@@ -412,31 +469,66 @@ fun VacuumDetailScreen(
                     currentFanPower = status.fanPower,
                     currentWaterMode = status.waterBoxCustomMode,
                     currentRoute = mopMode,
+                    currentSequenceType = status.cleanSequenceType,
                     cleaningCount = cleaningCount,
                     busy = busy,
                     supportsSmartPlan = supportsSmartPlan,
+                    supportsVacuumThenMop = supportsVacuumThenMop,
+                    supportsCleanEfficiency = supportsCleanEfficiency,
                     rooms = parsedMap?.rooms ?: emptyList(),
                     roomCleanModes = roomCleanModes,
                     roomModesLoaded = roomModesLoaded,
                     error = modeError,
                     onPlanSelected = { plan ->
+                        val (planFan, planWater, planRoute) = when (plan) {
+                            CleanPlan.SMART -> Triple(VacuumFanPower.SMART, WaterBoxMode.SMART, MopRoute.SMART)
+                            CleanPlan.MANUAL -> Triple(
+                                VacuumFanPower.BALANCED,
+                                if (supportsWaterSlide) WaterBoxMode.SLIDE_MEDIUM else WaterBoxMode.LOW,
+                                MopRoute.STANDARD,
+                            )
+                            CleanPlan.PER_ROOM -> Triple(VacuumFanPower.CUSTOM, WaterBoxMode.CUSTOM, MopRoute.CUSTOM)
+                        }
                         runMode {
-                            when (plan) {
-                                CleanPlan.SMART -> it.setCleanMotorMode(VacuumFanPower.SMART, WaterBoxMode.SMART, MopRoute.SMART)
-                                CleanPlan.MANUAL -> {
-                                    // Water slide robots get a slide code, as python-roborock does.
-                                    val water = if (supportsWaterSlide) WaterBoxMode.SLIDE_MEDIUM else WaterBoxMode.LOW
-                                    it.setCleanMotorMode(VacuumFanPower.BALANCED, water, MopRoute.STANDARD)
-                                }
-                                // The three codes the official app sent for its Customize tab.
-                                CleanPlan.PER_ROOM -> it.setCleanMotorMode(VacuumFanPower.CUSTOM, WaterBoxMode.CUSTOM, MopRoute.CUSTOM)
+                            if (vacuumThenMop) {
+                                it.setCleanSequenceType(0, planFan, planWater, planRoute)
+                            } else {
+                                it.setCleanMotorMode(planFan, planWater, planRoute)
+                            }
+                        }
+                    },
+                    onModeSelected = { mode ->
+                        val modeFan = if (mode == 1) VacuumFanPower.OFF else fan
+                        val modeWater = if (mode == 2) WaterBoxMode.OFF else water
+                        val modeRoute = if (mode == 3 && !supportsCleanEfficiency &&
+                            route != MopRoute.STANDARD && route != MopRoute.FAST
+                        ) MopRoute.STANDARD else route
+                        runMode {
+                            if (mode == 3 || vacuumThenMop) {
+                                it.setCleanSequenceType(
+                                    if (mode == 3) 1 else 0, modeFan, modeWater, modeRoute,
+                                    if (mode == 3 && supportsVacuumThenMopRepeat) 1 else null,
+                                )
+                            } else if (modeFan == VacuumFanPower.OFF) {
+                                // The robot rejects turning suction off while water is also off.
+                                it.setWaterBoxMode(modeWater)
+                                it.setFanPower(modeFan)
+                            } else {
+                                it.setFanPower(modeFan)
+                                it.setWaterBoxMode(modeWater)
                             }
                         }
                     },
                     onSaveRoomModes = { modes -> runMode("Room settings saved") { it.saveRoomCleanModes(modes) } },
-                    onFanPowerSelected = { level -> runMode { it.setFanPower(level) } },
-                    onWaterModeSelected = { level -> runMode { it.setWaterBoxMode(level) } },
-                    onRouteSelected = { mode -> runMode { it.setMopMode(mode) } },
+                    onFanPowerSelected = { level -> runMode {
+                        if (vacuumThenMop) it.setCleanMotorMode(level, water, route) else it.setFanPower(level)
+                    } },
+                    onWaterModeSelected = { level -> runMode {
+                        if (vacuumThenMop) it.setCleanMotorMode(fan, level, route) else it.setWaterBoxMode(level)
+                    } },
+                    onRouteSelected = { mode -> runMode {
+                        if (vacuumThenMop) it.setCleanMotorMode(fan, water, mode) else it.setMopMode(mode)
+                    } },
                     onCountChange = { cleaningCount = it },
                 )
             }
@@ -500,21 +592,25 @@ fun VacuumDetailScreen(
             busy = busy,
             selectedRoomCount = selectedRoomIds.size,
             onClean = {
+                sessionRoomIds = emptyList()
                 val order = viewModel.defaultCleanOrder()
                 viewModel.run("Cleaning started") { it.clean(order) }
             },
             onCleanRooms = {
                 val toClean = selectedRoomIds
+                sessionRoomIds = toClean
                 selectedRoomIds = emptyList()
-                viewModel.run { it.cleanRooms(toClean, cleaningCount) }
+                viewModel.run { it.cleanRooms(toClean, if (status.cleanSequenceType == 1) 1 else cleaningCount) }
             },
             onClearSelection = { selectedRoomIds = emptyList() },
             onPause = { viewModel.run { it.pause() } },
             onResume = { viewModel.run("Cleaning resumed") { it.resumeCleaning() } },
             onStop = {
+                sessionRoomIds = emptyList()
                 viewModel.run { it.stopCleaning() }
             },
             onDock = {
+                sessionRoomIds = emptyList()
                 viewModel.run("Returning to dock") { it.dock() }
             },
             onCleaningMode = { panel = DetailPanel.CleaningMode },
@@ -526,7 +622,14 @@ fun VacuumDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(viewModel.deviceName, style = MaterialTheme.typography.titleLarge) },
+                title = {
+                    Column {
+                        Text(viewModel.deviceName, style = MaterialTheme.typography.titleLarge)
+                        modelSubtitle(viewModel.deviceName, viewModel.modelDisplayName)?.let {
+                            Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Go back")
@@ -545,21 +648,30 @@ fun VacuumDetailScreen(
             MapHeroSection(
                 deviceId = viewModel.repository.duid,
                 parsedMap = parsedMap,
+                offlineLines = offlineLines,
                 busy = busy,
-                selectedRoomIds = if (mapRunActive) emptyList() else selectedRoomIds,
-                activeRunRoomIds = activeRunRoomIds.orEmpty(),
+                selectedRoomIds = selectedRoomIds,
                 sessionRoomNames = sessionRoomNames,
+                activeRoomIds = activeRooms,
                 floorMaps = floorMaps,
                 currentFloorFlag = currentFloorFlag,
+                rotationDegrees = mapRotation,
+                yaw3D = map3DYaw,
+                onYawBy = viewModel::turnMap3DBy,
+                tilt3D = map3DTilt,
+                onTiltBy = viewModel::tiltMap3DBy,
+                is3D = map3D,
                 onLoadMap = onLoadMap,
                 onRecover = onRecover,
                 onRoomTap = onRoomTap,
                 onObstacleTap = { openObstacle = it },
                 onFloorSwitch = onFloorSwitch,
                 onEditMap = onMapEdit,
+                // Each view keeps its own heading: this button turns whichever one is showing.
+                onRotate = { if (map3D) viewModel.turnMap3DBy(90f) else viewModel.rotateMap90() },
+                onToggle3D = { viewModel.setMap3D(!map3D) },
                 mapViewport = mapViewport,
-                layers = layers,
-                onLayersChange = { layers = it },
+                faintRoute = status.state !in ACTIVE_CLEANING_STATES && status.state != VacuumStateCodes.PAUSED,
                 modifier = modifier,
             )
         }
@@ -597,7 +709,7 @@ fun VacuumDetailScreen(
                             }
                             PanelBody(headed)
                         } else {
-                            MoreActionsSheetContent(onAction = onMoreAction)
+                            MoreActionsSheetContent(showFindPet = supportsPetSearch, onAction = onMoreAction)
                         }
                     }
 
@@ -687,41 +799,44 @@ fun VacuumDetailScreen(
 }
 
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MapHeroSection(
     deviceId: String,
     parsedMap: ParsedMap?,
+    offlineLines: List<String>,
     busy: Boolean,
     selectedRoomIds: List<Int>,
-    activeRunRoomIds: Set<Int>,
     sessionRoomNames: List<String>,
+    activeRoomIds: Set<Int>,
     floorMaps: List<FloorMap>,
     currentFloorFlag: Int,
+    rotationDegrees: Int,
+    yaw3D: Float,
+    onYawBy: (Float) -> Unit,
+    tilt3D: Float,
+    onTiltBy: (Float) -> Unit,
+    is3D: Boolean,
     onLoadMap: () -> Unit,
     onRecover: () -> Unit,
     onRoomTap: (Int) -> Unit,
     onObstacleTap: (MapObstacle) -> Unit,
     onFloorSwitch: (Int) -> Unit,
     onEditMap: () -> Unit,
+    onRotate: () -> Unit,
+    onToggle3D: () -> Unit,
     mapViewport: LiveMapViewport,
-    layers: MapLayerVisibility,
-    onLayersChange: (MapLayerVisibility) -> Unit,
+    faintRoute: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    var showLayers by remember(deviceId) { mutableStateOf(false) }
-    if (showLayers && parsedMap != null) {
-        ModalBottomSheet(onDismissRequest = { showLayers = false }) {
-            MapLayersSheet(parsedMap, layers, onLayersChange)
-        }
-    }
     val scheme = MaterialTheme.colorScheme
-    val heroBackground = if (scheme.surface.luminance() < 0.5f) {
-        scheme.surfaceVariant
-    } else {
-        // Near-white, so the tinted rooms advance instead of sinking into a grey slab.
-        scheme.surfaceContainerLowest
+    // Black in both themes, as in the Roborock app: the bright room colours need it, and the gaps in
+    // the plan then read as unscanned instead of grey floor.
+    var layers by remember { mutableStateOf(MapLayerVisibility()) }
+    var showLayers by remember { mutableStateOf(false) }
+    if (showLayers && parsedMap != null) ModalBottomSheet(onDismissRequest = { showLayers = false }) {
+        MapLayersSheet(parsedMap, layers) { layers = it }
     }
+    val heroBackground = MAP_HERO_BACKGROUND
     Box(
         modifier = modifier
             .clipToBounds()
@@ -732,28 +847,33 @@ private fun MapHeroSection(
                 map = parsedMap,
                 viewportScope = deviceId to currentFloorFlag,
                 selectedRoomIds = selectedRoomIds,
-                activeRunRoomIds = activeRunRoomIds,
+                activeRoomIds = activeRoomIds,
                 layers = layers,
                 onRoomTap = onRoomTap,
                 onObstacleTap = onObstacleTap,
+                is3D = is3D,
+                // The two views keep separate headings, so turning the 3D model never moves the 2D map.
+                yawDegrees = if (is3D) yaw3D else rotationDegrees.toFloat(),
+                onYawBy = onYawBy,
+                tiltDegrees = tilt3D,
+                onTiltBy = onTiltBy,
                 providedMapViewport = mapViewport,
+                faintRoute = faintRoute,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
             MapEmptyState(busy = busy, onLoadMap = onLoadMap, onRecover = onRecover, modifier = Modifier.fillMaxSize())
         }
 
+        // Refresh and Edit map are the only controls on top of the map; camera, remote and map
+        // recovery live in the More sheet so the hero reads as one surface. Edit sits in the
+        // opposite corner so the two can't be confused, and only once there is a map to edit.
         if (parsedMap != null) {
-            Row(
-                Modifier.align(Alignment.BottomStart).padding(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            FilledTonalIconButton(
+                onClick = onEditMap,
+                modifier = Modifier.align(Alignment.BottomStart).padding(12.dp).size(48.dp),
             ) {
-                FilledTonalIconButton(onClick = onEditMap, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit map", modifier = Modifier.size(22.dp))
-                }
-                FilledTonalIconButton(onClick = { showLayers = true }, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Default.Layers, contentDescription = "Map layers", modifier = Modifier.size(22.dp))
-                }
+                Icon(Icons.Default.Edit, contentDescription = "Edit map", modifier = Modifier.size(22.dp))
             }
         }
 
@@ -764,6 +884,23 @@ private fun MapHeroSection(
         ) {
             if (busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
             else Icon(Icons.Default.Refresh, contentDescription = "Refresh map", modifier = Modifier.size(22.dp))
+        }
+
+        if (parsedMap != null) {
+            Row(
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilledTonalIconButton(onClick = { showLayers = true }, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Default.Layers, contentDescription = "Map layers")
+                }
+                FilledTonalIconButton(onClick = onToggle3D, modifier = Modifier.size(40.dp)) {
+                    Text(if (is3D) "3D" else "2D", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+                FilledTonalIconButton(onClick = onRotate, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Default.RotateRight, contentDescription = "Rotate map 90°", modifier = Modifier.size(20.dp))
+                }
+            }
         }
 
         Column(
@@ -783,6 +920,7 @@ private fun MapHeroSection(
             if (sessionRoomNames.isNotEmpty()) {
                 SessionRoomsBadge(roomNames = sessionRoomNames)
             }
+            OfflineSnapshotBadge(offlineLines)
         }
     }
 }
@@ -865,114 +1003,242 @@ private fun SessionRoomsBadge(roomNames: List<String>, modifier: Modifier = Modi
     }
 }
 
+// Stylised, not to scale: tall enough that walls read as walls instead of thin borders.
+private const val WALL_HEIGHT_CELLS = 7f
+private const val MIN_ZOOM = 0.4f
+private const val MAX_ZOOM = 8f
+// Degrees of tilt per screen pixel two fingers are dragged vertically; a full-screen drag is about 70°.
+private const val TILT_DEGREES_PER_PX = 0.05f
+
+private fun DrawScope.drawMapLayer(image: ImageBitmap, view: MapView, height: Float, quality: FilterQuality) {
+    withTransform({ transform(view.layerMatrix(height)) }) {
+        val size = IntSize(image.width, image.height)
+        drawImage(
+            image = image,
+            srcOffset = IntOffset.Zero,
+            srcSize = size,
+            dstOffset = IntOffset.Zero,
+            dstSize = size,
+            filterQuality = quality,
+        )
+    }
+}
+
+private val MIN_LABEL_WIDTH = 36.dp
+
+/** The widest a name may be: the whole view when the room's width is unknown, else its room's, at least [minPx]. */
+internal fun labelTextWidth(spanKnown: Boolean, roomPx: Float, minPx: Int, viewPx: Int): Int =
+    if (!spanKnown) viewPx else roomPx.toInt().coerceAtLeast(minPx).coerceAtMost(viewPx)
+
+private val LABEL_PILL_FLAT = Color.White.copy(alpha = 0.8f)
+private val LABEL_PILL_3D = Color.Black.copy(alpha = 0.6f)
+
 @Composable
 private fun VacuumMapImage(
     map: ParsedMap,
     selectedRoomIds: List<Int>,
-    activeRunRoomIds: Set<Int>,
-    layers: MapLayerVisibility,
     onRoomTap: (Int) -> Unit,
     onObstacleTap: (MapObstacle) -> Unit,
+    is3D: Boolean,
+    yawDegrees: Float,
+    onYawBy: (Float) -> Unit,
+    tiltDegrees: Float,
+    onTiltBy: (Float) -> Unit,
     modifier: Modifier = Modifier,
     viewportScope: Any? = null,
     providedMapViewport: LiveMapViewport? = null,
+    faintRoute: Boolean = false,
+    activeRoomIds: Set<Int> = emptySet(),
+    layers: MapLayerVisibility = MapLayerVisibility(),
 ) {
-    val bitmap = rememberMapBitmap(
-        map, drawRestrictions = layers.restrictions, drawCleaningPath = layers.cleaningPath,
-        activeRunRoomIds = activeRunRoomIds, selectedRoomIds = selectedRoomIds.toSet(),
+    // Drawn larger than the grid so a zoomed-in view stays crisp; every length below that is measured
+    // in the layers' own pixels (wall height, label lift) is in cells times this.
+    val scale = remember(map) { supersampleFor(map) }
+    val (bitmap, overlayBitmap) = rememberMapLayers(map, scale)
+    val darkMap = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val walls = rememberWallBitmaps(map, scale, enabled = is3D)
+    val selectionBitmap = rememberSelectionBitmap(map, (selectedRoomIds + activeRoomIds).distinct(), scale)
+    val floorShapes = remember(map.floorKey()) { map.floorPlanShapes() }
+    val wallHeight = WALL_HEIGHT_CELLS * scale
+    val labelRooms = remember(map.rooms, map.eraserZones) { map.rooms.filter { it.labelNormX != null && it.labelNormY != null && it.id !in map.erasedRoomIds } }
+    val textMeasurer = rememberTextMeasurer()
+    // Labels follow the scheme rather than being a fixed black scrim: over a light map a dark
+    // scrim reads as a scattering of heavy blobs and dominates the surface it sits on.
+    val labelStyle = TextStyle(
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = Color(0xFF0E1A26),
     )
-    val labelRooms = remember(map.rooms) { map.rooms.filter { it.labelNormX != null && it.labelNormY != null } }
-    val currentLayers by rememberUpdatedState(layers)
+    val selectedBgColor = MaterialTheme.colorScheme.primary
+    // In dark mode `primary` is a bright cyan, so white-on-primary would be unreadable.
+    val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary)
+    val roomIcons = rememberRoomIconPainters()
+    val roomEdges = remember(map.floorKey(), selectedRoomIds, activeRoomIds) {
+        val targets = selectedRoomIds.toSet() + activeRoomIds
+        buildList {
+            map.forEachRoomEdge { id, x0, y0, x1, y1 ->
+                if (id in targets) add(Offset(x0 * scale, y0 * scale) to Offset(x1 * scale, y1 * scale))
+            }
+        }
+    }
+    val measuredLabels = measureMapRoomLabels(labelRooms, selectedRoomIds, activeRoomIds, layers.roomIcons)
     val currentOnRoomTap by rememberUpdatedState(onRoomTap)
     val currentOnObstacleTap by rememberUpdatedState(onObstacleTap)
+    val showObstacles by rememberUpdatedState(layers.detectedObstacles)
+    // Where the names were last drawn; filled while drawing, read by the tap handler.
+    val labelHits = remember { mutableListOf<RoomLabelHit>() }
+    val currentYaw by rememberUpdatedState(yawDegrees)
+    val currentOnYawBy by rememberUpdatedState(onYawBy)
+    val currentTilt by rememberUpdatedState(tiltDegrees)
+    val currentOnTiltBy by rememberUpdatedState(onTiltBy)
 
-    // A parsed map is mostly blank grid, so open framed on the floor plan rather than on padding.
-    val bounds = remember(map) { map.contentBoundsNorm() }
-    var viewport by remember { mutableStateOf(Size.Zero) }
-    // Null until the view has been measured, so the framing is never applied from a stale size.
-    val fit: Pair<Float, Offset>? = remember(bounds, viewport) {
-        if (viewport.width == 0f || viewport.height == 0f) null
-        else frameMap(bounds, map.fittedSize(viewport), viewport)
-    }
-    val currentFit by rememberUpdatedState(fit)
-
+    // The view is framed on the floor plan, once per map identity: a live update replaces the map object every
+    // few seconds, and a plan that is still growing must not re-centre and rescale under the user's fingers.
     val identity = map.viewportIdentity(viewportScope)
+    val bounds = remember(identity) { map.contentBoundsNorm() }
     val mapViewport = providedMapViewport ?: remember { LiveMapViewport() }
+    LaunchedEffect(identity, is3D) { mapViewport.frameIfNeeded(identity to is3D) }
+    // The gesture handlers outlive a live update, so they read the current map and view, not the ones they started with.
     val currentMap by rememberUpdatedState(map)
-    LaunchedEffect(identity, viewport, fit) {
-        mapViewport.frameIfNeeded(identity, viewport, fit)
-    }
+    val currentBitmap by rememberUpdatedState(bitmap)
 
-    val labels = mapRoomLabels(labelRooms, selectedRoomIds, activeRunRoomIds, layers.roomIcons,
-        map.fittedSize(viewport), viewport, mapViewport.offset, mapViewport.scale)
-    val currentLabels by rememberUpdatedState(labels.map { it.placement })
+    fun viewFor(width: Float, height: Float): MapView {
+        // Fitted as if looking straight down, so the plan keeps its size as the camera is tilted
+        // instead of shrinking and growing under the fingers.
+        val fit = fitScale(
+            width, height,
+            bounds.width * bitmap.width, bounds.height * bitmap.height,
+            currentYaw, squash = 1f, freeTurning = is3D,
+        ) * (if (is3D) 1.1f else 1f)
+        return framedView(
+            canvasW = width,
+            canvasH = height,
+            centerX = (bounds.left + bounds.right) / 2f * bitmap.width,
+            centerY = (bounds.top + bounds.bottom) / 2f * bitmap.height,
+            fit = fit,
+            zoom = mapViewport.zoom,
+            pan = mapViewport.pan,
+            yawDegrees = currentYaw,
+            squash = if (is3D) squashForTilt(currentTilt) else 1f,
+        )
+    }
+    val currentViewFor by rememberUpdatedState(::viewFor)
+    val drawn = remember { DrawnView() }
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        val obstacleIcons = rememberObstacleIcons()
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
                 .clipToBounds()
-                .onSizeChanged { viewport = it.toSize() }
-                .pointerInput(identity) {
-                    detectTransformGestures { centroid, pan, zoom, _ ->
-                        val view = size.toSize()
-                        val (newScale, newOffset) =
-                            zoomMap(mapViewport.scale, mapViewport.offset, centroid, pan, zoom, currentMap.fittedSize(view), view)
-                        mapViewport.scale = newScale
-                        mapViewport.offset = newOffset
+                .pointerInput(identity, is3D) {
+                    // Pinch zooms about the fingers. In 3D the model behaves like a maps app's 3D
+                    // view: one finger moves it, a two-finger twist turns it to any heading, and two
+                    // fingers dragged up or down together tip the camera. The flat map keeps the
+                    // heading chosen with the rotate button, and two fingers pan it.
+                    detectMapGestures { centroid, panChange, zoomChange, rotation, fingers ->
+                        val newZoom = (mapViewport.zoom * zoomChange).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                        val tilting = is3D && isTiltDrag(fingers, panChange, zoomChange, rotation)
+                        val center = Offset(size.width / 2f, size.height / 2f)
+                        // The pan is kept in units of the framed view; this works in pixels and converts back.
+                        val fit = drawn.forHitTest { currentViewFor(size.width.toFloat(), size.height.toFloat()) }.k / mapViewport.zoom
+                        val panPx = mapViewport.pan * fit
+                        val moved = (centroid - center) - ((centroid - center) - panPx) * (newZoom / mapViewport.zoom) +
+                            (if (tilting) Offset.Zero else panChange)
+                        // Loose clamp so the plan can't be flung entirely out of reach.
+                        mapViewport.pan = Offset(
+                            moved.x.coerceIn(-size.width.toFloat(), size.width.toFloat()),
+                            moved.y.coerceIn(-size.height.toFloat(), size.height.toFloat()),
+                        ) / fit
+                        mapViewport.zoom = newZoom
+                        if (is3D && rotation != 0f) currentOnYawBy(rotation)
+                        // Dragging up tips the camera toward the horizon, as in a maps app.
+                        if (tilting && panChange.y != 0f) currentOnTiltBy(-panChange.y * TILT_DEGREES_PER_PX)
                     }
                 }
-                .pointerInput(identity) {
+                .pointerInput(identity, is3D) {
                     detectTapGestures(
-                        // Double tap returns to the framed view, not to the padded whole grid.
-                        onDoubleTap = {
-                            currentFit?.let { (s, o) ->
-                                mapViewport.scale = s
-                                mapViewport.offset = o
-                            }
-                        },
-                        onTap = { tapOffset ->
-                            val content = currentMap.fittedSize(size.toSize())
+                        // Double tap returns to the framed view; the heading is left as it is.
+                        onDoubleTap = { mapViewport.reset() },
+                        onTap = { tap ->
                             // An obstacle dot is small, so a tap near one opens it before any room.
-                            if (currentLayers.detectedObstacles) {
-                                currentMap.obstacleAt(tapOffset, content, mapViewport.offset, mapViewport.scale, 20.dp.toPx())
-                                    ?.let { currentOnObstacleTap(it); return@detectTapGestures }
-                            }
-                            currentLabels.roomAtLabel(tapOffset)?.let {
-                                currentOnRoomTap(it)
-                                return@detectTapGestures
-                            }
-                            val p = (tapOffset - mapViewport.offset) / mapViewport.scale
-                            val normX = p.x / content.width
-                            val normY = p.y / content.height
-                            // The view is larger than the map; a tap beside it is not on a room.
-                            if (normX in 0f..1f && normY in 0f..1f) {
-                                currentMap.roomAtNorm(normX, normY)?.let { currentOnRoomTap(it.id) }
-                            }
+                            val tapView = drawn.forHitTest { currentViewFor(size.width.toFloat(), size.height.toFloat()) }
+                            if (showObstacles) currentMap.obstacleAt(tap, tapView, currentBitmap.width / currentMap.width.toFloat(), 20.dp.toPx())
+                                ?.let { currentOnObstacleTap(it); return@detectTapGestures }
+                            // The same transform that drew the map, run backwards, so a tap lands on
+                            // the room under the finger at any heading, zoom or tilt.
+                            roomAtLabel(tap, labelHits)?.let { currentOnRoomTap(it); return@detectTapGestures }
+                            currentMap.roomIdAtTap(tapView, tap, currentBitmap.width, currentBitmap.height)
+                                ?.let { currentOnRoomTap(it) }
                         },
                     )
                 },
         ) {
-            val content = map.fittedSize(size)
-            withTransform({
-                translate(left = mapViewport.offset.x, top = mapViewport.offset.y)
-                scale(mapViewport.scale, mapViewport.scale, pivot = Offset.Zero)
-            }) {
-                drawImage(
-                    image = bitmap,
-                    srcOffset = IntOffset.Zero,
-                    srcSize = IntSize(bitmap.width, bitmap.height),
-                    dstOffset = IntOffset.Zero,
-                    dstSize = IntSize(content.width.toInt(), content.height.toInt()),
-                    filterQuality = FilterQuality.None,
-                )
+            val view = viewFor(size.width, size.height)
+            drawn.view = view
+            // Magnified past 2 screen pixels per layer pixel, nearest-neighbour keeps edges crisp
+            // where smoothing would blur them; so does a flat quarter-turn, which maps pixels 1:1.
+            // Zoomed out, where many pixels share one on screen, smoothing avoids shimmer.
+            val flatQuarterTurn = !is3D && yawDegrees % 90f == 0f
+            val quality = if ((flatQuarterTurn && view.k >= 0.95f) || view.k >= 2f) FilterQuality.None else FilterQuality.Low
+            drawMapLayer(bitmap, view, 0f, quality)
+            // A selected room is tinted over the floor, and the path goes over the tint, so the
+            // choice reads at a glance without hiding where the robot has been.
+            selectionBitmap?.let { drawMapLayer(it, view, 0f, quality) }
+            drawFloorPlanStrokes(floorShapes, view, scale)
+            for ((from, to) in roomEdges) drawLine(Color.White.copy(alpha = .8f),
+                view.toScreen(from.x, from.y), view.toScreen(to.x, to.y), 1.5.dp.toPx())
+            if (layers.restrictions) drawMapLayer(overlayBitmap, view, 0f, quality)
+            drawRouteAndMarkers(map, view, scale, darkMap, faintRoute, layers.cleaningPath)
+            if (is3D && walls != null) {
+                val (wallSide, wallTop) = walls
+                // Walls rise by stacking the wall layer at climbing heights, then capping it with the
+                // lighter top. Each layer goes through the same transform as the floor, so the
+                // extrusion lines up at every heading.
+                val steps = (wallHeight * view.k * view.lift / 1.5f).toInt().coerceIn(2, 30)
+                for (i in 1..steps) drawMapLayer(wallSide, view, wallHeight * i / steps, quality)
+                drawMapLayer(wallTop, view, wallHeight, quality)
             }
 
-            // Keep labels legible at every zoom level and use the same bounds for tapping.
-            drawRoomLabels(labels)
+            // Under the labels, so a name is never hidden by a badge. A tap still opens the obstacle first.
+            if (layers.detectedObstacles) drawObstacles(map, view, bitmap.width / map.width.toFloat(), obstacleIcons)
 
-            // Over the labels, since a tap on a dot opens the obstacle even where a label covers it.
-            if (layers.detectedObstacles) drawObstacles(map, content, mapViewport.offset, mapViewport.scale)
+            // Labels are drawn outside the zoom transform so they stay a constant, legible size
+            // instead of growing to 8x with the map. Selected rooms carry their cleaning order,
+            // so selection reads without relying on the highlight colour alone.
+            val requests = measuredLabels.map { label ->
+                val anchor = label.placement.anchor
+                RoomLabelRequest(label.placement.id,
+                    view.toScreen(anchor.x * bitmap.width, anchor.y * bitmap.height,
+                        height = if (is3D) wallHeight * .5f else 0f),
+                    label.placement.bounds.size, selectedRoomIds.indexOf(label.placement.id),
+                    label.placement.id in activeRoomIds)
+            }
+            val byId = measuredLabels.associateBy { it.placement.id }
+            val placed = placeRoomLabels(requests, size, 3.dp.toPx()).map {
+                byId.getValue(it.id).copy(placement = it)
+            }
+            labelHits.clear()
+            labelHits.addAll(placed.map { RoomLabelHit(it.placement.id, it.placement.bounds) })
+            drawRoomLabels(placed)
+
+        }
+
+        // Zoom is shown relative to the framed view, which is the resting state. It sits at the bottom
+        // centre because the floor switcher and the session rooms badge use the top left.
+        if (mapViewport.zoom > 1.05f) {
+            Surface(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
+                color = Color.Black.copy(alpha = 0.6f),
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Text(
+                    "${(mapViewport.zoom * 100).toInt()}%",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                )
+            }
         }
 
     }
@@ -1153,6 +1419,7 @@ private fun ControlBar(
                 label = {
                     Text(
                         when {
+                            status.cleanSequenceType == 1 -> "Vac → Mop"
                             isSmartModeSet(status.fanPower, status.waterBoxCustomMode, null) -> CleanPlan.SMART.label
                             isCustomizeModeSet(status.fanPower, status.waterBoxCustomMode, null) -> CleanPlan.PER_ROOM.label
                             mopping && status.fanPower == VacuumFanPower.OFF -> "Mop"
@@ -1243,10 +1510,10 @@ private fun ControlBar(
 }
 
 
-private enum class MoreAction { ROOMS, ZONES, PIN_GO, REMOTE, SCHEDULE, CAMERA, DOCK, HISTORY, MAPS, EDIT_MAP, ROUTINES }
+private enum class MoreAction { ROOMS, ZONES, PIN_GO, REMOTE, SCHEDULE, CAMERA, DOCK, HISTORY, MAPS, EDIT_MAP, ROUTINES, FIND_PET }
 
 @Composable
-private fun MoreActionsSheetContent(onAction: (MoreAction) -> Unit) {
+private fun MoreActionsSheetContent(showFindPet: Boolean, onAction: (MoreAction) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1280,7 +1547,11 @@ private fun MoreActionsSheetContent(onAction: (MoreAction) -> Unit) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MoreActionItem(Modifier.weight(1f), Icons.AutoMirrored.Filled.PlaylistPlay, "Routines", MaterialTheme.colorScheme.secondary) { onAction(MoreAction.ROUTINES) }
-            Spacer(Modifier.weight(1f))
+            if (showFindPet) {
+                MoreActionItem(Modifier.weight(1f), Icons.Default.Pets, "Find my pet", AppColors.AccentYellow) { onAction(MoreAction.FIND_PET) }
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
             Spacer(Modifier.weight(1f))
         }
     }
@@ -1391,26 +1662,30 @@ private fun CleaningModeSheetContent(
     currentFanPower: Int?,
     currentWaterMode: Int?,
     currentRoute: Int?,
+    currentSequenceType: Int?,
     cleaningCount: Int,
     busy: Boolean,
     supportsSmartPlan: Boolean,
+    supportsVacuumThenMop: Boolean,
+    supportsCleanEfficiency: Boolean,
     rooms: List<ParsedMapRoom>,
     roomCleanModes: List<RoomCleanMode>,
     roomModesLoaded: Boolean?,
     error: String?,
     onPlanSelected: (CleanPlan) -> Unit,
+    onModeSelected: (Int) -> Unit,
     onSaveRoomModes: (List<RoomCleanMode>) -> Unit,
     onFanPowerSelected: (Int) -> Unit,
     onWaterModeSelected: (Int) -> Unit,
     onRouteSelected: (Int) -> Unit,
     onCountChange: (Int) -> Unit,
 ) {
-    val initialTab = when {
+    val selectedTab = when {
+        currentSequenceType == 1 -> 3
         (currentWaterMode ?: WaterBoxMode.OFF) == WaterBoxMode.OFF -> 2
         currentFanPower == VacuumFanPower.OFF -> 1
         else -> 0
     }
-    var selectedTab by remember { mutableIntStateOf(initialTab) }
     // SmartPlan owns suction, water and route; the robot rejects manual changes until it is left.
     val smart = isSmartModeSet(currentFanPower, currentWaterMode, currentRoute)
     // Per-room settings report their own codes for all three as well.
@@ -1462,19 +1737,13 @@ private fun CleaningModeSheetContent(
             }
         } else {
             SecondaryTabRow(selectedTabIndex = selectedTab) {
-                listOf("Vac & Mop", "Mop", "Vacuum").forEachIndexed { i, title ->
+                val tabs = listOf("Vac & Mop", "Mop", "Vacuum") +
+                    if (supportsVacuumThenMop || currentSequenceType == 1) listOf("Vac → Mop") else emptyList()
+                tabs.forEachIndexed { i, title ->
                     Tab(
                         selected = selectedTab == i,
-                        onClick = {
-                            selectedTab = i
-                            val waterOff = (currentWaterMode ?: WaterBoxMode.OFF) == WaterBoxMode.OFF
-                            val fanOff = currentFanPower == VacuumFanPower.OFF
-                            when (i) {
-                                0 -> { if (waterOff) onWaterModeSelected(WaterBoxMode.LOW); if (fanOff) onFanPowerSelected(VacuumFanPower.BALANCED) }
-                                1 -> { if (waterOff) onWaterModeSelected(WaterBoxMode.LOW); onFanPowerSelected(VacuumFanPower.OFF) }
-                                2 -> { if (fanOff) onFanPowerSelected(VacuumFanPower.BALANCED); onWaterModeSelected(WaterBoxMode.OFF) }
-                            }
-                        },
+                        enabled = !busy,
+                        onClick = { onModeSelected(i) },
                         text = { Text(title) },
                     )
                 }
@@ -1490,6 +1759,7 @@ private fun CleaningModeSheetContent(
                     val subtitle = when (selectedTab) {
                         0 -> "Vac & Mop for daily clean"
                         1 -> "Mop only for delicate floors"
+                        3 -> "Vacuum first, then mop"
                         else -> "Vacuum only mode"
                     }
                     Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1498,16 +1768,21 @@ private fun CleaningModeSheetContent(
                         ModeOptionSelector("Suction power", FAN_OPTIONS.map { it.second }, FAN_OPTIONS.indexOfFirst { it.first == currentFanPower }, !busy) { onFanPowerSelected(FAN_OPTIONS[it].first) }
                     }
                     val water = @Composable {
-                        ModeOptionSelector("Water flow", WATER_OPTIONS.map { it.second }, WATER_OPTIONS.indexOfFirst { it.first == WaterBoxMode.normalize(currentWaterMode) }, !busy) { onWaterModeSelected(WATER_OPTIONS[it].first) }
+                        val options = if (selectedTab == 3) WATER_OPTIONS.filter { it.first != WaterBoxMode.OFF } else WATER_OPTIONS
+                        ModeOptionSelector("Water flow", options.map { it.second }, options.indexOfFirst { it.first == WaterBoxMode.normalize(currentWaterMode) }, !busy) { onWaterModeSelected(options[it].first) }
                     }
                     val route = @Composable {
-                        ModeOptionSelector("Route", ROUTE_OPTIONS.map { it.second }, ROUTE_OPTIONS.indexOfFirst { it.first == currentRoute }, !busy) { onRouteSelected(ROUTE_OPTIONS[it].first) }
+                        val options = if (selectedTab == 3 && !supportsCleanEfficiency) {
+                            ROUTE_OPTIONS.filter { it.first == MopRoute.STANDARD || it.first == MopRoute.FAST }
+                        } else ROUTE_OPTIONS
+                        ModeOptionSelector("Route", options.map { it.second }, options.indexOfFirst { it.first == currentRoute }, !busy) { onRouteSelected(options[it].first) }
                     }
 
                     when (selectedTab) {
                         0 -> { suction(); water(); CountSelector(cleaningCount, onCountChange); route() }
                         1 -> { water(); CountSelector(cleaningCount, onCountChange); route() }
                         2 -> { suction(); CountSelector(cleaningCount, onCountChange); route() }
+                        3 -> { suction(); water(); route() }
                     }
                 }
             }
@@ -2372,7 +2647,7 @@ private fun SavedMapPreview(label: String, map: ParsedMap?, failed: Boolean, mod
 
 /** The floor plan of [map], cut to the part that holds floor and fitted into the space. */
 @Composable
-private fun SavedMapImage(map: ParsedMap, modifier: Modifier = Modifier) {
+internal fun SavedMapImage(map: ParsedMap, modifier: Modifier = Modifier, rotationDegrees: Int = 0) {
     val bitmap = rememberMapBitmap(map)
     val bounds = remember(map) { map.contentBoundsNorm() }
     Canvas(modifier) {
@@ -2381,17 +2656,20 @@ private fun SavedMapImage(map: ParsedMap, modifier: Modifier = Modifier) {
         val srcTop = if (usable) bounds.top * bitmap.height else 0f
         val srcW = (if (usable) bounds.width * bitmap.width else bitmap.width.toFloat()).coerceAtLeast(1f)
         val srcH = (if (usable) bounds.height * bitmap.height else bitmap.height.toFloat()).coerceAtLeast(1f)
-        val scale = minOf(size.width / srcW, size.height / srcH)
+        val sideways = rotationDegrees % 180 != 0
+        val scale = minOf(size.width / (if (sideways) srcH else srcW), size.height / (if (sideways) srcW else srcH))
         val dstW = srcW * scale
         val dstH = srcH * scale
-        drawImage(
-            image = bitmap,
-            srcOffset = IntOffset(srcLeft.toInt(), srcTop.toInt()),
-            srcSize = IntSize(srcW.toInt(), srcH.toInt()),
-            dstOffset = IntOffset(((size.width - dstW) / 2).toInt(), ((size.height - dstH) / 2).toInt()),
-            dstSize = IntSize(dstW.toInt(), dstH.toInt()),
-            filterQuality = FilterQuality.Low,
-        )
+        rotate(rotationDegrees.toFloat()) {
+            drawImage(
+                image = bitmap,
+                srcOffset = IntOffset(srcLeft.toInt(), srcTop.toInt()),
+                srcSize = IntSize(srcW.toInt(), srcH.toInt()),
+                dstOffset = IntOffset(((size.width - dstW) / 2).toInt(), ((size.height - dstH) / 2).toInt()),
+                dstSize = IntSize(dstW.toInt(), dstH.toInt()),
+                filterQuality = FilterQuality.Low,
+            )
+        }
     }
 }
 
@@ -2506,6 +2784,8 @@ private fun isBusyState(state: Int?): Boolean = when (state) {
     VacuumStateCodes.NOT_CHARGING,
     VacuumStateCodes.CHARGING,
     VacuumStateCodes.CHARGER_DISCONNECTED,
+    VacuumStateCodes.CHARGING_COMPLETE,
+    VacuumStateCodes.OFFLINE,
     VacuumStateCodes.SHUTTING_DOWN -> false
     else -> true
 }
@@ -2529,8 +2809,7 @@ private fun PulsingDot(color: Color, modifier: Modifier = Modifier) {
 @Composable
 private fun stateTint(state: Int?): Color = when (state) {
     VacuumStateCodes.WASHING_MOP, VacuumStateCodes.GOING_TO_WASH_MOP,
-    VacuumStateCodes.DRYING_MOP,
-    VacuumStateCodes.RETURNING_TO_DOCK_FOR_DRYING -> MaterialTheme.colorScheme.tertiary
+    VacuumStateCodes.DRYING_MOP, VacuumStateCodes.WASHING_MOP_ALT -> MaterialTheme.colorScheme.tertiary
     VacuumStateCodes.ERROR, VacuumStateCodes.CHARGING_ERROR -> MaterialTheme.colorScheme.error
     VacuumStateCodes.CLEANING, VacuumStateCodes.SEGMENT_CLEANING,
     VacuumStateCodes.ZONED_CLEANING, VacuumStateCodes.SPOT_CLEANING,

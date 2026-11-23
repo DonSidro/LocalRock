@@ -58,6 +58,32 @@ class LegacyMapTest {
     }
 
     @Test
+    fun reads_the_carpet_mask_and_the_flag_of_every_path_point() {
+        val map = parseLegacyMap(raw)
+        assertEquals(map.pathMm.size, map.pathFlags.size)
+        assertEquals(3281, map.pathFlags.count { it == 1 })
+        val mask = assertNotNull(map.carpetMask)
+        assertEquals(map.grid.size, mask.size)
+        assertEquals(3555, mask.count { it.toInt() == 1 })
+    }
+
+    @Test
+    fun every_room_label_sits_on_that_rooms_own_floor() {
+        val map = parseLegacyMap(raw)
+        assertTrue(map.rooms.isNotEmpty())
+        for (room in map.rooms) {
+            val under = map.roomAtNorm(room.labelNormX!!, room.labelNormY!!)
+            assertEquals(room.id, under?.id, "label of room ${room.id}")
+        }
+    }
+
+    @Test
+    fun every_room_knows_how_wide_it_is_at_its_label() {
+        val map = parseLegacyMap(raw)
+        for (room in map.rooms) assertTrue((room.labelSpanCells ?: 0) >= 1, "room ${room.id}")
+    }
+
+    @Test
     fun extracts_cleaning_path() {
         val map = parseLegacyMap(raw)
         assertEquals(5307, map.pathMm.size)
@@ -136,6 +162,67 @@ class LegacyMapTest {
             putU16(b, p, it); p += 2
         }
         return b
+    }
+
+    /** A room grid from rows written top first, as they look on screen; '.' is no room. */
+    private fun grid(vararg rowsTopFirst: String): Triple<IntArray, Int, Int> {
+        val width = rowsTopFirst.first().length
+        val height = rowsTopFirst.size
+        val cells = IntArray(width * height)
+        rowsTopFirst.forEachIndexed { fromTop, row ->
+            val y = height - 1 - fromTop
+            row.forEachIndexed { x, c -> cells[y * width + x] = if (c == '.') 0 else c.digitToInt() }
+        }
+        return Triple(cells, width, height)
+    }
+
+    @Test
+    fun a_u_shaped_rooms_label_stays_on_its_floor() {
+        // The middle of this U is the gap between its arms, where the label used to go.
+        val (cells, w, h) = grid(
+            "11...11",
+            "11...11",
+            "11...11",
+            "1111111",
+        )
+        val (x, y) = roomLabelCells(cells, w, h).getValue(1)
+        assertEquals(1, cells[y * w + x])
+    }
+
+    @Test
+    fun a_label_goes_on_the_open_part_of_a_room_not_its_corridor() {
+        // An L-shaped hallway: a 5x5 landing and a long corridor. The label sits in the landing,
+        // off its walls and toward the room's middle, not out in the corridor or on the next room.
+        val (cells, w, h) = grid(
+            "11111.....",
+            "11111.....",
+            "11111.....",
+            "11111.....",
+            "1111111111",
+            "2222222222",
+        )
+        val labels = roomLabelCells(cells, w, h)
+        assertEquals(3 to 3, labels.getValue(1))
+        val (x2, y2) = labels.getValue(2)
+        assertEquals(2, cells[y2 * w + x2])
+    }
+
+    @Test
+    fun furniture_gaps_do_not_pull_a_name_off_the_middle() {
+        // The most open spot is left of the gaps at (5, 4); the middle is at about (6.8, 4.0), and
+        // (7, 4) is open enough, so the name goes there.
+        val (cells, w, h) = grid(
+            "111111111111111",
+            "111111111111111",
+            "111111111111111",
+            "111111111111111",
+            "1111111111.1.1.",
+            "1111111111.1.1.",
+            "111111111111111",
+            "111111111111111",
+            "111111111111111",
+        )
+        assertEquals(7 to 4, roomLabelCells(cells, w, h).getValue(1))
     }
 
     // ---- Hand-built blocks for cases the S8 captures don't contain ----
@@ -265,6 +352,96 @@ class LegacyMapTest {
         val map = mapWithBlocks(carpetBlock22, oneFlagged)
         assertFalse(map.carpetFlagsPresent)
         assertEquals(2, map.carpetAreas.size)
+    }
+
+    // ---- Block 55 (floor-plan zone lines), synthetic bytes in the layout seen on a real Curv 2 Flow ----
+
+    /** x, y in mm, type; zone record is segment, point count, point size 6, then the points. */
+    private fun zoneRecord(segment: Int, vararg points: Triple<Int, Int, Int>, size: Int = 6): String =
+        quadHex(segment, points.size, size) + points.joinToString("") { (x, y, t) -> quadHex(x, y, t) }
+
+    private fun zoneBlockHex(num: Int, payloadHex: String): String =
+        quadHex(55, 12) + quadHex(payloadHex.length / 2, 0) + quadHex(num, 0) + payloadHex
+
+    private fun mapWithOffsets(left: Int, top: Int, blockHex: String): ParsedMap {
+        val header = ByteArray(20).also { b -> b[0] = 0x72; b[1] = 0x72; putU16(b, 2, 20) }
+        val image = ByteArray(28 + 4).also { b ->
+            putU16(b, 0, 2); putU16(b, 2, 28); putU32(b, 4, 4)
+            putU32(b, 12, top); putU32(b, 16, left); putU32(b, 20, 2); putU32(b, 24, 2)
+        }
+        return parseLegacyMap(header + image + hexToBytes(blockHex))
+    }
+
+    private val square = arrayOf(Triple(500, 300, 1), Triple(700, 300, 2), Triple(700, 500, 3), Triple(500, 500, -1))
+
+    @Test
+    fun zone_lines_are_read_into_image_cells_without_repeating_the_first_point() {
+        val map = mapWithOffsets(left = 4, top = 2, blockHex = zoneBlockHex(1, zoneRecord(7, *square)))
+        val zone = map.zoneLines.single()
+        assertEquals(7, zone.segment)
+        assertEquals(
+            listOf(FloorPlanPoint(6, 4, 1), FloorPlanPoint(10, 4, 2), FloorPlanPoint(10, 8, 3), FloorPlanPoint(6, 8, -1)),
+            zone.points,
+        )
+    }
+
+    @Test
+    fun zone_lines_read_several_zones_back_to_back() {
+        val hex = zoneRecord(1, *square) + zoneRecord(3, *square, Triple(500, 700, 5))
+        val zones = mapWithBlocks(zoneBlockHex(2, hex)).zoneLines
+        assertEquals(listOf(1, 3), zones.map { it.segment })
+        assertEquals(listOf(4, 5), zones.map { it.points.size })
+    }
+
+    @Test
+    fun a_zone_that_overruns_the_block_is_dropped_and_the_ones_before_it_are_kept() {
+        val good = zoneRecord(1, *square)
+        val cut = zoneRecord(2, *square).dropLast(8)
+        val zones = mapWithBlocks(zoneBlockHex(2, good + cut)).zoneLines
+        assertEquals(listOf(1), zones.map { it.segment })
+    }
+
+    @Test
+    fun zone_lines_with_a_bad_point_size_or_too_few_points_are_dropped() {
+        assertTrue(mapWithBlocks(zoneBlockHex(1, zoneRecord(1, *square, size = 4))).zoneLines.isEmpty())
+        val line = zoneRecord(1, Triple(500, 300, 1), Triple(700, 300, 1))
+        assertEquals(listOf(2), mapWithBlocks(zoneBlockHex(2, line + zoneRecord(2, *square))).zoneLines.map { it.segment })
+    }
+
+    @Test
+    fun the_zone_count_in_the_header_caps_what_is_read_and_a_short_payload_ends_it() {
+        val two = zoneRecord(1, *square) + zoneRecord(2, *square)
+        assertEquals(1, mapWithBlocks(zoneBlockHex(1, two)).zoneLines.size)
+        assertEquals(2, mapWithBlocks(zoneBlockHex(9, two)).zoneLines.size)
+    }
+
+    @Test
+    fun a_zone_block_with_a_short_header_has_no_zones() {
+        val hex = quadHex(55, 8) + quadHex(0, 0)
+        assertTrue(mapWithBlocks(hex).zoneLines.isEmpty())
+    }
+
+    // ---- Block 47 (eraser zones): u32 id then four corners in mm, 20 bytes each ----
+
+    private fun eraserBlockHex(num: Int, vararg zones: List<Int>): String {
+        val body = zones.joinToString("") { z -> quadHex(z[0], 0) + quadHex(*z.drop(1).toIntArray()) }
+        return quadHex(47, 12) + quadHex(body.length / 2, 0) + quadHex(num, 0) + body
+    }
+
+    @Test
+    fun eraser_zones_are_read_as_millimetre_quads() {
+        val zones = mapWithBlocks(eraserBlockHex(2, listOf(0, 100, 200, 300, 200, 300, 400, 100, 400), listOf(1, 1, 2, 3, 4, 5, 6, 7, 8))).eraserZones
+        assertEquals(2, zones.size)
+        assertEquals(ZoneKind.ERASER, zones[0].kind)
+        assertEquals(listOf(100, 200, 300, 200, 300, 400, 100, 400), with(zones[0]) { listOf(x0, y0, x1, y1, x2, y2, x3, y3) })
+        assertEquals(1, zones[1].x0)
+    }
+
+    @Test
+    fun an_empty_or_short_eraser_block_has_no_zones_and_a_map_without_one_has_none() {
+        assertEquals(emptyList(), mapWithBlocks(eraserBlockHex(0)).eraserZones)
+        assertEquals(emptyList(), mapWithBlocks(quadHex(47, 12) + quadHex(8, 0) + quadHex(1, 0) + "0000000000000000").eraserZones)
+        assertEquals(emptyList(), liveS8Map().eraserZones)
     }
 
     private fun quadHex(vararg v: Int): String =

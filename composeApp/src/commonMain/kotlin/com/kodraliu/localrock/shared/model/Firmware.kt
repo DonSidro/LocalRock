@@ -10,6 +10,9 @@ data class FirmwareOtaResponse(
     val result: FirmwareUpdateInfo? = null,
 )
 
+/** The server's answer to an install request: started, or why not. */
+data class FirmwareStartResult(val started: Boolean, val version: String?, val reason: String?)
+
 @Serializable
 data class FirmwareUpdateInfo(
     /** Latest available firmware version. */

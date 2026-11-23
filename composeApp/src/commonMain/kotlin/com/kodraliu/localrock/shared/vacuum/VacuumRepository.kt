@@ -11,6 +11,7 @@ import com.kodraliu.localrock.shared.vacuum.map.MapZone
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMapRoom
 import com.kodraliu.localrock.shared.vacuum.map.VirtualWall
+import com.kodraliu.localrock.shared.vacuum.map.ZoneKind
 import com.kodraliu.localrock.shared.vacuum.map.parseB01Map
 import com.kodraliu.localrock.shared.vacuum.map.parseLegacyMap
 import kotlinx.coroutines.CancellationException
@@ -113,9 +114,16 @@ class VacuumRepository(
     /** The feature flags the robot reports itself; null until it has answered. */
     val robotFeatureSet: StateFlow<String?> = _robotFeatureSet
 
+    private val _robotNewFeatureInfo = MutableStateFlow<Long?>(null)
+
+    /** The robot's `new_feature_info` number from the same answer; null until it has answered. */
+    val robotNewFeatureInfo: StateFlow<Long?> = _robotNewFeatureInfo
+
     suspend fun fetchRobotFeatureSet() {
-        if (_robotFeatureSet.value != null) return
-        _robotFeatureSet.value = featureSetFromInitStatus(session.getInitStatus().requireOk("app_get_init_status").result)
+        if (_robotFeatureSet.value != null && _robotNewFeatureInfo.value != null) return
+        val result = session.getInitStatus().requireOk("app_get_init_status").result
+        _robotFeatureSet.value = featureSetFromInitStatus(result)
+        _robotNewFeatureInfo.value = newFeatureInfoFromInitStatus(result)
     }
 
     private val _dockSettings = MutableStateFlow(DockSettings())
@@ -169,6 +177,11 @@ class VacuumRepository(
     /** True while the robot holds a newly built map that has not been saved yet. */
     val unsavedMapPresent: StateFlow<Boolean> = _status.map { it.unsavedMapPresent }
         .stateIn(scope, SharingStarted.Eagerly, false)
+    private val unansweredPolls = UnansweredPolls(STALE_LINK_FAILURE_THRESHOLD)
+
+    /** True once several status polls in a row got no answer; false again as soon as the robot replies or pushes. */
+    val unresponsive: StateFlow<Boolean> = unansweredPolls.unresponsive
+
     private var pollJob: Job? = null
     private var dpsJob: Job? = null
     private var mapPollJob: Job? = null
@@ -185,6 +198,7 @@ class VacuumRepository(
         dpsJob = scope.launch {
             session.dpsUpdates.collect { dps ->
                 println("[VacLocal] dps push: ${dps.keys}")
+                unansweredPolls.heardFromRobot()
                 _status.update { it.applyDpsPush(dps) }
                 runRooms.update { it.withStatePush((dps[121] as? JsonPrimitive)?.intOrNull) }
             }
@@ -200,6 +214,7 @@ class VacuumRepository(
                 runCatching { session.getStatus() }
                     .onSuccess { fresh ->
                         consecutiveFailures = 0
+                        unansweredPolls.heardFromRobot()
                         if (fresh != null) {
                             println("[VacLocal] get_status ok: state=${fresh.state} battery=${fresh.battery}")
                             updateStatus(fresh)
@@ -211,6 +226,7 @@ class VacuumRepository(
                     .onFailure { e ->
                         runRooms.update { it.invalidate() }
                         consecutiveFailures++
+                        unansweredPolls.pollFailed()
                         println("[VacLocal] get_status FAILED (#$consecutiveFailures): ${e::class.simpleName}: ${e.message}")
                         if (consecutiveFailures >= STALE_LINK_FAILURE_THRESHOLD) {
                             // A timed-out RPC is not proof of a dead socket: a slow response or a
@@ -259,7 +275,7 @@ class VacuumRepository(
 
     suspend fun refreshStatus() {
         val fresh = runCatching { session.getStatus() }.getOrNull()
-        if (fresh != null) updateStatus(fresh) else runRooms.update { it.invalidate() }
+        if (fresh != null) { unansweredPolls.heardFromRobot(); updateStatus(fresh) } else runRooms.update { it.invalidate() }
     }
 
     fun detach() {
@@ -312,15 +328,10 @@ class VacuumRepository(
         applyRoomNames()
     }
 
-    private fun resolveRoomName(room: ParsedMapRoom): String =
-        segmentToRoomId[room.id]?.let { homeRoomNames[it] } ?: room.name
-
     private fun applyRoomNames() {
-        val tags = rawSegmentTable.takeIf { rawSegmentTableFloor == currentFloorFlag.value }
-        _parsedMap.update { pm ->
-            pm?.copy(rooms = pm.rooms.map { it.copy(name = resolveRoomName(it), roomTypeTag = tags?.find { entry -> entry.segment == it.id }?.tagId) })
-        }
-        _rooms.update { list -> list.map { it.copy(name = resolveRoomName(it), roomTypeTag = tags?.find { entry -> entry.segment == it.id }?.tagId) } }
+        fun ParsedMapRoom.resolved() = withRoomTable(segmentToRoomId, homeRoomNames, rawSegmentTable.takeIf { rawSegmentTableFloor == currentFloorFlag.value } ?: emptyList())
+        _parsedMap.update { pm -> pm?.copy(rooms = pm.rooms.map { it.resolved() }) }
+        _rooms.update { list -> list.map { it.resolved() } }
     }
 
     /**
@@ -428,6 +439,21 @@ class VacuumRepository(
     /** Switches suction, water and route in one command, the only way in or out of SmartPlan. */
     suspend fun setCleanMotorMode(fanPower: Int, waterBoxMode: Int, mopMode: Int) {
         session.setCleanMotorMode(fanPower, waterBoxMode, mopMode).requireOk("set_clean_motor_mode")
+        // All three go out together, so the next change must start from these, not wait for a status poll.
+        _status.update { it.copy(fanPower = fanPower, waterBoxCustomMode = waterBoxMode) }
+        _mopMode.value = mopMode
+    }
+
+    suspend fun setCleanSequenceType(
+        type: Int,
+        fanPower: Int,
+        waterBoxMode: Int,
+        mopMode: Int,
+        repeat: Int? = null,
+    ) {
+        session.setCleanSequenceType(type, fanPower, waterBoxMode, mopMode, repeat)
+            .requireOk("app_set_clean_sequence_type")
+        _status.update { it.copy(cleanSequenceType = type, fanPower = fanPower, waterBoxCustomMode = waterBoxMode) }
         _mopMode.value = mopMode
     }
 
@@ -473,35 +499,52 @@ class VacuumRepository(
     }
 
 
-    private fun parseCleanRecord(result: JsonElement, recordId: Long): CleanRecord? {
-        val element = if (result is JsonArray) result.firstOrNull() ?: return null else result
-        return when (element) {
-            is JsonArray -> {
-                if (element.size < 6) return null
-                CleanRecord(
-                    beginEpoch = (element[0] as? JsonPrimitive)?.longOrNull ?: recordId,
-                    endEpoch = (element[1] as? JsonPrimitive)?.longOrNull ?: 0L,
-                    durationSeconds = (element[2] as? JsonPrimitive)?.longOrNull ?: 0L,
-                    areaMm2 = (element[3] as? JsonPrimitive)?.longOrNull ?: 0L,
-                    errorCode = (element[4] as? JsonPrimitive)?.intOrNull ?: 0,
-                    complete = (element[5] as? JsonPrimitive)?.intOrNull ?: 0,
-                )
+    /** The steps of one run, or null when the robot has no timeline (older models answer "not recognized"). */
+    suspend fun fetchCleanTimeline(record: CleanRecord): List<CleanTimelineStep>? {
+        val events = mutableListOf<CleanTimelineEvent>()
+        var from = 0
+        repeat(MAX_TIMELINE_PAGES) {
+            val response = runCatching { session.getCleanDetail(record.beginEpoch, from) }.getOrNull() ?: return null
+            if (response.error != null) return null
+            val page = CleanTimelineParser.parsePage(response.result) ?: return null
+            events += page.events
+            if (!page.more || page.num <= 0) {
+                return if (events.isEmpty()) null else CleanTimeline.build(events, record.endEpoch)
             }
-            is JsonObject -> CleanRecord(
-                beginEpoch = element["begin"]?.jsonPrimitive?.longOrNull ?: recordId,
-                endEpoch = element["end"]?.jsonPrimitive?.longOrNull ?: 0L,
-                durationSeconds = element["duration"]?.jsonPrimitive?.longOrNull ?: 0L,
-                areaMm2 = element["area"]?.jsonPrimitive?.longOrNull ?: 0L,
-                errorCode = element["error"]?.jsonPrimitive?.intOrNull ?: 0,
-                complete = element["complete"]?.jsonPrimitive?.intOrNull ?: 0,
-            )
-            else -> null
+            from = page.nextFrom
         }
+        return if (events.isEmpty()) null else CleanTimeline.build(events)
     }
 
     suspend fun resetConsumable(field: String) { session.resetConsumable(field) }
 
     suspend fun findMe() { session.findMe() }
+
+
+    suspend fun fetchOtaState(): String? = parseOtaState(session.getOtaState().requireOk("get_ota_state").result)
+
+    suspend fun fetchOtaProgress(): Int? = parseOtaProgress(session.getOtaProgress().requireOk("get_ota_progress").result)
+
+    suspend fun startPetSearch() {
+        val fresh = session.getStatus() ?: throw IllegalStateException("The robot's current status is unavailable")
+        _status.update { it.merge(fresh) }
+        if (!fresh.isDockedAndIdle()) {
+            throw IllegalStateException("Dock the robot and finish its current task before looking for your pet")
+        }
+        session.startPetSearch().requireOk("app_start_pet_patrol")
+    }
+
+    suspend fun fetchMatterStatus(): MatterInfo? =
+        parseMatterStatus(session.getMatterStatus().requireOk("matter.get_status").result)
+
+    suspend fun requestMatterKey() {
+        if (!matterKeyRequestAllowed(fetchMatterStatus()?.state)) {
+            throw IllegalStateException("The robot has joined a Matter platform; a new key could end that pairing")
+        }
+        session.downloadMatterKey().requireOk("matter.dnld_key")
+    }
+
+    suspend fun resetMatter() { session.resetMatter().requireOk("matter.reset") }
 
     suspend fun startRemoteControl() { session.appRcStart() }
 
@@ -517,6 +560,13 @@ class VacuumRepository(
     suspend fun cleanZones(zones: List<ZoneRect>) { session.appZonedClean(zones).requireOk("app_zoned_clean") }
 
     private val mapEditMutex = Mutex()
+
+    /**
+     * Map edit kinds (carpet areas, thresholds) this robot answered with unknown_method since the
+     * app started. The editor greys out their tools.
+     */
+    private val _unsupportedMapEdits = MutableStateFlow<Set<ZoneKind>>(emptySet())
+    val unsupportedMapEdits: StateFlow<Set<ZoneKind>> = _unsupportedMapEdits
 
     /** Why the map can't be edited right now, or null when it can. */
     fun editBlockedReason(map: ParsedMap? = _parsedMap.value, state: Int? = _status.value.state): String? = when {
@@ -553,6 +603,10 @@ class VacuumRepository(
      * category changed: whatever a command leaves out is deleted. save_map is refused when the map
      * holds restrictions this app can't write back ([restrictionSaveBlocker]). Succeeds only when a
      * fresh map shows every category as sent.
+     *
+     * A robot without carpet areas or thresholds answers their command with unknown_method (S7).
+     * The other categories are still saved and read back, the kind joins [unsupportedMapEdits], and
+     * [UnsupportedMapEditException] says what was not saved.
      */
     suspend fun saveMapEdits(
         noGoZones: List<MapZone>,
@@ -573,17 +627,27 @@ class VacuumRepository(
         val thresholdsChanged = !sameZones(thresholds, map.thresholds)
         if (!restrictionsChanged && !carpetsChanged && !thresholdsChanged) return@withLock
         if (restrictionsChanged) restrictionSaveBlocker(map, mapIndex)?.let { throw MapEditException(it) }
-        session.inEditSession {
-            if (restrictionsChanged) session.saveMap(noGoZones, walls, index)
-            if (carpetsChanged) session.setCarpetAreas(carpets, index, map.carpetFlagsPresent)
-            if (thresholdsChanged) session.setThresholds(thresholds, index)
+        val refused = session.inEditSession {
+            sendMapEditCategories(
+                restrictions = if (restrictionsChanged) suspend { session.saveMap(noGoZones, walls, index) } else null,
+                carpets = if (carpetsChanged) suspend { session.setCarpetAreas(carpets, index, map.carpetFlagsPresent) } else null,
+                thresholds = if (thresholdsChanged) suspend { session.setThresholds(thresholds, index) } else null,
+            )
         }
+        if (refused.isNotEmpty()) _unsupportedMapEdits.value = _unsupportedMapEdits.value + refused
         awaitMap { m ->
+            val carpetsShown = sameZones(carpets, m.carpetAreas) &&
+                m.carpetAreas.count { it.isRoundCarpet } == carpets.count { it.isRoundCarpet }
             restrictionsMatch(m, noGoZones, map.noMopZones, walls) &&
-                sameZones(carpets, m.carpetAreas) &&
-                m.carpetAreas.count { it.isRoundCarpet } == carpets.count { it.isRoundCarpet } &&
-                sameZones(thresholds, m.thresholds)
+                (ZoneKind.CARPET in refused || carpetsShown) &&
+                (ZoneKind.THRESHOLD in refused || sameZones(thresholds, m.thresholds))
         } ?: throw MapEditException(NOT_CONFIRMED)
+        if (refused.isNotEmpty()) {
+            val savedOther = restrictionsChanged ||
+                (carpetsChanged && ZoneKind.CARPET !in refused) ||
+                (thresholdsChanged && ZoneKind.THRESHOLD !in refused)
+            throw UnsupportedMapEditException(refused, savedOther)
+        }
     }
 
     /**
@@ -962,27 +1026,48 @@ class VacuumRepository(
 
     /** Null when the robot did not reply at all, so a read that timed out is not mistaken for an answer. */
     private suspend fun readBetaFeature(def: BetaFeatureDef): BetaFeatureState? {
-        val resp = runCatching { session.sendCommand(def.getMethod) }.getOrNull() ?: return null
-        val parsed = parseBetaReply(resp.result)
+        val resp = runCatching {
+            def.settingName?.let { session.getRobotSetting(it) } ?: session.sendCommand(def.getMethod)
+        }.getOrNull() ?: return null
+        val parsed = parseFeatureReply(def, resp.result)
         return BetaFeatureState(
             def = def,
-            value = parsed?.second,
-            key = parsed?.first,
-            raw = resp.result?.toString() ?: resp.error?.toString(),
+            value = parsed?.value,
+            key = parsed?.key,
+            // A field of a larger reply (get_status) keeps only that field, not the whole status.
+            raw = if (def.readKey != null && parsed != null) parsed.value.toString() else resp.result?.toString() ?: resp.error?.toString(),
             answered = resp.error == null,
+            reply = parsed?.reply,
         )
     }
+
+    /** The definitions the last read went through to the end; null until one has. */
+    private var betaFeatureDefsRead: List<BetaFeatureDef>? = null
+
+    /**
+     * Whether [defs] still has to be read: nothing answered yet, or the list changed since the last
+     * full read, as it does when the robot's own feature flags arrive after the server's.
+     */
+    fun betaFeaturesNeedReading(defs: List<BetaFeatureDef>): Boolean =
+        _betaFeatures.value.isEmpty() || defs != betaFeatureDefsRead
 
     /** Stops at the first option the robot does not reply to, so an offline robot costs one timeout, not one per option. */
     suspend fun fetchBetaFeatures(defs: List<BetaFeatureDef>) {
         _betaFeaturesLoading.value = true
         try {
             val states = mutableListOf<BetaFeatureState>()
-            for (def in defs) {
-                val state = readBetaFeature(def) ?: break
+            var complete = true
+            for (def in betaReadOrder(defs)) {
+                val state = readBetaFeature(def)
+                if (state == null) {
+                    complete = false
+                    break
+                }
                 if (state.answered && state.toggleable) states += state
             }
-            _betaFeatures.value = states
+            // Shown in the list's own order, not the order they were read in.
+            _betaFeatures.value = states.sortedBy { defs.indexOf(it.def) }.withoutReplaced()
+            if (complete) betaFeatureDefsRead = defs
         } finally {
             _betaFeaturesLoading.value = false
         }
@@ -996,18 +1081,39 @@ class VacuumRepository(
      * last time, then reads the option back so the screen shows what the robot holds. Throws the robot's
      * refusal, if any, after that.
      */
-    suspend fun setBetaFeature(id: String, on: Boolean) {
+    suspend fun setBetaFeature(id: String, on: Boolean) = writeBetaFeature(id, if (on) 1 else 0)
+
+    /** Writes one value of a multi-choice option, then reads it back so the screen shows what the robot holds. */
+    suspend fun setBetaChoice(id: String, value: Int) = writeBetaFeature(id, value)
+
+    private suspend fun writeBetaFeature(id: String, value: Int) {
         val current = _betaFeatures.value.firstOrNull { it.def.id == id } ?: return
-        val candidates = betaSetParamCandidates(current.key, on)
-        var last: V1Response? = null
-        for (i in betaSetTryOrder(candidates.size, betaSetAcceptedShape[id])) {
-            last = session.sendCommandRaw(current.def.setMethod, candidates[i])
-            if (last.error == null) betaSetAcceptedShape[id] = i
-            if (last.error?.get("code")?.jsonPrimitive?.intOrNull !in BetaShapeRefusalCodes) break
+        val method: String
+        val sent: V1Response?
+        val name = current.def.settingName
+        if (name != null) {
+            method = "app_set_robot_setting"
+            sent = session.setRobotSetting(name, value)
+        } else {
+            method = current.def.setMethod
+            val candidates = featureSetParamCandidates(current, value)
+            var last: V1Response? = null
+            for (i in betaSetTryOrder(candidates.size, betaSetAcceptedShape[id])) {
+                last = session.sendCommandRaw(method, candidates[i])
+                if (last.error == null) betaSetAcceptedShape[id] = i
+                if (last.error?.get("code")?.jsonPrimitive?.intOrNull !in BetaShapeRefusalCodes) break
+            }
+            sent = last
         }
-        val updated = readBetaFeature(current.def)?.takeIf { it.answered && it.toggleable }
-        if (updated != null) _betaFeatures.update { list -> list.map { if (it.def.id == id) updated else it } }
-        last?.requireOk(current.def.setMethod)
+        // Read back before requireOk on purpose: a refused write still refreshes the row with the robot's real value.
+        refreshBetaFeature(current.def)
+        sent?.requireOk(method)
+    }
+
+    private suspend fun refreshBetaFeature(def: BetaFeatureDef) {
+        readBetaFeature(def)?.takeIf { it.answered && it.toggleable }?.let { updated ->
+            _betaFeatures.update { list -> list.map { if (it.def.id == def.id) updated else it } }
+        }
     }
 
     suspend fun fetchDockSettings() {
@@ -1095,6 +1201,11 @@ class VacuumRepository(
 
     /** Pumps the robot's built-in water tank out through the dock. A refusal is raised, not ignored. */
     suspend fun emptyInbuiltWaterTank() {
+        val fresh = session.getStatus() ?: throw IllegalStateException("The robot's current status is unavailable")
+        _status.update { it.merge(fresh) }
+        if (!fresh.isDockedAndIdle()) {
+            throw IllegalStateException("Dock the robot and finish its current task before emptying its water tank")
+        }
         session.emptyInbuiltWaterTank().requireOk(APP_EMPTY_INBUILT_WATER_TANK)
     }
 
@@ -1118,6 +1229,7 @@ class VacuumRepository(
                     totalTimeSec = result["clean_time"]?.jsonPrimitive?.longOrNull ?: 0L,
                     totalAreaMm2 = result["clean_area"]?.jsonPrimitive?.longOrNull ?: 0L,
                     totalCount = result["clean_count"]?.jsonPrimitive?.intOrNull ?: 0,
+                    patrolCount = result["patrol_count"]?.jsonPrimitive?.intOrNull ?: 0,
                 )
                 (result["records"] as? JsonArray)
                     ?.mapNotNull { (it as? JsonPrimitive)?.longOrNull }
@@ -1219,19 +1331,35 @@ class VacuumRepository(
      * turn with the live map, since the session tracks one map request at a time.
      */
     suspend fun fetchSavedMap(mapFlag: Int, backup: Boolean): ParsedMap = mapFetchMutex.withLock {
-        val resp = session.fetchSavedMap(createSecurityData(rriotKeyProvider()), mapFlag, backup)
-        runCatching { parseB01Map(resp.data) }.getOrNull()
-            ?: runCatching { parseLegacyMap(resp.data) }.getOrNull()
-            ?: throw MapEditException("The robot sent a map this app can't read")
+        readMap(session.fetchSavedMap(createSecurityData(rriotKeyProvider()), mapFlag, backup).data)
     }
 
+    /** The map the robot drew for the run that began at [beginEpoch], for the history page. */
+    suspend fun fetchCleanRecordMap(beginEpoch: Long): ParsedMap = mapFetchMutex.withLock {
+        readMap(session.fetchCleanRecordMap(createSecurityData(rriotKeyProvider()), beginEpoch).data)
+    }
+
+    private fun readMap(data: ByteArray): ParsedMap =
+        runCatching { parseB01Map(data) }.getOrNull()
+            ?: runCatching { parseLegacyMap(data) }.getOrNull()
+            ?: throw MapEditException("The robot sent a map this app can't read")
+
     private val photoMutex = Mutex()
-    private val obstaclePhotos = mutableMapOf<String, ByteArray>()
+    private val obstaclePhotos = mutableMapOf<String, ObstaclePhotoData>()
 
     /** The photo the robot keeps for an obstacle on the map (#36), fetched once per photo id. */
-    suspend fun fetchObstaclePhoto(photoId: String): ByteArray = photoMutex.withLock {
+    suspend fun fetchObstaclePhoto(photoId: String): ObstaclePhotoData = photoMutex.withLock {
         obstaclePhotos[photoId]
             ?: session.fetchPhoto(createSecurityData(rriotKeyProvider()), photoId).also { obstaclePhotos[photoId] = it }
+    }
+
+    private val patrolThumbnails = mutableMapOf<Triple<Long, Int, Int>, List<PatrolThumbnail>>()
+
+    /** The thumbnails the robot took at one cruise point of a run, fetched once per point. */
+    suspend fun fetchPatrolThumbnails(taskId: Long, x: Int, y: Int): List<PatrolThumbnail> = photoMutex.withLock {
+        patrolThumbnails.getOrPut(Triple(taskId, x, y)) {
+            parsePatrolThumbnails(session.fetchPatrolPhotoData(createSecurityData(rriotKeyProvider()), taskId, x, y))
+        }
     }
 
     private suspend fun fetchMapLocked(): MapResponse {
@@ -1285,15 +1413,11 @@ class VacuumRepository(
         /** Map requests after a floor switch, [MAP_FAST_POLL_MS] apart: about a minute and a half. */
         const val FLOOR_SWITCH_MAP_REFRESHES = 12
         const val MAX_HISTORY_RECORDS = 20
+        const val MAX_TIMELINE_PAGES = 20
 
         const val READBACK_ATTEMPTS = 4
         const val READBACK_DELAY_MS = 2_000L
         const val SPLIT_RETRY_DELAY_MS = 12_000L
-        /**
-         * Tag for a segment that gets its first table entry. In the capture the official app gave
-         * the previously unlisted segment 24 tag 12 when the user named it.
-         */
-        const val NEW_SEGMENT_TAG = 12
         const val STATUS_READBACK_ATTEMPTS = 6
         const val STATUS_READBACK_DELAY_MS = 1_000L
 
@@ -1344,6 +1468,21 @@ private fun parseCronTimer(id: String, enabled: Boolean, cron: String): CleanTim
 
 const val CONSUMABLE_UNSUPPORTED = "unsupported"
 
+/** A room with its home name, its type tag and whether the robot's room table lists it. */
+internal fun ParsedMapRoom.withRoomTable(
+    segmentToRoomId: Map<Int, Long>,
+    homeRoomNames: Map<Long, String>,
+    table: List<SegmentEntry>?,
+): ParsedMapRoom {
+    val tagId = table?.firstOrNull { it.segment == id }?.tagId
+    return copy(
+        name = segmentToRoomId[id]?.let { homeRoomNames[it] } ?: name,
+        tag = tagId,
+        // The segment mapping outlives the raw table, which is cleared on a floor switch or map save.
+        inRoomTable = id in segmentToRoomId || table?.any { it.segment == id } == true,
+    )
+}
+
 /**
  * Segment id -> Roborock room id from a `get_room_mapping` result (`[[segment, "roomId", tag], ...]`).
  * Only the first two columns are read, which every firmware returns.
@@ -1364,6 +1503,7 @@ internal fun VacuumStatus.merge(fresh: VacuumStatus): VacuumStatus = fresh.copy(
     battery = fresh.battery ?: battery,
     state = fresh.state ?: state,
     fanPower = fresh.fanPower ?: fanPower,
+    cleanSequenceType = fresh.cleanSequenceType ?: cleanSequenceType,
     cleanArea = fresh.cleanArea ?: cleanArea,
     cleanTime = fresh.cleanTime ?: cleanTime,
     errorCode = fresh.errorCode ?: errorCode,

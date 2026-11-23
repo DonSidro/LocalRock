@@ -43,4 +43,11 @@ class OnboardingPacketsTest {
         val expected = "312e3000000001000100e0eed860a7584481fa64ac3b78eae227121e588afdb0ed9897f2917ec4f30f38b0fb6b5abf6e1eb1cf53eb3103d7b973e06b5379a525766c3c50fbce8e9072a55d68bd390406ed629ab96b8dd82cd51991f822d75ea00394849a16ef275d41b7fafb6a7d378c551d50694d3f78a91ecec57d4ec7a45711e5a68fd6b789a12109fede349f86485f0abc2c68e6c427ec7db7fcddfcf96d6b03eea7340b9a09274324b3fd7ee2014a4cbea60377a5bd68fc92c5c37bd2f838c48f8adffcc2d24b7c65ae6eb560d643be89c4f7ee6ed2d0699476465e0c19ecb5cc1441fb9d9f5f24a79ef02c37"
         assertEquals(expected, packet.toHex())
     }
+
+    @Test
+    fun hotspotNamePreKeyIsTheLastSixteenCharacters() {
+        assertEquals("uum-a10_miap5F1D", ssidPreKey("roborock-vacuum-a10_miap5F1D"))
+        assertEquals("um-a245_miap1A2B", ssidPreKey("\"roborock-vacuum-a245_miap1A2B\""))
+        assertEquals(null, ssidPreKey("HomeWifi"))
+    }
 }

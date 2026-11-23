@@ -66,8 +66,6 @@ internal fun placeRoomLabels(requests: List<RoomLabelRequest>, viewport: Size, g
     return placed
 }
 
-internal fun List<RoomLabelPlacement>.roomAtLabel(point: Offset): Int? =
-    asReversed().firstOrNull { it.bounds.contains(point) }?.id
 
 internal data class MapRoomLabel(
     val placement: RoomLabelPlacement, val text: TextLayoutResult, val icon: Painter?,
@@ -75,9 +73,8 @@ internal data class MapRoomLabel(
 )
 
 @Composable
-internal fun mapRoomLabels(
+internal fun measureMapRoomLabels(
     rooms: List<ParsedMapRoom>, selectedIds: List<Int>, activeIds: Set<Int>, showIcons: Boolean,
-    content: Size, viewport: Size, offset: Offset, scale: Float,
 ): List<MapRoomLabel> {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -93,20 +90,18 @@ internal fun mapRoomLabels(
             maxLines = 1, overflow = TextOverflow.Ellipsis,
             constraints = Constraints(maxWidth = with(density) { 116.dp.roundToPx() }),
         )
-        val icon = if (showIcons) mapRoomIcon(room.roomTypeTag)?.let { rememberVectorPainter(it) } else null
+        val icon = if (showIcons) mapRoomIcon(room.tag)?.let { rememberVectorPainter(it) } else null
         val iconSize = if (icon != null) with(density) { 14.dp.toPx() } else 0f
         val iconSpace = if (icon != null) iconSize + with(density) { 4.dp.toPx() } else 0f
         val size = Size(text.size.width + iconSpace + with(density) { 10.dp.toPx() },
             maxOf(text.size.height.toFloat(), iconSize) + with(density) { 6.dp.toPx() })
-        val anchor = offset + Offset(x * content.width, y * content.height) * scale
+        val anchor = Offset(x, y)
         RoomLabelRequest(room.id, anchor, size, order, room.id in activeIds) to MapRoomLabel(
             RoomLabelPlacement(room.id, anchor, Rect(Offset.Zero, size)), text, icon, iconSize, iconSpace,
             if (order >= 0) scheme.primary else scheme.surface.copy(alpha = .9f), foreground,
         )
     }
-    val byId = labels.associate { it.first.id to it.second }
-    return placeRoomLabels(labels.map { it.first }, viewport, with(density) { 3.dp.toPx() })
-        .map { byId.getValue(it.id).copy(placement = it) }
+    return labels.map { it.second }
 }
 
 internal fun DrawScope.drawRoomLabels(labels: List<MapRoomLabel>) {

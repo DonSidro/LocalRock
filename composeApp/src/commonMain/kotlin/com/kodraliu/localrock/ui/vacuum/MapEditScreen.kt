@@ -114,12 +114,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
 import com.kodraliu.localrock.shared.vacuum.MAX_RESTRICTION_VERTICES
+import com.kodraliu.localrock.shared.vacuum.UnsupportedMapEditException
+import com.kodraliu.localrock.shared.vacuum.advertisedUnsupportedMapEdits
 import com.kodraliu.localrock.shared.vacuum.mapIndexBlocker
 import com.kodraliu.localrock.shared.vacuum.restrictionSaveBlocker
 import com.kodraliu.localrock.shared.vacuum.restrictionsMatch
 import com.kodraliu.localrock.shared.vacuum.thresholdStrip
 import com.kodraliu.localrock.shared.vacuum.saveMapIndex
 import com.kodraliu.localrock.shared.vacuum.restrictionVertexCount
+import com.kodraliu.localrock.shared.vacuum.unsupportedMapEditNote
 import com.kodraliu.localrock.shared.vacuum.map.FloorMaterial
 import com.kodraliu.localrock.shared.vacuum.map.MapZone
 import com.kodraliu.localrock.shared.vacuum.map.ParsedMap
@@ -175,7 +178,7 @@ private fun zoneColor(kind: ZoneKind) = when (kind) {
     ZoneKind.NO_GO -> NO_GO_COLOR
     ZoneKind.NO_MOP -> NO_MOP_COLOR
     ZoneKind.CARPET -> CARPET_COLOR
-    ZoneKind.THRESHOLD -> THRESHOLD_COLOR
+    ZoneKind.THRESHOLD, ZoneKind.ERASER -> THRESHOLD_COLOR
 }
 
 /** Zones that count towards save_map's vertex limit (carpets and thresholds have their own commands). */
@@ -203,6 +206,11 @@ fun MapEditScreen(
     val status by repository.status.collectAsState()
     val floorMaps by repository.floorMaps.collectAsState()
     val floorMapsLoaded by repository.floorMapsLoaded.collectAsState()
+    val unsupportedMapEdits by repository.unsupportedMapEdits.collectAsState()
+    val robotFeatureSet by repository.robotFeatureSet.collectAsState()
+    val robotNewFeatureInfo by repository.robotNewFeatureInfo.collectAsState()
+    // The robot's own flags say which tools it can store; usually read already when it connected.
+    LaunchedEffect(Unit) { runCatching { repository.fetchRobotFeatureSet() } }
     // The list request can be lost (e.g. sent while MQTT is reconnecting); keep asking until the
     // robot answers, since saving needs it.
     LaunchedEffect(Unit) {
@@ -245,6 +253,13 @@ fun MapEditScreen(
 
     val pm = parsedMap
     val blockedReason = repository.editBlockedReason(pm, status.state)
+    // Kinds the robot's flags say it can't store, plus any it refused while saving.
+    val unsupportedKinds = unsupportedMapEdits + advertisedUnsupportedMapEdits(
+        robotNewFeatureInfo,
+        robotFeatureSet,
+        mapHasCarpets = pm?.carpetAreas?.isNotEmpty() == true,
+        mapHasThresholds = pm?.thresholds?.isNotEmpty() == true,
+    )
     val mapIndex = saveMapIndex(floorMaps)
     // Carpets and thresholds only need the map index; no-go zones and walls also need save_map to
     // be safe on this map.
@@ -320,14 +335,21 @@ fun MapEditScreen(
             val editable = blockedReason == null && !working
             fun toolEnabled(t: Tool) = editable && when (t) {
                 Tool.NO_GO, Tool.WALL -> saveBlocker == null
-                Tool.CARPET, Tool.THRESHOLD -> indexBlocker == null
+                Tool.CARPET -> indexBlocker == null && ZoneKind.CARPET !in unsupportedKinds
+                Tool.THRESHOLD -> indexBlocker == null && ZoneKind.THRESHOLD !in unsupportedKinds
             }
+            // A tool the robot can't store stays visible, greyed out, and says why when tapped.
+            fun unsupportedReason(t: Tool): String? = when (t) {
+                Tool.CARPET -> ZoneKind.CARPET
+                Tool.THRESHOLD -> ZoneKind.THRESHOLD
+                Tool.NO_GO, Tool.WALL -> null
+            }?.takeIf { it in unsupportedKinds }?.let { unsupportedMapEditNote(setOf(it)) }
             val deleteEnabled = editable && when (val sel = selection) {
                 is Selection.Wall -> saveBlocker == null
                 is Selection.Zone -> when (zones.getOrNull(sel.index)?.kind) {
                     ZoneKind.NO_GO -> saveBlocker == null
                     ZoneKind.CARPET, ZoneKind.THRESHOLD -> indexBlocker == null
-                    ZoneKind.NO_MOP, null -> false
+                    ZoneKind.NO_MOP, ZoneKind.ERASER, null -> false
                 }
                 null -> false
             }
@@ -457,7 +479,14 @@ fun MapEditScreen(
                     EditMode.RESTRICTIONS -> {
                         val sel = selection
                         if (sel == null) {
-                            ToolDock(toolEnabled = ::toolEnabled, onAdd = ::addShape, vertices = vertices)
+                            ToolDock(
+                                toolEnabled = ::toolEnabled,
+                                onAdd = ::addShape,
+                                vertices = vertices,
+                                note = unsupportedMapEditNote(unsupportedKinds),
+                                unsupportedReason = ::unsupportedReason,
+                                onUnsupported = { notice = Notice(it, isError = false) },
+                            )
                         } else {
                             val selectedZone = (sel as? Selection.Zone)?.let { zones.getOrNull(it.index) }
                             val kind = selectedZone?.kind
@@ -509,7 +538,15 @@ fun MapEditScreen(
                     val thresholdStrips = zones.filter { it.kind == ZoneKind.THRESHOLD }
                     val savedWalls = walls
                     runEdit("Saved. The robot's map shows the changes.") {
-                        repository.saveMapEdits(noGoZones, savedWalls, carpetAreas, thresholdStrips)
+                        try {
+                            repository.saveMapEdits(noGoZones, savedWalls, carpetAreas, thresholdStrips)
+                        } catch (e: UnsupportedMapEditException) {
+                            // The rest is saved and read back; showing the robot's map again drops
+                            // the shapes it can't store.
+                            dirty = false
+                            selection = null
+                            throw e
+                        }
                         dirty = false
                         selection = null
                         null
@@ -540,6 +577,8 @@ fun MapEditScreen(
                 segment = room,
                 working = working,
                 enabled = blockedReason == null,
+                // The sheet covers the notice at the bottom of the map, so it shows errors itself.
+                error = notice?.takeIf { it.isError }?.text,
                 onRename = { name ->
                     runEdit("Room renamed.") {
                         viewModel.renameRoom(room, name)
@@ -647,8 +686,10 @@ private fun EditorCanvas(
     onWallChanged: (Int, VirtualWall) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val bitmap = rememberMapBitmap(map, drawRestrictions = false)
+    val bitmap = rememberMapBitmap(map, drawRestrictions = false, floorPlan = false)
     val textMeasurer = rememberTextMeasurer()
+    // Where the room names were last drawn (Rooms mode only); filled while drawing.
+    val labelHits = remember { mutableListOf<RoomLabelHit>() }
     val labelStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
     val selectedLabelStyle = labelStyle.copy(color = MaterialTheme.colorScheme.onPrimary)
     val labelBg = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
@@ -660,7 +701,7 @@ private fun EditorCanvas(
     // Open framed on the floor plan rather than the mostly empty grid, like the main map does.
     // Done once per map size and view size so later map polls don't undo the user's own zoom,
     // while a rotated phone gets the floor plan fitted again.
-    val bounds = remember(map.width, map.height) { map.contentBoundsNorm() }
+    val bounds = remember(map.width, map.height) { map.contentBoundsNorm(floorPlan = false) }
     // Kept here, not in the viewport: a new map size brings a new viewport but no new layout pass.
     var viewSize by remember { mutableStateOf(Size.Zero) }
     LaunchedEffect(viewport, bounds, viewSize) {
@@ -701,6 +742,7 @@ private fun EditorCanvas(
                         val h = fitted.height
                         val content = (tap - offset) / scale
                         if (mode == EditMode.ROOMS) {
+                            roomAtLabel(tap, labelHits)?.let { currentOnRoomTap(it); return@detectTapGestures }
                             val normX = content.x / w
                             val normY = content.y / h
                             // The view is larger than the map; a tap beside it is not on a room.
@@ -902,6 +944,7 @@ private fun EditorCanvas(
                 }
             }
 
+            labelHits.clear()
             if (mode == EditMode.ROOMS) {
                 val focus = when (roomAction) {
                     is RoomAction.Split -> roomAction.segment
@@ -909,6 +952,7 @@ private fun EditorCanvas(
                     RoomAction.None -> selectedRoom
                 }
                 map.rooms.forEach { room ->
+                    if (room.id in map.erasedRoomIds) return@forEach
                     val nx = room.labelNormX ?: return@forEach
                     val ny = room.labelNormY ?: return@forEach
                     val center = Offset(nx * w * scale + offset.x, ny * h * scale + offset.y)
@@ -924,6 +968,7 @@ private fun EditorCanvas(
                         size = Size(boxW, boxH),
                         cornerRadius = CornerRadius(boxH / 2),
                     )
+                    labelHits += RoomLabelHit(room.id, Rect(topLeft, Size(boxW, boxH)))
                     drawText(layout, topLeft = Offset(topLeft.x + pad, topLeft.y + pad / 2))
                 }
             }
@@ -1028,7 +1073,14 @@ private val TOOL_SPECS = listOf(
  * the dock doubles as the map's key.
  */
 @Composable
-private fun ToolDock(toolEnabled: (Tool) -> Boolean, onAdd: (Tool) -> Unit, vertices: Int) {
+private fun ToolDock(
+    toolEnabled: (Tool) -> Boolean,
+    onAdd: (Tool) -> Unit,
+    vertices: Int,
+    note: String? = null,
+    unsupportedReason: (Tool) -> String? = { null },
+    onUnsupported: (String) -> Unit = {},
+) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Add to map", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -1041,21 +1093,35 @@ private fun ToolDock(toolEnabled: (Tool) -> Boolean, onAdd: (Tool) -> Unit, vert
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TOOL_SPECS.forEach { spec ->
-                ToolTile(spec, enabled = toolEnabled(spec.tool), onClick = { onAdd(spec.tool) })
+                val reason = unsupportedReason(spec.tool)
+                ToolTile(
+                    spec,
+                    enabled = toolEnabled(spec.tool),
+                    explainOnly = reason != null,
+                    onClick = { if (reason != null) onUnsupported(reason) else onAdd(spec.tool) },
+                )
             }
+        }
+        if (note != null) {
+            Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
-private fun ToolTile(spec: ToolSpec, enabled: Boolean, onClick: () -> Unit) {
+private fun ToolTile(spec: ToolSpec, enabled: Boolean, onClick: () -> Unit, explainOnly: Boolean = false) {
     val alpha = if (enabled) 1f else 0.38f
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
-            .clickable(enabled = enabled, role = Role.Button, onClickLabel = "Add ${spec.label.lowercase()}", onClick = onClick)
+            .clickable(
+                enabled = enabled || explainOnly,
+                role = Role.Button,
+                onClickLabel = if (explainOnly) "Why ${spec.label.lowercase()} is unavailable" else "Add ${spec.label.lowercase()}",
+                onClick = onClick,
+            )
             .widthIn(min = 72.dp)
             .padding(horizontal = 6.dp, vertical = 4.dp),
     ) {
@@ -1079,6 +1145,7 @@ private fun kindTitle(kind: ZoneKind?, round: Boolean = false) = when (kind) {
     ZoneKind.NO_MOP -> "No-mop zone"
     ZoneKind.CARPET -> if (round) "Round carpet" else "Carpet"
     ZoneKind.THRESHOLD -> "Threshold"
+    ZoneKind.ERASER -> "Removed area"
 }
 
 private fun kindHelp(kind: ZoneKind?, round: Boolean = false) = when {
@@ -1089,7 +1156,7 @@ private fun kindHelp(kind: ZoneKind?, round: Boolean = false) = when {
 private fun kindHelpFor(kind: ZoneKind?) = when (kind) {
     null, ZoneKind.THRESHOLD -> "Drag to move, drag the ends to reshape."
     ZoneKind.NO_GO, ZoneKind.CARPET -> "Drag to move. Corners resize, the knob rotates."
-    ZoneKind.NO_MOP -> "Set in the Roborock app. LocalRock can't change it yet."
+    ZoneKind.NO_MOP, ZoneKind.ERASER -> "Set in the Roborock app. LocalRock can't change it yet."
 }
 
 /** Replaces the tool dock while a shape is selected: what it is, and what can be done to it. */
@@ -1144,6 +1211,7 @@ private fun RoomSheet(
     segment: Int,
     working: Boolean,
     enabled: Boolean,
+    error: String?,
     onRoomType: (RoomType) -> Unit,
     onRename: (String) -> Unit,
     onFloor: (FloorChoice) -> Unit,
@@ -1169,6 +1237,9 @@ private fun RoomSheet(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(currentName, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             if (working) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        }
+        if (error != null) {
+            Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
         }
 
         Text("Room type", style = MaterialTheme.typography.titleSmall)

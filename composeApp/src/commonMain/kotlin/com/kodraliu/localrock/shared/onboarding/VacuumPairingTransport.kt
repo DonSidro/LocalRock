@@ -5,6 +5,9 @@ expect class VacuumPairingTransport : AutoCloseable {
 
     suspend fun joinVacuumWifi(ssidPrefix: String = "roborock-vacuum-", timeoutMs: Long = 30_000L)
 
+    /** The name of the vacuum hotspot that was joined, or null when the platform will not say. */
+    suspend fun joinedSsid(): String?
+
     suspend fun sendUdp(host: String, port: Int, data: ByteArray)
 
     suspend fun receiveUdp(timeoutMs: Long): ByteArray?

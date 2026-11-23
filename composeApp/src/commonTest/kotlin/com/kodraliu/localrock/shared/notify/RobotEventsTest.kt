@@ -136,7 +136,7 @@ class RobotEventsTest {
             "S8: Returning home",
             progressOf("d1", "S8", status.copy(state = VacuumStateCodes.RETURNING_HOME), room = "Kitchen").title,
         )
-        assertEquals("S8: Robot stuck", progressOf("d1", "S8", status.copy(errorCode = 8), room = "Kitchen").title)
+        assertEquals("S8: The robot is trapped or stuck", progressOf("d1", "S8", status.copy(errorCode = 8), room = "Kitchen").title)
         assertEquals(
             RobotProgress("d1", "S8: Cleaning", "", null),
             progressOf("d1", "S8", VacuumStatus(state = VacuumStateCodes.CLEANING), room = null),
@@ -146,7 +146,7 @@ class RobotEventsTest {
     @Test
     fun notification_text() {
         assertEquals(
-            RobotNotification("d1", "S8", "Robot stuck", alert = true),
+            RobotNotification("d1", "S8", "The robot is trapped or stuck", alert = true),
             RobotEvent.Error(8).toNotification("d1", "S8"),
         )
         assertEquals(

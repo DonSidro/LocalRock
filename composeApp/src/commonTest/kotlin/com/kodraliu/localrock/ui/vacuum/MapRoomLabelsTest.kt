@@ -16,7 +16,7 @@ class MapRoomLabelsTest {
         ), Size(320f, 300f), 3f)
         assertEquals(listOf(2, 3), labels.take(2).map { it.id })
         assertFalse(labels[0].bounds.overlaps(labels[1].bounds))
-        for (label in labels) assertEquals(label.id, labels.roomAtLabel(label.bounds.center))
+        for (label in labels) assertEquals(label.id, roomAtLabel(label.bounds.center, labels.map { RoomLabelHit(it.id, it.bounds) }))
     }
 
     @Test fun edge_labels_remain_inside_viewport_and_offscreen_rooms_stay_offscreen() {

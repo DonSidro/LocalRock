@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.longOrNull
 
 /** Bit index of SmartPlan in `newFeatureSet` (python-roborock NewFeatureStrBit.SMART_CLEAN_MODE_SET). */
 private const val SMART_CLEAN_MODE_SET_BIT = 55
@@ -32,6 +33,15 @@ fun featureSetFromInitStatus(result: JsonElement?): String? {
     val status = (if (result is JsonArray) result.firstOrNull() else result) as? JsonObject ?: return null
     val text = (status["new_feature_info_str"] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
     return text.takeIf { it.isNotEmpty() && it.all { c -> c.digitToIntOrNull(16) != null } }
+}
+
+/**
+ * The `new_feature_info` number from the same answer (python-roborock's robot_new_features), or null.
+ * It can exceed an Int: an S7 on 02.16.12 reported 636084721975295.
+ */
+fun newFeatureInfoFromInitStatus(result: JsonElement?): Long? {
+    val status = (if (result is JsonArray) result.firstOrNull() else result) as? JsonObject ?: return null
+    return (status["new_feature_info"] as? JsonPrimitive)?.longOrNull
 }
 
 fun isSmartPlanSupported(newFeatureSet: String?): Boolean = newFeatureBit(newFeatureSet, SMART_CLEAN_MODE_SET_BIT)

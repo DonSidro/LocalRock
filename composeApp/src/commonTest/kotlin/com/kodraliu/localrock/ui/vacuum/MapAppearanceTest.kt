@@ -21,11 +21,11 @@ class MapAppearanceTest {
     @Test
     fun room_ids_in_unscanned_cells_and_walls_never_become_floor() {
         val map = legacy(byteArrayOf(15, 16, 25, 7))
-        assertEquals(1, map.roomIdAtCell(0, 0))
-        assertNull(map.roomIdAtCell(1, 0))
-        assertNull(map.roomIdAtCell(2, 0))
-        assertNull(map.roomIdAtCell(3, 0))
-        assertNull(map.roomIdAtCell(-1, 0))
+        assertEquals(1, map.roomFloorIdAt(0, 0))
+        assertNull(map.roomFloorIdAt(1, 0))
+        assertNull(map.roomFloorIdAt(2, 0))
+        assertNull(map.roomFloorIdAt(3, 0))
+        assertNull(map.roomFloorIdAt(-1, 0))
         val before = map.grid.copyOf()
         var edges = 0
         map.forEachRoomEdge { _, _, _, _, _ -> edges++ }
@@ -48,19 +48,12 @@ class MapAppearanceTest {
     @Test
     fun b01_segment_floor_remains_visible_in_content_bounds() {
         val map = ParsedMap(4, 1, byteArrayOf(0, 2, 2, 0), emptyList(), 0.05f)
-        assertEquals(2, map.roomIdAtCell(1, 0))
+        assertEquals(2, map.roomFloorIdAt(1, 0))
         val bounds = map.contentBoundsNorm()
         assertEquals(0.25f, bounds.left)
         assertEquals(0.75f, bounds.right)
     }
 
-    @Test
-    fun light_targets_have_deeper_fill_and_darker_outlines() {
-        LightMapPalette.rooms.forEach {
-            assertTrue(it.active.luminance() < it.pale.luminance())
-            assertTrue(it.outline.luminance() < it.active.luminance())
-        }
-    }
 
     @Test
     fun selection_is_highlighted_before_a_run_without_changing_reported_targets() {
@@ -69,7 +62,6 @@ class MapAppearanceTest {
         assertEquals(setOf(1, 2, 4), highlightedRoomIds(setOf(1, 2), reported))
         assertEquals(setOf(4), reported)
         assertEquals(emptySet(), highlightedRoomIds(emptySet(), emptySet()))
-        DarkMapPalette.rooms.forEach { assertTrue(it.active.luminance() < it.pale.luminance()) }
     }
 
     @Test
@@ -83,7 +75,7 @@ class MapAppearanceTest {
     fun segment_changes_refresh_colours_without_resetting_the_viewport() {
         val first = legacy(byteArrayOf(15, 23))
         val updated = first.copy(originalGrid = byteArrayOf(23, 15),
-            rooms = listOf(ParsedMapRoom(1, "Room", roomTypeTag = 1)), reportedCleanSegments = setOf(1))
+            rooms = listOf(ParsedMapRoom(1, "Room", tag = 1)), reportedCleanSegments = setOf(1))
         assertNotEquals(first, updated)
         val viewport = LiveMapViewport()
         val size = Size(320f, 500f)
