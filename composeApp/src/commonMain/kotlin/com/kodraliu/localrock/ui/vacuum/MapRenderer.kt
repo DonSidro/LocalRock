@@ -100,10 +100,10 @@ private val DarkPalette = MapPalette(
  * the raw system setting, so the map never disagrees with the surface it sits on.
  */
 @Composable
-fun rememberMapBitmap(map: ParsedMap, drawRestrictions: Boolean = true, floorPlan: Boolean = true): ImageBitmap {
+fun rememberMapBitmap(map: ParsedMap, drawRestrictions: Boolean = true, floorPlan: Boolean = true, drawFurniture: Boolean = true): ImageBitmap {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return remember(map, dark, drawRestrictions, floorPlan) {
-        renderMap(map, if (dark) DarkPalette else SurfaceLightPalette, drawRestrictions, floorPlan)
+    return remember(map, dark, drawRestrictions, floorPlan, drawFurniture) {
+        renderMap(map, if (dark) DarkPalette else SurfaceLightPalette, drawRestrictions, floorPlan, drawFurniture)
     }
 }
 
@@ -137,6 +137,7 @@ fun rememberMapLayers(map: ParsedMap, scale: Int): Pair<ImageBitmap, ImageBitmap
  * changing any of it, so these layers are keyed on this and not on the object.
  */
 internal fun ParsedMap.floorKey(): List<Any?> = listOf(
+    furnitureBlocks,
     width, height, resolution, pixelOffsetLeft, pixelOffsetTop, format,
     grid.contentHashCode(), originalGrid?.contentHashCode(), carpetMask?.contentHashCode(), rooms,
     segmentMaterials, segmentMaterialDirections, zoneLines, eraserZones,
@@ -304,10 +305,11 @@ fun ParsedMap.contentBoundsNorm(floorPlan: Boolean = true): MapContentBounds {
 }
 
 /** [drawRestrictions] is false for the editor, which draws the shapes it is editing itself. */
-private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean, floorPlan: Boolean): ImageBitmap {
+private fun renderMap(map: ParsedMap, palette: MapPalette, drawRestrictions: Boolean, floorPlan: Boolean, drawFurniture: Boolean): ImageBitmap {
     val bitmap = ImageBitmap(map.width, map.height)
     val canvas = Canvas(bitmap)
     drawFloor(canvas, map, palette, floorPlan)
+    if (drawFurniture) drawMapFurniture(canvas, map, true)
     drawOverlays(canvas, map, palette, drawRestrictions)
     return bitmap
 }
@@ -322,7 +324,10 @@ private fun renderLayer(map: ParsedMap, palette: MapPalette, scale: Int, overlay
     val bitmap = ImageBitmap(map.width * scale, map.height * scale)
     val canvas = Canvas(bitmap)
     canvas.scale(scale.toFloat(), scale.toFloat())
-    if (overlay) drawOverlays(canvas, map, palette, drawRestrictions = true, includeRoute = false) else drawFloor(canvas, map, palette, strokes = false)
+    if (overlay) drawOverlays(canvas, map, palette, drawRestrictions = true, includeRoute = false) else {
+        drawFloor(canvas, map, palette, strokes = false)
+        drawMapFurniture(canvas, map, true)
+    }
     return bitmap
 }
 

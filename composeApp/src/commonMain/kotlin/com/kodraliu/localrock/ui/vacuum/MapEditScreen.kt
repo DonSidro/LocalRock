@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import com.kodraliu.localrock.ui.exceptBottom
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Chair
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.HorizontalRule
@@ -114,6 +115,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
 import com.kodraliu.localrock.shared.vacuum.MAX_RESTRICTION_VERTICES
+import com.kodraliu.localrock.shared.vacuum.FurnitureSupport
 import com.kodraliu.localrock.shared.vacuum.UnsupportedMapEditException
 import com.kodraliu.localrock.shared.vacuum.advertisedUnsupportedMapEdits
 import com.kodraliu.localrock.shared.vacuum.mapIndexBlocker
@@ -130,6 +132,7 @@ import com.kodraliu.localrock.shared.vacuum.map.VirtualWall
 import com.kodraliu.localrock.shared.vacuum.map.ZoneKind
 import com.kodraliu.localrock.shared.vacuum.map.roomAtNorm
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -201,7 +204,18 @@ fun MapEditScreen(
     viewModel: VacuumViewModel,
     onBack: () -> Unit,
 ) {
+    var furnitureOpen by remember { mutableStateOf(false) }
     val repository = viewModel.repository
+    val furnitureSupport by repository.furnitureSupport.collectAsState()
+    var furnitureChecking by remember { mutableStateOf(true) }
+    var furnitureCheckAttempt by remember { mutableStateOf(0) }
+    LaunchedEffect(repository, furnitureCheckAttempt) {
+        furnitureChecking = true
+        try { repository.fetchFurnitureSupport() }
+        catch (e: CancellationException) { throw e }
+        catch (_: Exception) { /* The repository leaves support unknown on a failed read. */ }
+        finally { furnitureChecking = false }
+    }
     val parsedMap by repository.parsedMap.collectAsState()
     val status by repository.status.collectAsState()
     val floorMaps by repository.floorMaps.collectAsState()
@@ -300,6 +314,17 @@ fun MapEditScreen(
     }
     // System back and the back gesture must not silently drop unsaved zone and wall edits.
     BackHandler(enabled = dirty && !showDiscardConfirm) { showDiscardConfirm = true }
+
+    // Keep the parent's editor state above this branch, including its pan and zoom.
+    if (furnitureOpen) {
+        FurnitureEditScreen(viewModel,
+            onBack = { furnitureOpen = false },
+            onSaved = {
+                furnitureOpen = false
+                notice = Notice("Saved. The robot's map shows your furniture.", isError = false)
+            })
+        return
+    }
 
     Scaffold(
         topBar = {
@@ -479,14 +504,19 @@ fun MapEditScreen(
                     EditMode.RESTRICTIONS -> {
                         val sel = selection
                         if (sel == null) {
-                            ToolDock(
-                                toolEnabled = ::toolEnabled,
-                                onAdd = ::addShape,
-                                vertices = vertices,
+                            ToolDock(toolEnabled = ::toolEnabled, onAdd = ::addShape, vertices = vertices,
                                 note = unsupportedMapEditNote(unsupportedKinds),
                                 unsupportedReason = ::unsupportedReason,
                                 onUnsupported = { notice = Notice(it, isError = false) },
-                            )
+                                furnitureVisible = furnitureSupport == FurnitureSupport.SUPPORTED,
+                                furnitureEnabled = editable && !dirty && !furnitureChecking &&
+                                    furnitureSupport == FurnitureSupport.SUPPORTED,
+                                furnitureSupportMessage = if (furnitureChecking) "Checking furniture support…"
+                                    else if (furnitureSupport == FurnitureSupport.UNKNOWN) furnitureSupport.blockedReason
+                                    else null,
+                                onRetryFurniture = if (!furnitureChecking && furnitureSupport == FurnitureSupport.UNKNOWN)
+                                    ({ furnitureCheckAttempt++ }) else null,
+                                onFurniture = { furnitureOpen = true })
                         } else {
                             val selectedZone = (sel as? Selection.Zone)?.let { zones.getOrNull(it.index) }
                             val kind = selectedZone?.kind
@@ -981,7 +1011,7 @@ private fun EditorCanvas(
  * what is visible.
  */
 @Stable
-private class MapViewport {
+internal class MapViewport {
     var scale by mutableStateOf(1f)
     var offset by mutableStateOf(Offset.Zero)
     /** Size of the whole map view on screen. */
@@ -1073,14 +1103,11 @@ private val TOOL_SPECS = listOf(
  * the dock doubles as the map's key.
  */
 @Composable
-private fun ToolDock(
-    toolEnabled: (Tool) -> Boolean,
-    onAdd: (Tool) -> Unit,
-    vertices: Int,
-    note: String? = null,
-    unsupportedReason: (Tool) -> String? = { null },
-    onUnsupported: (String) -> Unit = {},
-) {
+private fun ToolDock(toolEnabled: (Tool) -> Boolean, onAdd: (Tool) -> Unit, vertices: Int,
+    furnitureVisible: Boolean, furnitureEnabled: Boolean, furnitureSupportMessage: String?,
+    onRetryFurniture: (() -> Unit)?,
+    onFurniture: () -> Unit, note: String? = null,
+    unsupportedReason: (Tool) -> String? = { null }, onUnsupported: (String) -> Unit = {}) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Add to map", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -1102,6 +1129,20 @@ private fun ToolDock(
                 )
             }
         }
+        if (furnitureVisible) Text("Furniture editing requires a single saved map and is limited to the first map.",
+            style = MaterialTheme.typography.bodySmall)
+        if (furnitureVisible) Row(Modifier.fillMaxWidth()) {
+            ToolTile(label = "Furniture", icon = Icons.Default.Chair, color = MaterialTheme.colorScheme.primary,
+                enabled = furnitureEnabled, onClickLabel = "Edit furniture", onClick = onFurniture)
+        }
+        if (furnitureSupportMessage != null) {
+            Text(furnitureSupportMessage,
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (onRetryFurniture != null) TextButton(onClick = onRetryFurniture) { Text("Retry furniture check") }
+        } else if (furnitureVisible && !furnitureEnabled && TOOL_SPECS.any { toolEnabled(it.tool) }) {
+            Text("Save or discard your map changes before editing furniture.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (note != null) {
             Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -1110,29 +1151,30 @@ private fun ToolDock(
 
 @Composable
 private fun ToolTile(spec: ToolSpec, enabled: Boolean, onClick: () -> Unit, explainOnly: Boolean = false) {
+    ToolTile(spec.label, spec.icon, spec.color, enabled, if (explainOnly) "Why ${spec.label.lowercase()} is unavailable" else "Add ${spec.label.lowercase()}", onClick, explainOnly)
+}
+
+@Composable
+private fun ToolTile(label: String, icon: ImageVector, color: Color, enabled: Boolean,
+    onClickLabel: String, onClick: () -> Unit, explainOnly: Boolean = false) {
     val alpha = if (enabled) 1f else 0.38f
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
-            .clickable(
-                enabled = enabled || explainOnly,
-                role = Role.Button,
-                onClickLabel = if (explainOnly) "Why ${spec.label.lowercase()} is unavailable" else "Add ${spec.label.lowercase()}",
-                onClick = onClick,
-            )
+            .clickable(enabled = enabled || explainOnly, role = Role.Button, onClickLabel = onClickLabel, onClick = onClick)
             .widthIn(min = 72.dp)
             .padding(horizontal = 6.dp, vertical = 4.dp),
     ) {
         Box(
-            Modifier.size(52.dp).clip(CircleShape).background(spec.color.copy(alpha = 0.18f * alpha)),
+            Modifier.size(52.dp).clip(CircleShape).background(color.copy(alpha = 0.18f * alpha)),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(spec.icon, contentDescription = null, tint = spec.color.copy(alpha = alpha), modifier = Modifier.size(26.dp))
+            Icon(icon, contentDescription = null, tint = color.copy(alpha = alpha), modifier = Modifier.size(26.dp))
         }
         Text(
-            spec.label,
+            label,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
         )

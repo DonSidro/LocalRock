@@ -73,6 +73,9 @@ kotlin {
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.multiplatformSettings.test)
         }
+        androidUnitTest.dependencies {
+            implementation(libs.robolectric)
+        }
     }
 }
 

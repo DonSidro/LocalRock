@@ -115,6 +115,9 @@ data class ParsedMap(
     /** Obstacles the robot recognised (legacy blocks 13-16). Shown, not edited. */
     val obstacles: List<MapObstacle> = emptyList(),
 
+    /** Existing furniture from legacy block 25, kept separately from restrictions and obstacles. */
+    val furnitureBlocks: List<MapFurnitureBlock> = emptyList(),
+
     val originalGrid: ByteArray? = null,
     /** The cruise points of a Cruise run record (legacy block 37), in visiting order. */
     val patrolPoints: List<PatrolPoint> = emptyList(),
@@ -129,6 +132,7 @@ data class ParsedMap(
     /** Areas the user removed with the official Remove tool (legacy block 47), in robot millimetres; nothing is drawn inside them. */
     val eraserZones: List<MapZone> = emptyList(),
 ) {
+    val furniture: List<MapFurniture> by lazy { furnitureBlocks.flatMap { it.records } }
     val floorCells: Int by lazy { grid.count { (it.toInt() and 0xff) == 128 } }
     val wallCells: Int by lazy { grid.count { (it.toInt() and 0xff) == 127 } }
 
@@ -165,7 +169,8 @@ data class ParsedMap(
             other.obstacles == obstacles &&
             other.patrolPoints == patrolPoints && other.patrolTaskId == patrolTaskId &&
             other.zoneLines == zoneLines && other.eraserZones == eraserZones &&
-            (carpetMask?.contentEquals(other.carpetMask ?: ByteArray(0)) ?: (other.carpetMask == null))
+            (carpetMask?.contentEquals(other.carpetMask ?: ByteArray(0)) ?: (other.carpetMask == null)) &&
+            other.furnitureBlocks == furnitureBlocks
 
     override fun hashCode(): Int {
         var r = width
@@ -186,6 +191,7 @@ data class ParsedMap(
         r = 31 * r + thresholds.hashCode()
         r = 31 * r + pathFlags.hashCode()
         r = 31 * r + obstacles.hashCode()
+        r = 31 * r + furnitureBlocks.hashCode()
         r = 31 * r + zoneLines.hashCode()
         r = 31 * r + eraserZones.hashCode()
         r = 31 * r + (carpetMask?.contentHashCode() ?: 0)
