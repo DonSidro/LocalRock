@@ -14,6 +14,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Chair
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Layers
@@ -51,6 +54,52 @@ data class WhatsNewRelease(val version: String, val items: List<WhatsNewItem>)
 
 /** Newest first. */
 val WHATS_NEW: List<WhatsNewRelease> = listOf(
+    WhatsNewRelease(
+        version = "1.5.0",
+        items = listOf(
+            WhatsNewItem(
+                Icons.Default.Map,
+                "A new map",
+                "The map is drawn the way the Roborock app draws it. Turn it in quarter turns or " +
+                    "tilt it in 3D. Drawn zones can be moved, resized and deleted, and the zoom " +
+                    "stays put while you draw.",
+            ),
+            WhatsNewItem(
+                Icons.Default.Chair,
+                "Furniture",
+                "On robots that report furniture support, see the furniture on the map and add, " +
+                    "move or remove it in Edit map.",
+            ),
+            WhatsNewItem(
+                Icons.Default.Videocam,
+                "Video (experimental)",
+                "Turn on Settings > Experimental video to watch the robot's camera. The S7 MaxV " +
+                    "can also drive and Pin & Go from the video, and iPhone has two-way audio. " +
+                    "Needs camera and TURN support on your server.",
+            ),
+            WhatsNewItem(
+                Icons.Default.SystemUpdate,
+                "Firmware, Matter and more",
+                "Check for and install robot firmware, show the Matter setup code, send the robot " +
+                    "to find your pet, and use the Voice Assistant page. Some of these need a " +
+                    "newer server; the README lists which.",
+            ),
+            WhatsNewItem(
+                Icons.Default.Tune,
+                "Settings like the official app",
+                "Maintenance, robot settings, carpet modes, collision and auto-empty levels now " +
+                    "match the Roborock app, and cleaning history shows each run's map and timeline.",
+            ),
+            WhatsNewItem(
+                Icons.Default.Build,
+                "Fixes",
+                "The app opens straight into your robot, shows where an unresponsive robot was " +
+                    "last seen, keeps reconnecting when MQTT drops, and no longer jumps back to " +
+                    "the first screen. Pairing is more reliable, room names stay on their room, " +
+                    "and the sign-in screen shows the server's error.",
+            ),
+        ),
+    ),
     WhatsNewRelease(
         version = "1.4.0",
         items = listOf(

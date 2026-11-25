@@ -45,7 +45,6 @@ LocalRock is a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.
 - [Why LocalRock](#why-localrock)
 - [Features](#features)
   - [Features that need a newer server](#features-that-need-a-newer-server)
-  - [Not available](#not-available)
 - [Screenshots](#screenshots)
 - [How it works](#how-it-works)
   - [Camera live view](#camera-live-view)
@@ -90,7 +89,9 @@ The app implements the Roborock protocol (Hawk‑signed REST + MQTT‑over‑TLS
 - **Room cleaning** — pick rooms in the order they should be cleaned, with real names pulled from your home data, and set a default cleaning order for a full clean
 - **Pin & Go** — send the robot to a point on the map
 - **Remote control** — manually drive the vacuum
+- **Video (experimental)** — live camera view with driving and Pin & Go on the S7 MaxV, and two‑way audio on iPhone; off by default, see [Camera live view](#camera-live-view)
 - **Map editor** — draw no‑go zones, invisible walls, carpets (including round ones) and thresholds; pick a room type or give a room a custom name; split and merge rooms; set floor types
+- **Furniture** — on robots that report furniture support, see the furniture on the map and add, move and remove it (robots with one saved map)
 - **Map management** — rename and delete maps, back up and restore a map, and send the robot out to map the home again (for example after moving the dock)
 - **Multi‑level homes** — keep a map per floor, switch with the picker on the map, or let the robot recognise the floor by itself
 - **Schedule** — recurring cleans at a set time and on chosen days
@@ -119,10 +120,6 @@ Some features rely on server changes that are not in a released version of [`loc
 | Voice language packs | [#261](https://github.com/Python-roborock/local_roborock_server/pull/261) | The Language page says "Voice packs unavailable"; the rest of Voice Assistant works |
 | Matter on a locally paired robot | [#252](https://github.com/Python-roborock/local_roborock_server/pull/252) | The robot can't get a Matter setup code |
 | Firmware check and install | [#255](https://github.com/Python-roborock/local_roborock_server/pull/255), with the install option turned on | No update is found, and Update says the server's install option is needed |
-
-### Not available
-
-- ~~**Camera live view**~~ — **does not work on a local‑only setup, and the button is hidden in the app.** The robot only allows a camera preview after Roborock's **cloud** has authorised remote viewing, and that authorisation cannot be set from the local network. Making it work without the cloud needs **changes in [`local_roborock_server`](https://github.com/Python-roborock/local_roborock_server)**. See [Camera live view](#camera-live-view) for details.
 
 ---
 
@@ -167,14 +164,13 @@ The app is **local‑only by design**: there is no Roborock‑cloud login, no se
 
 ### Camera live view
 
-> [!WARNING]
-> ~~**Camera live view**~~ **is not available.** It needs Roborock's **cloud** to work, and **server changes** before it can work locally.
+> [!NOTE]
+> Video is **experimental and off by default**. Turn on **Settings → Experimental video** on the robot's settings page to show it.
 
-The code is in the repository (WebRTC signaled over the MQTT dps‑101/102 channel, PIN‑protected), but the entry point is hidden in the app:
-
-- The robot refuses to start a preview until **remote viewing has been authorised by Roborock's cloud**. That authorisation is a protected flag on the robot: it cannot be written over the local protocol, and it is reset when the robot is bound to the local server.
-- Working without the cloud therefore needs **changes in [`local_roborock_server`](https://github.com/Python-roborock/local_roborock_server)** so the server can grant that authorisation in the cloud's place. Until then there is nothing the app can do on its own.
-- The WebRTC flow itself has run end to end once on an S8 Pro Ultra whose camera had been enabled through the official app, so the remaining gap is the authorisation, not the video path.
+- **S7 MaxV** (`roborock.vacuum.a27`) is the tested model: live video, driving, Pin & Go and, on iPhone, two‑way audio calls.
+- Nine other models with Roborock remote viewing can try video and audio under a per‑visit testing opt‑in; driving stays off on them. The list is in [docs/camera-live-view.md](docs/camera-live-view.md).
+- Remote viewing must have been activated in the official Roborock app **before** the robot moved to the local server. Keep your existing camera PIN or pattern.
+- The robot, phone and server must all reach your server's **TURN** endpoint, and the server needs its camera support.
 
 ---
 
@@ -248,7 +244,7 @@ composeApp/src/
 │     │  ├─ http/       # Ktor client factories + Hawk auth
 │     │  ├─ demo/       # sample data for the demo login
 │     │  ├─ platform/   # small platform hooks (donation links)
-│     │  └─ webrtc/     # camera peer/video (expect/actual, currently unused)
+│     │  └─ webrtc/     # camera peer/video (expect/actual)
 │     └─ ui/            # Compose screens: devices, vacuum (map, editor,
 │                       #   schedule), settings, login, intro, onboarding,
 │                       #   whatsnew, navigation
@@ -272,7 +268,7 @@ tests/                  # protocol/contract fixtures & tests
 | Serialization | kotlinx.serialization (JSON + Protobuf) |
 | MQTT | Eclipse Paho on Android; CocoaMQTT (Swift bridge) on iOS |
 | Crypto | KotlinCrypto (MD5, HMAC‑SHA2) + platform RSA |
-| WebRTC (camera, not enabled) | `io.getstream:stream-webrtc-android` (Android); `WebRTC.framework` (iOS) |
+| WebRTC (camera) | `io.getstream:stream-webrtc-android` (Android); `WebRTC.framework` (iOS) |
 | Settings/persistence | multiplatform‑settings |
 | Min SDK / Target | Android 24 / 36 |
 
@@ -285,13 +281,13 @@ tests/                  # protocol/contract fixtures & tests
 | Core control, map, rooms | Yes | Yes |
 | Map editor, map management, multi‑level maps | Yes | Yes |
 | MQTT over TLS | Yes (Eclipse Paho) | Yes (CocoaMQTT bridge) |
-| ~~Camera live view (WebRTC)~~ | Hidden — needs cloud / server changes | Hidden — needs cloud / server changes |
+| Camera live view (WebRTC) | Experimental, off by default | Experimental, off by default; two‑way audio calls |
 | RSA (onboarding crypto) | Yes | Yes |
 | Phone Wi‑Fi pairing (Add vacuum) | Yes | Yes |
 
 **Map editor note:** saving zones, walls, carpets and thresholds is currently limited to robots with a **single saved map**; on a multi‑level robot those tools are disabled and the editor says so. Room edits and map management are not affected. No‑mop zones are not editable yet.
 
-**Camera live view note:** not available on either platform — see [Camera live view](#camera-live-view).
+**Camera live view note:** off by default on both platforms — see [Camera live view](#camera-live-view).
 
 **iOS note:** Kotlin/Native iOS targets must be built on macOS. The iOS MQTT and WebRTC integrations rely on Swift Package Manager dependencies ([CocoaMQTT](https://github.com/emqx/CocoaMQTT), [WebRTC](https://github.com/stasel/WebRTC)) that must be added to the `iosApp` Xcode target, and the Swift bridge files (`CocoaMqttTransport.swift`, `WebRtcPeer.swift`, `VacuumPairing.swift`) added to the target. Pass `nil` for the WebRTC factory to ship without live view, or `nil` for the pairing factory to hide the "add vacuum" flow. iOS uses a custom bundle identifier that needs signing/provisioning selected in Xcode.
 
@@ -341,7 +337,7 @@ cd LocalRock
 - Saving zones, walls, carpets and thresholds is only supported on robots with a single saved map for now.
 
 **There is no camera button**
-- Expected — see [Camera live view](#camera-live-view).
+- Turn on **Settings → Experimental video**. The button only shows on the models listed in [Camera live view](#camera-live-view).
 
 **Room names show as "Room 26"**
 - Real names come from your server's `get_home_data`. If the server doesn't return room names, the map falls back to segment ids.
@@ -396,6 +392,6 @@ Released under the [MIT License](./LICENSE) — © 2026 Sidon Kodraliu. You're f
 
 - [`local_roborock_server`](https://github.com/Python-roborock/local_roborock_server) — the self‑hosted backend this client targets.
 - [`python-roborock`](https://github.com/Python-roborock/python-roborock) — reference for the Roborock protocol.
-- [go2rtc](https://github.com/AlexxIT/go2rtc) — reference for the camera WebRTC‑over‑MQTT signaling (the camera code is in the tree but not enabled).
+- [go2rtc](https://github.com/AlexxIT/go2rtc) — reference for the camera WebRTC‑over‑MQTT signaling.
 
 > LocalRock is an independent project and is **not affiliated with Roborock**.
