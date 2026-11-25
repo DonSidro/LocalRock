@@ -178,6 +178,14 @@ class AppSettings(private val settings: Settings) {
         _notifyProgress.value = value
     }
 
+    private val _videoEnabled = MutableStateFlow(settings.getBoolean("video_enabled", false))
+    val videoEnabled: StateFlow<Boolean> = _videoEnabled.asStateFlow()
+
+    fun setVideoEnabled(value: Boolean) {
+        settings.putBoolean("video_enabled", value)
+        _videoEnabled.value = value
+    }
+
     fun cameraPin(duid: String): String? = settings.getStringOrNull("camera_pin_$duid")
 
     fun setCameraPin(duid: String, pin: String?) {

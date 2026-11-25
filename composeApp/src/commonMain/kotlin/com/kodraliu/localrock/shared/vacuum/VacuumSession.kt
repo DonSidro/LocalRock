@@ -368,7 +368,7 @@ class VacuumSession(
         val msgs = try {
             RoborockCodec(localKey, prefixed = false).decode(bytes)
         } catch (e: RoborockProtocolException) {
-            println("[VacLocal] decode FAILED (localKey mismatch?): ${e.message}")
+            println("[VacLocal] decode failed")
             return
         }
         println("[VacLocal] decoded ${msgs.size} msg(s)")
@@ -421,7 +421,7 @@ class VacuumSession(
         if (joinSplitBlob(m)) return
         if (m.protocol != RoborockProtocol.MAP_RESPONSE) return
         val raw = runCatching { decodeRawBlobFrame(m) }
-            .onFailure { println("[VacLocal] photo frame FAILED: ${it.message}") }
+            .onFailure { println("[VacLocal] photo frame decode failed") }
             .getOrNull()
         if (raw == null) {
             if (m.payload.size < OFFICIAL_HEADER_SIZE) return
@@ -475,7 +475,7 @@ class VacuumSession(
         if (keys == null) {
             runCatching { gunzip(raw.body) }
                 .onSuccess { target.result.complete(it) }
-                .onFailure { println("[VacLocal] photo frame FAILED: ${it.message}") }
+                .onFailure { println("[VacLocal] photo frame decode failed") }
         } else {
             runCatching { decryptOfficialBody(raw.header, raw.body, keys) }
                 .onSuccess { target.result.complete(it) }

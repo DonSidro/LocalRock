@@ -29,18 +29,26 @@ interface RtcNativePeerListener {
 
 /** A single peer connection, implemented in Swift. Non-suspend so Swift can implement it. */
 interface RtcNativePeer {
-    /** Adds recv-only transceivers, creates the offer, and sets it as the local description. */
-    fun createOffer(onSuccess: (String) -> Unit, onError: (String) -> Unit)
-    fun setRemoteAnswer(sdp: String)
-    fun addRemoteCandidate(sdpMid: String?, sdpMLineIndex: Int, candidate: String)
+    /** Advertises the selected test's capabilities without creating local capture tracks. */
+    fun createOffer(compactCodecs: Boolean,
+        onSuccess: (String) -> Unit, onError: (String) -> Unit)
+    fun setRemoteAnswer(sdp: String, onSuccess: () -> Unit, onError: () -> Unit)
+    fun addRemoteCandidate(sdpMid: String?, sdpMLineIndex: Int, candidate: String, onSuccess: () -> Unit, onError: () -> Unit)
+    fun diagnostics(onResult: (RtcDiagnostics) -> Unit)
     fun close()
 
     /** The `RTCMTLVideoView` (a `UIView`) that renders the remote track, or null before it arrives. */
     fun renderView(): UIView?
+    fun setVideoFill(fill: Boolean)
+    fun requestMicrophonePermission(onGranted: () -> Unit, onDenied: () -> Unit)
+    fun startVoiceCall(onSuccess: () -> Unit, onError: () -> Unit)
+    fun setMicrophoneMuted(muted: Boolean)
+    fun setRemoteAudioMuted(muted: Boolean)
+    fun stopVoiceCall()
 }
 
 interface RtcNativePeerFactory {
-    fun create(iceServers: List<RtcNativeIceServer>, listener: RtcNativePeerListener): RtcNativePeer
+    fun create(iceServers: List<RtcNativeIceServer>, listener: RtcNativePeerListener): RtcNativePeer?
 }
 
 /** Holds the Swift-injected factory; set once from `MainViewController(rtcPeerFactory:)`. */
@@ -71,25 +79,57 @@ internal class IosRtcPeer(
     private val _connectionState = MutableStateFlow(RtcConnectionState.NEW)
     override val connectionState: StateFlow<RtcConnectionState> = _connectionState
 
-    private val native: RtcNativePeer = factory.create(
+    private val native: RtcNativePeer = requireNotNull(factory.create(
         iceServers.map { RtcNativeIceServer(it.url, it.username, it.password) },
         this,
-    )
+    )) { "Could not create video connection" }
 
-    override suspend fun createOffer(): String = suspendCancellableCoroutine { cont ->
+    override suspend fun createOffer(options: RtcOfferOptions): String = suspendCancellableCoroutine { cont ->
         native.createOffer(
-            onSuccess = { sdp -> cont.resume(sdp) },
-            onError = { msg -> cont.resumeWithException(RuntimeException("createOffer failed: $msg")) },
+            compactCodecs = options.compactCodecs,
+            onSuccess = { sdp -> if (cont.isActive) cont.resume(sdp) },
+            onError = { _ -> if (cont.isActive) cont.resumeWithException(RuntimeException("Video offer creation failed")) },
         )
     }
 
-    override suspend fun setRemoteAnswer(sdp: String) {
-        native.setRemoteAnswer(sdp)
+    override suspend fun setRemoteAnswer(sdp: String): Unit = suspendCancellableCoroutine { cont ->
+        native.setRemoteAnswer(sdp,
+            onSuccess = { if (cont.isActive) cont.resume(Unit) },
+            onError = { if (cont.isActive) cont.resumeWithException(RuntimeException("Video answer rejected")) },
+        )
     }
 
-    override fun addRemoteCandidate(candidate: RtcIceCandidate) {
-        native.addRemoteCandidate(candidate.sdpMid, candidate.sdpMLineIndex, candidate.candidate)
+    override suspend fun addRemoteCandidate(candidate: RtcIceCandidate): Unit = suspendCancellableCoroutine { cont ->
+        native.addRemoteCandidate(candidate.sdpMid, candidate.sdpMLineIndex, candidate.candidate,
+            onSuccess = { if (cont.isActive) cont.resume(Unit) },
+            onError = { if (cont.isActive) cont.resumeWithException(RuntimeException("Video candidate rejected")) },
+        )
     }
+
+    override suspend fun diagnostics(): RtcDiagnostics = suspendCancellableCoroutine { cont ->
+        native.diagnostics { if (cont.isActive) cont.resume(it) }
+    }
+
+    override val supportsVoiceCall: Boolean = true
+
+    override suspend fun requestMicrophonePermission(): Boolean = suspendCancellableCoroutine { cont ->
+        native.requestMicrophonePermission(
+            onGranted = { if (cont.isActive) cont.resume(true) },
+            onDenied = { if (cont.isActive) cont.resume(false) },
+        )
+    }
+
+    override suspend fun startVoiceCall(): Unit = suspendCancellableCoroutine { cont ->
+        native.startVoiceCall(
+            onSuccess = { if (cont.isActive) cont.resume(Unit) else native.stopVoiceCall() },
+            onError = { if (cont.isActive) cont.resumeWithException(RuntimeException("Phone audio could not start")) },
+        )
+        cont.invokeOnCancellation { native.stopVoiceCall() }
+    }
+
+    override fun setMicrophoneMuted(muted: Boolean) = native.setMicrophoneMuted(muted)
+    override fun setRemoteAudioMuted(muted: Boolean) = native.setRemoteAudioMuted(muted)
+    override fun stopVoiceCall() = native.stopVoiceCall()
 
     override fun close() {
         if (_connectionState.value != RtcConnectionState.CLOSED) {
@@ -99,6 +139,7 @@ internal class IosRtcPeer(
     }
 
     internal fun renderView(): UIView? = native.renderView()
+    internal fun setVideoFill(fill: Boolean) = native.setVideoFill(fill)
 
     // ---- RtcNativePeerListener (invoked from Swift) ----
 
@@ -119,3 +160,5 @@ internal class IosRtcPeer(
         }
     }
 }
+
+

@@ -5,4 +5,5 @@ import androidx.compose.ui.Modifier
 
 
 @Composable
-expect fun RtcVideoView(peer: RtcPeer, modifier: Modifier)
+expect fun RtcVideoView(peer: RtcPeer, modifier: Modifier, fill: Boolean = false)
+

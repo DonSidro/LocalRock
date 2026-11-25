@@ -159,6 +159,9 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kodraliu.localrock.shared.vacuum.camera.experimentalCameraSupported
+import com.kodraliu.localrock.shared.webrtc.liveViewSupported
+import androidx.compose.material.icons.filled.Videocam
 import com.kodraliu.localrock.shared.model.Scene
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
 import com.kodraliu.localrock.shared.http.currentEpochSeconds
@@ -265,6 +268,8 @@ fun VacuumDetailScreen(
     val mopMode by viewModel.repository.mopMode.collectAsState()
     val roomCleanModes by viewModel.repository.roomCleanModes.collectAsState()
     val dockSettings by viewModel.repository.dockSettings.collectAsState()
+    val videoEnabled by viewModel.videoEnabled.collectAsState()
+    val cameraAvailable = videoEnabled && liveViewSupported && experimentalCameraSupported(viewModel.modelName)
     val dockCapabilities by viewModel.dockCapabilities.collectAsState()
     var selectedRoomIds by remember { mutableStateOf(emptyList<Int>()) }
 
@@ -385,7 +390,7 @@ fun VacuumDetailScreen(
 
     val PanelBody: @Composable (DetailPanel) -> Unit = { currentPanel ->
         when (currentPanel) {
-            DetailPanel.More -> MoreActionsSheetContent(showFindPet = supportsPetSearch, onAction = onMoreAction)
+            DetailPanel.More -> MoreActionsSheetContent(cameraAvailable = cameraAvailable, showFindPet = supportsPetSearch, onAction = onMoreAction)
 
             DetailPanel.Routines -> RoutinesSheetContent(
                 state = routines,
@@ -634,6 +639,11 @@ fun VacuumDetailScreen(
                     }
                 },
                 actions = {
+                    if (cameraAvailable) {
+                        IconButton(onClick = { onMoreAction(MoreAction.CAMERA) }) {
+                            Icon(Icons.Default.Videocam, contentDescription = "Video")
+                        }
+                    }
                     IconButton(onClick = onSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
@@ -706,7 +716,7 @@ fun VacuumDetailScreen(
                             }
                             PanelBody(headed)
                         } else {
-                            MoreActionsSheetContent(showFindPet = supportsPetSearch, onAction = onMoreAction)
+                            MoreActionsSheetContent(cameraAvailable = cameraAvailable, showFindPet = supportsPetSearch, onAction = onMoreAction)
                         }
                     }
 
@@ -1549,7 +1559,7 @@ private fun ControlBar(
 private enum class MoreAction { ROOMS, ZONES, PIN_GO, REMOTE, SCHEDULE, CAMERA, DOCK, HISTORY, MAPS, EDIT_MAP, ROUTINES, FIND_PET }
 
 @Composable
-private fun MoreActionsSheetContent(showFindPet: Boolean, onAction: (MoreAction) -> Unit) {
+private fun MoreActionsSheetContent(cameraAvailable: Boolean, showFindPet: Boolean, onAction: (MoreAction) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1573,7 +1583,6 @@ private fun MoreActionsSheetContent(showFindPet: Boolean, onAction: (MoreAction)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MoreActionItem(Modifier.weight(1f), Icons.Default.Gamepad, "Remote", AppColors.AccentCyan) { onAction(MoreAction.REMOTE) }
             MoreActionItem(Modifier.weight(1f), Icons.Default.Schedule, "Schedule", AppColors.Water) { onAction(MoreAction.SCHEDULE) }
-            // Camera is hidden for now; MoreAction.CAMERA and the live view screen stay in place.
             MoreActionItem(Modifier.weight(1f), Icons.Default.Edit, "Edit map", AppColors.AccentRed) { onAction(MoreAction.EDIT_MAP) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1583,6 +1592,9 @@ private fun MoreActionsSheetContent(showFindPet: Boolean, onAction: (MoreAction)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MoreActionItem(Modifier.weight(1f), Icons.AutoMirrored.Filled.PlaylistPlay, "Routines", MaterialTheme.colorScheme.secondary) { onAction(MoreAction.ROUTINES) }
+            if (cameraAvailable) {
+                MoreActionItem(Modifier.weight(1f), Icons.Default.Videocam, "Video (experimental)", AppColors.AccentCyan) { onAction(MoreAction.CAMERA) }
+            }
             if (showFindPet) {
                 MoreActionItem(Modifier.weight(1f), Icons.Default.Pets, "Find my pet", AppColors.AccentYellow) { onAction(MoreAction.FIND_PET) }
             } else {

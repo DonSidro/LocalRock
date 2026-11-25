@@ -186,6 +186,9 @@ class VacuumViewModel(
         }
     }
 
+    val videoEnabled = container.appSettings.videoEnabled
+    fun setVideoEnabled(value: Boolean) = container.appSettings.setVideoEnabled(value)
+
     private val _map3D = MutableStateFlow(container.appSettings.map3D(device.duid))
     val map3D: StateFlow<Boolean> = _map3D.asStateFlow()
 

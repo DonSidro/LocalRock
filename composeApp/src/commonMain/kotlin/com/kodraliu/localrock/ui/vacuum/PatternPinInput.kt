@@ -28,7 +28,6 @@ import kotlin.math.min
  * (`123` / `456` / `789`), and the robot is sent md5(digits) — see [CameraLiveSession].
  */
 private const val GRID = 3
-private const val MIN_DOTS = 4
 
 @Composable
 fun PatternPinInput(
@@ -41,7 +40,7 @@ fun PatternPinInput(
     var cursor by remember { mutableStateOf<Offset?>(null) }
     val currentOnPattern by rememberUpdatedState(onPattern)
 
-    Box(modifier.fillMaxWidth().widthIn(max = 280.dp)) {
+    Box(modifier.widthIn(max = 280.dp).fillMaxWidth()) {
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -54,43 +53,35 @@ fun PatternPinInput(
                         Offset((i % GRID + 0.5f) * cellW, (i / GRID + 0.5f) * cellH)
                     }
 
-                    fun select(position: Offset) {
-                        val hit = centers.indexOfFirst { (it - position).getDistance() <= hitRadius }
-                        if (hit < 0 || hit in selected) return
-                        // Dragging straight across a dot picks it up too, as on an Android lock screen.
-                        val previous = selected.lastOrNull()
-                        if (previous != null) {
-                            val rowSum = previous / GRID + hit / GRID
-                            val colSum = previous % GRID + hit % GRID
-                            if (rowSum % 2 == 0 && colSum % 2 == 0) {
-                                val between = (rowSum / 2) * GRID + colSum / 2
-                                if (between != previous && between !in selected) selected += between
-                            }
-                        }
-                        selected += hit
-                    }
-
                     awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val down = awaitFirstDown()
+                        currentOnPattern("")
                         selected.clear()
-                        select(down.position)
+                        patternSegmentHits(centers, down.position, down.position, hitRadius)
+                            .forEach { appendPatternDot(selected, it) }
                         cursor = down.position
                         down.consume()
-
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) break
-                            select(change.position)
-                            cursor = change.position
-                            change.consume()
+                        var previous = down.position
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (change.isConsumed || event.changes.any { it.id != down.id && it.pressed }) break
+                                // Process the release location too: it can be the final dot.
+                                patternSegmentHits(centers, previous, change.position, hitRadius)
+                                    .forEach { appendPatternDot(selected, it) }
+                                previous = change.position
+                                cursor = change.position
+                                change.consume()
+                                if (!change.pressed) {
+                                    currentOnPattern(patternDigits(selected))
+                                    break
+                                }
+                            }
+                        } finally {
+                            cursor = null
+                            selected.clear()
                         }
-
-                        cursor = null
-                        if (selected.size >= MIN_DOTS) {
-                            currentOnPattern(selected.joinToString("") { (it + 1).toString() })
-                        }
-                        selected.clear()
                     }
                 },
         ) {

@@ -178,6 +178,7 @@ fun VacuumSettingsScreen(
     viewModel: VacuumViewModel,
     onBack: () -> Unit,
 ) {
+    val videoEnabled by viewModel.videoEnabled.collectAsState()
     val repository = viewModel.repository
     val mapRotation = 0 // the live map has no rotation setting yet (#81 adds it)
     var route by remember { mutableStateOf<SettingsRoute>(SettingsRoute.Root) }
@@ -247,6 +248,8 @@ fun VacuumSettingsScreen(
                 route = SettingsRoute.DndMode
             },
             onMatter = if (!supportsMatter) null else ({ route = SettingsRoute.Matter }),
+            videoEnabled = videoEnabled,
+            onVideoEnabled = viewModel::setVideoEnabled,
             onBetaFeatures = if (!showsBetaFeatures) null else ({
                 route = SettingsRoute.BetaFeatures
             }),
@@ -445,6 +448,8 @@ private fun SettingsRootScreen(
     onRobotSettings: () -> Unit,
     onDndMode: () -> Unit,
     onMatter: (() -> Unit)?,
+    videoEnabled: Boolean,
+    onVideoEnabled: (Boolean) -> Unit,
     onBetaFeatures: (() -> Unit)?,
 ) {
     Scaffold(
@@ -554,6 +559,16 @@ private fun SettingsRootScreen(
                             subtitle = "Add the robot to Apple Home, Google Home and more",
                             onClick = onMatter,
                         )
+                    }
+                }
+                item {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Experimental video", style = MaterialTheme.typography.titleMedium)
+                            Text("Show video controls on supported robots. Requires server camera support and a reachable TURN endpoint.",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(checked = videoEnabled, onCheckedChange = onVideoEnabled)
                     }
                 }
                 if (onBetaFeatures != null) {
