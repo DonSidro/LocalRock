@@ -326,9 +326,15 @@ private fun renderLayer(map: ParsedMap, palette: MapPalette, scale: Int, overlay
     return bitmap
 }
 
-/** The room polygons' outlines and walls for the floor-plan look; empty when the map has none or [floorPlan] is off. */
-internal fun ParsedMap.floorPlanShapes(floorPlan: Boolean = true): List<FloorPlanShape> =
-    if (originalGrid != null && floorPlan) buildFloorPlan(zoneLines.filter { it.segment !in erasedRoomIds }, FloorPlanFrame(height)) else emptyList()
+/**
+ * The room polygons' outlines and walls for the floor-plan look; empty when the map has none, [floorPlan]
+ * is off, or the outlines do not fit the scanned floor (see [floorPlanFitsGrid]), so the cells are drawn.
+ */
+internal fun ParsedMap.floorPlanShapes(floorPlan: Boolean = true): List<FloorPlanShape> {
+    if (originalGrid == null || !floorPlan) return emptyList()
+    val shapes = buildFloorPlan(zoneLines.filter { it.segment !in erasedRoomIds }, FloorPlanFrame(height))
+    return if (floorPlanFitsGrid(shapes, grid, width, height)) shapes else emptyList()
+}
 
 private fun drawFloor(canvas: Canvas, map: ParsedMap, palette: MapPalette, floorPlan: Boolean = true, strokes: Boolean = true) {
     // The cells are masked by a rounded outline of the plan, so its edges are smooth rather than

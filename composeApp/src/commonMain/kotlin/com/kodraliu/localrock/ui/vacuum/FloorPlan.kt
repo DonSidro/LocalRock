@@ -123,3 +123,61 @@ internal fun floorPlanTouches(zones: List<FloorPlanZone>): Set<Pair<Int, Int>> {
     return touches
 }
 
+
+/** A room outline may cover at most this share of cells that are not scanned floor or wall. */
+internal const val FLOOR_PLAN_MAX_SPILL = 0.3f
+
+/** Outlines smaller than this many cells are not judged: a few edge cells would swing the share. */
+internal const val FLOOR_PLAN_MIN_JUDGED_CELLS = 64
+
+/**
+ * Whether the robot's room outlines fit its scanned floor. Some robots (a Qrevo Curv 2 Flow) send an
+ * outline that is a plain box around the room, and painting from it floods the room colour far past
+ * its walls. When any sizeable outline spills more than [maxSpill] of its area onto cells that are not
+ * floor (128) or wall (127), the map is drawn from its cells instead, as before floor plans were used.
+ * [grid] is row-major from the bottom row, as in ParsedMap; a cell (x, y) is drawn at x..x+1, h-1-y..h-y.
+ */
+internal fun floorPlanFitsGrid(
+    shapes: List<FloorPlanShape>, grid: ByteArray, width: Int, height: Int,
+    maxSpill: Float = FLOOR_PLAN_MAX_SPILL,
+): Boolean {
+    for (shape in shapes) {
+        val pts = shape.fill
+        if (pts.size < 3) continue
+        var inside = 0
+        var spill = 0
+        val crossings = ArrayList<Float>()
+        val minY = pts.minOf { it.y }
+        val maxY = pts.maxOf { it.y }
+        // Drawn row centre yc = h - y - 0.5, so the rows the outline can reach are these.
+        val yFrom = (height - maxY - 0.5f).toInt().coerceIn(0, height - 1)
+        val yTo = (height - minY - 0.5f).toInt().coerceIn(0, height - 1)
+        for (y in yFrom..yTo) {
+            val yc = height - y - 0.5f
+            crossings.clear()
+            for (i in pts.indices) {
+                val a = pts[i]
+                val b = pts[(i + 1) % pts.size]
+                if ((a.y > yc) != (b.y > yc)) crossings += a.x + (yc - a.y) * (b.x - a.x) / (b.y - a.y)
+            }
+            crossings.sort()
+            // Even-odd spans, the same rule a path fill uses; a cell counts when its centre is inside.
+            var k = 0
+            while (k + 1 < crossings.size) {
+                val x0 = kotlin.math.ceil(crossings[k] - 0.5f).toInt().coerceAtLeast(0)
+                val x1 = (kotlin.math.ceil(crossings[k + 1] - 0.5f).toInt() - 1).coerceAtMost(width - 1)
+                for (x in x0..x1) {
+                    inside++
+                    val gv = grid[y * width + x].toInt() and 0xff
+                    if (gv != 127 && gv != 128) spill++
+                }
+                k += 2
+            }
+        }
+        if (inside >= FLOOR_PLAN_MIN_JUDGED_CELLS && spill > inside * maxSpill) {
+            println("[VacLocal] floor plan: room ${shape.segment} outline is ${spill * 100 / inside}% off the scanned floor ($spill of $inside cells); drawing cells")
+            return false
+        }
+    }
+    return true
+}
