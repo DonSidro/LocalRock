@@ -60,7 +60,7 @@ val WHATS_NEW: List<WhatsNewRelease> = listOf(
             WhatsNewItem(
                 Icons.Default.Map,
                 "A new map",
-                "The map is drawn the way the Roborock app draws it. Turn it in quarter turns or " +
+                "The map is drawn the way the official app draws it. Turn it in quarter turns or " +
                     "tilt it in 3D. Drawn zones can be moved, resized and deleted, and the zoom " +
                     "stays put while you draw.",
             ),
@@ -88,7 +88,7 @@ val WHATS_NEW: List<WhatsNewRelease> = listOf(
                 Icons.Default.Tune,
                 "Settings like the official app",
                 "Maintenance, robot settings, carpet modes, collision and auto-empty levels now " +
-                    "match the Roborock app, and cleaning history shows each run's map and timeline.",
+                    "match the official app, and cleaning history shows each run's map and timeline.",
             ),
             WhatsNewItem(
                 Icons.Default.Build,
@@ -107,7 +107,7 @@ val WHATS_NEW: List<WhatsNewRelease> = listOf(
                 Icons.Default.PlayArrow,
                 "Routines",
                 "More > Routines lists the routines your server keeps, the ones made in the " +
-                    "Roborock app, and runs one with a tap.",
+                    "official app, and runs one with a tap.",
             ),
             WhatsNewItem(
                 Icons.Default.PinDrop,

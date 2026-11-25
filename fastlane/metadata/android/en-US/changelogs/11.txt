@@ -1,5 +1,5 @@
 New in 1.5.0:
-• A new map, drawn like the Roborock app: rotate, tilt in 3D, move and resize zones
+• A new map, drawn like the official app: rotate, tilt in 3D, move and resize zones
 • Furniture on the map: add, move and remove it on supported robots
 • Experimental video, off by default; S7 MaxV can drive and Pin & Go from the video
 • Firmware updates, Matter QR code, Find my pet and Voice Assistant
