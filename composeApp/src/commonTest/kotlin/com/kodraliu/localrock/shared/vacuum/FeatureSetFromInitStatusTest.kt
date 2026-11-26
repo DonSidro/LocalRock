@@ -29,6 +29,16 @@ class FeatureSetFromInitStatusTest {
     }
 
     @Test
+    fun an_fcc_build_is_bit_0_of_local_info_featureset() {
+        fun fcc(json: String) = isFccBuild(Json.parseToJsonElement(json))
+        assertEquals(true, fcc("""[{"local_info":{"featureset":"3"}}]"""))
+        assertEquals(false, fcc("""[{"local_info":{"featureset":"2"}}]"""))
+        assertNull(fcc("""[{"new_feature_info_str":"$qrevo"}]"""))
+        assertNull(fcc("""{"local_info":{"featureset":"abc"}}"""))
+        assertNull(fcc("[]"))
+    }
+
+    @Test
     fun the_robots_own_flags_switch_smartplan_on_where_the_server_record_has_none() {
         val fromRobot = set("""{"new_feature_info_str":"$qrevo"}""")
         assertFalse(isSmartPlanSupported(null))

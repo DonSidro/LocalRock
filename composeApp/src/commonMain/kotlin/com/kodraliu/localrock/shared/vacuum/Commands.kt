@@ -38,6 +38,10 @@ suspend fun VacuumSession.getConsumableStatus(): V1Response = sendCommand("get_c
 suspend fun VacuumSession.setWaterBoxCustomMode(level: Int): V1Response =
     sendCommand("set_water_box_custom_mode", listOf(JsonPrimitive(level)))
 
+/** The Custom water amount (official setWaterBoxDistance); params are an object, not a list. */
+suspend fun VacuumSession.setWaterBoxDistanceOff(distance: Int): V1Response =
+    sendCommandRaw("set_water_box_distance_off", JsonObject(mapOf("distance_off" to JsonPrimitive(distance))))
+
 suspend fun VacuumSession.appStartCollectDust(): V1Response = sendCommand("app_start_collect_dust")
 suspend fun VacuumSession.appStartWash(): V1Response = sendCommand("app_start_wash")
 suspend fun VacuumSession.appStopWash(): V1Response = sendCommand("app_stop_wash")
@@ -81,6 +85,12 @@ internal val EMPTY_INBUILT_WATER_TANK_PARAMS: JsonObject = JsonObject(emptyMap()
 
 suspend fun VacuumSession.emptyInbuiltWaterTank(): V1Response =
     sendCommandRaw(APP_EMPTY_INBUILT_WATER_TANK, EMPTY_INBUILT_WATER_TANK_PARAMS)
+
+// The official Start Self-Cleaning button for the dock's cleaning tray sends this with {} (p223 L196167, L1298663).
+internal const val APP_AMETHYST_SELF_CHECK = "app_amethyst_self_check"
+
+suspend fun VacuumSession.startTraySelfClean(): V1Response =
+    sendCommandRaw(APP_AMETHYST_SELF_CHECK, JsonObject(emptyMap()))
 
 suspend fun VacuumSession.appRcStart(): V1Response = sendCommand("app_rc_start")
 
