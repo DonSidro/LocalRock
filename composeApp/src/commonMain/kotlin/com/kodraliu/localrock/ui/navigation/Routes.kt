@@ -21,3 +21,21 @@ import kotlinx.serialization.Serializable
 @Serializable data object VacuumRemote
 @Serializable data object VacuumPinGo
 @Serializable data object VacuumHistory
+
+// Pages the settings hub opens, inside VacuumGraph.
+@Serializable data object VacuumMaintenance
+@Serializable data object VacuumFirmware
+@Serializable data object VacuumSettingsDock
+@Serializable data object VacuumSettingsWashingMode
+@Serializable data object VacuumSettingsDockMaintenance
+@Serializable data object VacuumSettingsDrainTank
+@Serializable data object VacuumSettingsFloor
+@Serializable data object VacuumSettingsCarpet
+@Serializable data object VacuumSettingsObstacle
+@Serializable data object VacuumSettingsDnd
+@Serializable data object VacuumSettingsBeta
+@Serializable data object VacuumSettingsMatter
+@Serializable data object VacuumSettingsMoreOptions
+@Serializable data object VacuumSettingsChargingMode
+@Serializable data object VacuumSettingsRobotVoice
+@Serializable data object VacuumSettingsProductInfo

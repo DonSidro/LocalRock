@@ -33,6 +33,15 @@ class DryerSettingBodyTest {
     }
 
     @Test
+    fun scheduled_drying_stays_scheduled_when_the_switch_or_time_changes() {
+        val scheduled = JsonObject(reported + ("status" to JsonPrimitive(2)))
+        assertEquals(2, dryerSettingBody(scheduled, enabled = true, dryTimeSeconds = 7200)["status"]!!.jsonPrimitive.int)
+        assertEquals(0, dryerSettingBody(scheduled, enabled = false, dryTimeSeconds = null)["status"]!!.jsonPrimitive.int)
+        val off = JsonObject(reported + ("status" to JsonPrimitive(0)))
+        assertEquals(1, dryerSettingBody(off, enabled = true, dryTimeSeconds = null)["status"]!!.jsonPrimitive.int)
+    }
+
+    @Test
     fun without_an_answer_to_send_back_only_what_is_known_is_sent() {
         val body = dryerSettingBody(null, enabled = true, dryTimeSeconds = 7200)
         assertEquals(JsonObject(mapOf("status" to JsonPrimitive(1), "on" to JsonObject(mapOf("dry_time" to JsonPrimitive(7200))))), body)

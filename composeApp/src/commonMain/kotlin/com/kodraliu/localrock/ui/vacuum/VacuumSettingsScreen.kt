@@ -170,20 +170,26 @@ private sealed interface SettingsRoute {
     data object Firmware : SettingsRoute
 }
 
+/** Pages the new settings hub can open straight inside this screen until they get their own. */
+enum class LegacySettingsPage { MAINTENANCE }
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
-fun VacuumSettingsScreen(
+fun LegacyVacuumSettingsScreen(
     viewModel: VacuumViewModel,
     onBack: () -> Unit,
+    startAt: LegacySettingsPage? = null,
 ) {
     val videoEnabled by viewModel.videoEnabled.collectAsState()
     val repository = viewModel.repository
     val mapRotation = 0 // the live map has no rotation setting yet (#81 adds it)
-    var route by remember { mutableStateOf<SettingsRoute>(SettingsRoute.Root) }
+    var route by remember { mutableStateOf<SettingsRoute>(if (startAt == null) SettingsRoute.Root else SettingsRoute.Maintenance) }
+    // Opened straight onto a page by the new settings hub, so back returns to it.
+    val toRoot: () -> Unit = { if (startAt != null) onBack() else route = SettingsRoute.Root }
     // Sub-pages are local state, not nav destinations, so system back would leave Settings (#52).
-    BackHandler(enabled = route != SettingsRoute.Root) {
+    BackHandler(enabled = route != SettingsRoute.Root && startAt == null) {
         route = if (route == SettingsRoute.Valley) SettingsRoute.DockSettings else SettingsRoute.Root
     }
     val scope = rememberCoroutineScope()
@@ -286,7 +292,7 @@ fun VacuumSettingsScreen(
             consumables = consumables,
             onRefresh = { scope.launch { runCatching { repository.fetchConsumableStatus() } } },
             onReset = { field -> scope.launch { runCatching { repository.resetConsumable(field) } } },
-            onBack = { route = SettingsRoute.Root },
+            onBack = toRoot,
         )
         SettingsRoute.DockSettings -> DockSettingsScreen(
             dockSettings = dockSettings,
@@ -1407,7 +1413,7 @@ private fun DockSettingsScreen(
                             icon = Icons.Default.Thermostat,
                             iconTint = AppColors.Warn,
                             title = "Washing water temperature",
-                            subtitle = DockOptions.washWaterTemperature.labelFor(temperature),
+                            subtitle = DockOptions.washWaterTemperature(dockType).labelFor(temperature),
                             enabled = !busy,
                             onClick = { dialogTarget = "wash_temp" },
                         )
@@ -1521,9 +1527,9 @@ private fun DockSettingsScreen(
         )
         "wash_temp" -> SimplePickerDialog(
             title = "Washing water temperature",
-            options = DockOptions.washWaterTemperature.map { it.label },
-            selected = DockOptions.washWaterTemperature.indexOfFirst { it.code == dockSettings.washWaterTemperature },
-            onSelect = { onWashWaterTemperatureChange(DockOptions.washWaterTemperature[it].code); dialogTarget = null },
+            options = DockOptions.washWaterTemperature(dockType).map { it.label },
+            selected = DockOptions.washWaterTemperature(dockType).indexOfFirst { it.code == dockSettings.washWaterTemperature },
+            onSelect = { onWashWaterTemperatureChange(DockOptions.washWaterTemperature(dockType)[it].code); dialogTarget = null },
             enabled = !busy,
             onDismiss = { dialogTarget = null },
         )

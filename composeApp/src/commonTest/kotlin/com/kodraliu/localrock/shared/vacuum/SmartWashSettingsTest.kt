@@ -9,7 +9,7 @@ import kotlin.test.assertNull
 class SmartWashSettingsTest {
     @Test
     fun room_and_smart_replies_keep_their_mode_and_interval() {
-        for ((mode, label) in listOf(1 to "After each room", 2 to "Smart")) {
+        for ((mode, label) in listOf(1 to "By Room", 2 to "Smart Mop Wash")) {
             val result = Json.parseToJsonElement("""{"smart_wash":$mode,"wash_interval":1200}""")
             val settings = parseSmartWashSettings(result)
             assertEquals(SmartWashSettings(mode, 1200), settings)

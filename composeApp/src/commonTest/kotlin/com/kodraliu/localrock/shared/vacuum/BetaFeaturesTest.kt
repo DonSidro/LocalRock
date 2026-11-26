@@ -11,17 +11,30 @@ class BetaFeaturesTest {
 
     @Test
     fun supported_features_follow_the_feature_bits() {
-        // QX Revo Ultra 2 newFeatureSet: bits 23, 36, 40, 43, 53, 54, 56, 60, 63, 70, 74 and 118 are on, 58 is off.
+        // QX Revo Ultra 2 newFeatureSet: bits 36, 40, 43, 54, 56, 60, 63, 70 and 74 are on, 58 and 72 are off; 118 hides the bit-36 switch.
         val set = "0000000000119418CCD57EFDA869B6DDDBFF8F7F7EFEFFFF"
         assertEquals(
             listOf(
-                "avoid_collision", "carpet_first", "cleaning_pattern", "collision_mode", "corner_mop_stretch", "dirty_object_detect",
-                "dust_collection_frequency", "gap_deep_clean", "optimize_battery", "pet_supplies_deep_clean", "right_brush_stretch",
-                "water_leak_check",
+                "cleaning_pattern", "corner_mop_stretch", "dirty_object_detect", "gap_deep_clean", "optimize_battery",
+                "pet_supplies_deep_clean", "right_brush_stretch", "water_leak_check",
             ),
-            supportedBetaFeatures(set).filter { it.bit != null && it.bit != 3 && it.bit != 104 && it.bit != 105 && it.bit != 112 }.map { it.id }.sorted(),
+            supportedBetaFeatures(set).filter { it.bit != null && it.bit !in setOf(3, 23, 49, 53, 104, 105, 112, 34, 37, 50, 66, 83, 118) }.map { it.id }.sorted(),
         )
         assertEquals(emptyList(), supportedBetaFeatures("0").filter { it.bit != null })
+    }
+
+    @Test
+    fun smart_charging_is_bit_74_not_72() {
+        val bit72 = "1" + "0".repeat(18)
+        val bit74 = "4" + "0".repeat(18)
+        assertEquals(listOf("optimize_battery"), supportedBetaFeatures(bit74).filter { it.bit != null }.map { it.id })
+        assertEquals(emptyList(), supportedBetaFeatures(bit72).filter { it.bit != null })
+    }
+
+    @Test
+    fun dirty_object_detection_and_uncleaned_area_reminder_sit_on_the_floor_page() {
+        val floor = BetaFeatureDefs.filter { it.section == FeatureSection.FLOOR }.map { it.id }
+        assertTrue("dirty_object_detect" in floor && "uncleaned_area_reminder" in floor)
     }
 
     @Test
@@ -36,7 +49,10 @@ class BetaFeaturesTest {
     @Test
     fun features_without_a_known_bit_are_always_probed() {
         assertEquals(
-            listOf("carpet_boost", "dust_collection_switch", "follow_ground_material", "identify_furniture", "identify_ground_material"),
+            listOf(
+                "ai_environment", "carpet_boost", "dust_collection_switch", "follow_ground_material", "identify_furniture",
+                "identify_ground_material", "obstacle_avoidance",
+            ),
             supportedBetaFeatures(null).map { it.id }.sorted(),
         )
     }
@@ -166,7 +182,7 @@ class BetaFeaturesTest {
 
     @Test
     fun unnamed_bits_have_no_name_and_missing_sets_are_empty() {
-        assertEquals(listOf(AdvertisedFeature(44, null)), unlistedAdvertisedFeatures("100000000000"))
+        assertEquals(listOf(AdvertisedFeature(44, "Unknown (44)")), unlistedAdvertisedFeatures("100000000000"))
         assertEquals(listOf(AdvertisedFeature(89, "Mechanical arm mode")), unlistedAdvertisedFeatures("2" + "0".repeat(22)))
         assertEquals(emptyList(), unlistedAdvertisedFeatures(null))
         assertEquals(emptyList(), unlistedAdvertisedFeatures(""))

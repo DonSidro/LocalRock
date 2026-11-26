@@ -9,7 +9,11 @@ import com.kodraliu.localrock.shared.model.SceneRunResult
 import com.kodraliu.localrock.shared.vacuum.AdvertisedFeature
 import com.kodraliu.localrock.shared.vacuum.BetaFeatureDef
 import com.kodraliu.localrock.shared.model.LastKnown
+import com.kodraliu.localrock.shared.device.currentDeviceName
+import com.kodraliu.localrock.shared.vacuum.Capabilities
+import com.kodraliu.localrock.ui.vacuum.settings.NewestRunCache
 import com.kodraliu.localrock.shared.vacuum.DockCapabilities
+import com.kodraliu.localrock.shared.vacuum.buildCapabilities
 import com.kodraliu.localrock.shared.vacuum.FirmwareProgress
 import com.kodraliu.localrock.shared.vacuum.firmwareInstallBlocker
 import com.kodraliu.localrock.shared.vacuum.firmwareOutcome
@@ -53,7 +57,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -68,6 +74,10 @@ class VacuumViewModel(
     }
 
     val deviceName: String = device.name
+    // Follows the device list, which Product Info reloads after a rename.
+    val currentDeviceName: StateFlow<String> = container.deviceRepository.devices
+        .map { currentDeviceName(it, device.duid, deviceName) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, deviceName)
     val modelName: String? = container.deviceRepository.productsByDuid.value[duid]?.model
     val modelDisplayName: String? = productDisplayName(container.deviceRepository.productsByDuid.value[duid])
     val firmwareVersion: String? = device.fv
@@ -123,6 +133,10 @@ class VacuumViewModel(
         .map { isVoiceAssistantSupported(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, isVoiceAssistantSupported(serverFeatureSet))
     val voice = VoiceAssistant(repository.session)
+    // What this robot supports; screens test these flags, never bit numbers.
+    val capabilities: StateFlow<Capabilities> = combine(repository.robotFeatureSet, repository.robotIsFcc) { nfs, fcc ->
+        buildCapabilities(modelName, device.featureSet, serverFeatureSet, nfs, fcc)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, buildCapabilities(modelName, device.featureSet, serverFeatureSet, null))
     val status = repository.status
 
     private val errorBannerKey = "robot-error-${device.duid}"
@@ -355,6 +369,18 @@ class VacuumViewModel(
                     runCatching { voice.fetchSwitch() }
                     runCatching { voice.fetchSettings() }
                 }
+            }
+            // Preload every settings page so a page opens complete; the map goes first (up to 8 s) so it is not slowed.
+            launch {
+                container.awaitMqttConnected()
+                withTimeoutOrNull(8_000) { repository.parsedMap.first { it != null } }
+                launch { runCatching { repository.fetchBetaFeatures(betaFeatureDefs.value) } }
+                launch { runCatching { repository.fetchRobotSettings() } }
+                launch { runCatching { repository.fetchDockSettings() } }
+                launch { runCatching { repository.fetchDndSettings() } }
+                launch { runCatching { repository.fetchTimers() } }
+                launch { runCatching { NewestRunCache.load(repository) } }
+                if (capabilities.value.chargingMode) launch { runCatching { repository.fetchValleySettings() } }
             }
             // A robot that never answers (dead battery, lost Wi-Fi, stuck) leaves the screen empty;
             // the server still holds where it was last seen and what it last reported.
