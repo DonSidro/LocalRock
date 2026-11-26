@@ -126,8 +126,8 @@ class VacuumRepository(
 
     /** Refresh the shared feature snapshot; failed reads cannot authorize furniture writes. */
     suspend fun fetchFurnitureSupport(): FurnitureSupport = featureReadMutex.withLock {
+        // Furniture writes require a fresh read; unrelated settings keep the last shared snapshot.
         _furnitureSupport.value = FurnitureSupport.UNKNOWN
-        _robotNewFeatureInfo.value = null
         if (demo) return@withLock FurnitureSupport.UNKNOWN
         val result = session.getInitStatus().requireOk("app_get_init_status").result
         _robotFeatureSet.value = featureSetFromInitStatus(result)
