@@ -7,6 +7,7 @@ package com.kodraliu.localrock.shared.onboarding
  */
 actual class VacuumPairingTransport : AutoCloseable {
     actual suspend fun joinVacuumWifi(ssidPrefix: String, timeoutMs: Long): Unit = unsupported()
+    actual suspend fun joinedSsid(): String? = null
     actual suspend fun sendUdp(host: String, port: Int, data: ByteArray): Unit = unsupported()
     actual suspend fun receiveUdp(timeoutMs: Long): ByteArray? = unsupported()
     actual override fun close() = Unit
