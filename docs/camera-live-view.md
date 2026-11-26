@@ -22,6 +22,7 @@ model list. Both entries also require a build with WebRTC enabled.
 | [Qrevo Edge](https://us.roborock.com/pages/roborock-qrevo-edge-series) | `roborock.vacuum.a156` | Video testing opt-in |
 | [Saros 10](https://ca.roborock.com/pages/roborock-saros-10) | `roborock.vacuum.a147` | Video testing opt-in |
 | [Saros 10R](https://support.roborock.com/hc/en-us/articles/43407368729497-Does-Saros-10R-support-obstacle-avoidance-and-video-call-features) | `roborock.vacuum.a144` | Video testing opt-in |
+| Qrevo Curv 2 Flow | `roborock.vacuum.a245` | Video testing opt-in; video has been seen working on one robot with the local server |
 
 This is a conservative list of recognized IDs, not a complete catalog of every
 Roborock regional variant or newer model. Unknown IDs remain hidden. A camera or

@@ -12,7 +12,7 @@ class CameraModelSupportTest {
     }
 
     @Test fun documented_video_models_show_an_entry_but_require_opt_in() {
-        for (id in listOf("a10", "a97", "a87", "a117", "a21", "a135", "a156", "a147", "a144")) {
+        for (id in listOf("a10", "a97", "a87", "a117", "a21", "a135", "a156", "a147", "a144", "a245")) {
             val model = "roborock.vacuum.$id"
             val support = cameraModelSupport(model)
             assertTrue(experimentalCameraSupported(model), model)
