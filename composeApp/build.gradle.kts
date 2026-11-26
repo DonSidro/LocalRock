@@ -1,4 +1,5 @@
 import java.util.Base64
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -26,7 +27,22 @@ kotlin {
         }
     }
 
+    // Windows / macOS / Linux desktop app (Compose Desktop on the JVM).
+    jvm("desktop") {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
+
     sourceSets {
+        val desktopMain by getting {
+            dependencies {
+                implementation(compose.desktop.currentOs)
+                implementation(libs.kotlinx.coroutines.swing)
+                implementation(libs.ktor.client.okhttp)
+                implementation(libs.paho.mqttv3)
+            }
+        }
         commonMain.dependencies {
             // Compose UI
             implementation(libs.compose.runtime)
@@ -75,6 +91,36 @@ kotlin {
         }
         androidUnitTest.dependencies {
             implementation(libs.robolectric)
+        }
+    }
+}
+
+compose.desktop {
+    application {
+        mainClass = "com.kodraliu.localrock.MainKt"
+
+        nativeDistributions {
+            targetFormats(TargetFormat.Msi, TargetFormat.Dmg, TargetFormat.Deb)
+            packageName = "LocalRock"
+            packageVersion = "1.5.0"
+            description = "Local-network client for Roborock vacuums"
+            // java.prefs holds the app settings; jdk.crypto.ec is needed for TLS to EC certificates.
+            modules("java.prefs", "jdk.crypto.ec", "java.naming")
+            windows {
+                menuGroup = "LocalRock"
+                perUserInstall = true
+            }
+        }
+    }
+}
+
+// Compose Material3 for desktop pulls in kotlinx-datetime 0.7, which drops kotlinx.datetime.Instant
+// (used by the app) in favour of kotlin.time.Instant. The 0.6.x-compat build of 0.7 keeps both.
+configurations.matching { it.name.startsWith("desktop") }.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.jetbrains.kotlinx" && requested.name.startsWith("kotlinx-datetime")) {
+            useVersion("0.7.1-0.6.x-compat")
+            because("material3-desktop needs 0.7; the app still uses kotlinx.datetime.Instant")
         }
     }
 }

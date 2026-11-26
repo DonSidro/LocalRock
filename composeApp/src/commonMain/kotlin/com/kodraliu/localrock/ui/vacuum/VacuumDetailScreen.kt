@@ -1115,6 +1115,19 @@ private fun VacuumMapImage(
             modifier = Modifier
                 .fillMaxSize()
                 .clipToBounds()
+                .onMouseWheelZoom(identity, is3D) { cursor, factor, view ->
+                    // The pinch zoom below, driven by the wheel about the cursor.
+                    val newZoom = (mapViewport.zoom * factor).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                    val center = Offset(view.width / 2f, view.height / 2f)
+                    val fit = drawn.forHitTest { currentViewFor(view.width, view.height) }.k / mapViewport.zoom
+                    val panPx = mapViewport.pan * fit
+                    val moved = (cursor - center) - ((cursor - center) - panPx) * (newZoom / mapViewport.zoom)
+                    mapViewport.pan = Offset(
+                        moved.x.coerceIn(-view.width, view.width),
+                        moved.y.coerceIn(-view.height, view.height),
+                    ) / fit
+                    mapViewport.zoom = newZoom
+                }
                 .pointerInput(identity, is3D) {
                     // Pinch zooms about the fingers. In 3D the model behaves like a maps app's 3D
                     // view: one finger moves it, a two-finger twist turns it to any heading, and two
