@@ -36,9 +36,14 @@ data class VacuumStatus(
      * washing the mop), which is how the end of a job is told from a pause in it.
      */
     @SerialName("in_cleaning") val inCleaning: Int? = null,
+    /** Bits 3 and 4 hold the patrol kind in the official app: 2 is a pet patrol. */
+    @SerialName("common_status") val commonStatus: Int? = null,
     /** How far through the current job the robot says it is, 0..100. */
     @SerialName("clean_percent") val cleanPercent: Int? = null,
 ) {
+    /** True when the status itself says the patrol is a pet search. */
+    val isPetPatrol: Boolean get() = commonStatus?.let { ((it shr 3) and 3) == 2 } == true
+
     val multiLevelEnabled: Boolean? get() = labStatus?.let { it and LAB_STATUS_MULTI_LEVEL != 0 }
 
     /** False on a robot that will not store a map: it refuses manual_segment_map (issue #17). */

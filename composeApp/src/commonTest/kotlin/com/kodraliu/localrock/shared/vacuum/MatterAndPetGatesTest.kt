@@ -18,9 +18,9 @@ class MatterAndPetGatesTest {
     }
 
     @Test
-    fun findMyPetNeedsEitherPatrolBit() {
+    fun findMyPetNeedsThePatrolBit() {
         assertTrue(isPetSearchSupported(videoPatrolOnly))
-        assertTrue(isPetSearchSupported(petSnapshotOnly))
+        assertFalse(isPetSearchSupported(petSnapshotOnly))
         assertFalse(isPetSearchSupported(matterOnly))
         assertFalse(isPetSearchSupported(null))
     }

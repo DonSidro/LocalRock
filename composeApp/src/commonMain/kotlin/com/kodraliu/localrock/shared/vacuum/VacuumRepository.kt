@@ -183,6 +183,25 @@ class VacuumRepository(
     val unresponsive: StateFlow<Boolean> = unansweredPolls.unresponsive
 
     private var pollJob: Job? = null
+
+    private val _petSearchActive = MutableStateFlow(false)
+
+    /** True while a patrol that this app started as a pet search is running, so it can say "Searching for pets". */
+    val petSearchActive: StateFlow<Boolean> = _petSearchActive
+
+    init {
+        // The flag lives from the start of the pet search until the robot has patrolled and stopped.
+        scope.launch {
+            var seenPatrolling = false
+            _status.collect {
+                if (it.state == VacuumStateCodes.PATROLLING) seenPatrolling = true
+                else if (seenPatrolling) {
+                    seenPatrolling = false
+                    _petSearchActive.value = false
+                }
+            }
+        }
+    }
     private var dpsJob: Job? = null
     private var mapPollJob: Job? = null
     private var floorSwitchRefreshJob: Job? = null
@@ -529,6 +548,7 @@ class VacuumRepository(
             throw IllegalStateException("Dock the robot and finish its current task before looking for your pet")
         }
         session.startPetSearch().requireOk("app_start_pet_patrol")
+        _petSearchActive.value = true
     }
 
     suspend fun fetchMatterStatus(): MatterInfo? =
@@ -1475,6 +1495,7 @@ class VacuumRepository(
             VacuumStateCodes.ZONED_CLEANING,
             VacuumStateCodes.SEGMENT_CLEANING,
             VacuumStateCodes.MAPPING,
+            VacuumStateCodes.PATROLLING,
         )
     }
 }

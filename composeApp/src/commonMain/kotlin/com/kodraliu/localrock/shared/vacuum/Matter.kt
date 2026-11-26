@@ -16,8 +16,8 @@ const val PET_SNAPSHOT_FEATURE_BIT = 50
 
 fun isMatterSupported(newFeatureSet: String?): Boolean = newFeatureBit(newFeatureSet, MATTER_FEATURE_BIT)
 
-fun isPetSearchSupported(newFeatureSet: String?): Boolean =
-    newFeatureBit(newFeatureSet, VIDEO_PATROL_FEATURE_BIT) || newFeatureBit(newFeatureSet, PET_SNAPSHOT_FEATURE_BIT)
+/** The official app offers Search for the Pet on bit 48 alone; bit 50 is only the pet snapshot setting. */
+fun isPetSearchSupported(newFeatureSet: String?): Boolean = newFeatureBit(newFeatureSet, VIDEO_PATROL_FEATURE_BIT)
 
 /** The `status` values the official app reads from `matter.get_status`. */
 enum class MatterState {
