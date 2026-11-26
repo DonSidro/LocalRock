@@ -24,6 +24,7 @@ private val experimentalVideoModels = setOf(
     "roborock.vacuum.a156", // Qrevo Edge
     "roborock.vacuum.a147", // Saros 10
     "roborock.vacuum.a144", // Saros 10R
+    "roborock.vacuum.a245", // Qrevo Curv 2 Flow
 )
 
 fun cameraModelSupport(model: String?): CameraModelSupport = when (model) {

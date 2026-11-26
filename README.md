@@ -89,7 +89,7 @@ The app implements the Roborock protocol (Hawk‑signed REST + MQTT‑over‑TLS
 - **Room cleaning** — pick rooms in the order they should be cleaned, with real names pulled from your home data, and set a default cleaning order for a full clean
 - **Pin & Go** — send the robot to a point on the map
 - **Remote control** — manually drive the vacuum
-- **Video (experimental)** — live camera view with driving and Pin & Go on the S7 MaxV, and two‑way audio on iPhone; off by default, see [Camera live view](#camera-live-view)
+- **Video (experimental)** — live camera view with driving and Pin & Go on the S7 MaxV, and two‑way audio; off by default, see [Camera live view](#camera-live-view)
 - **Map editor** — draw no‑go zones, invisible walls, carpets (including round ones) and thresholds; pick a room type or give a room a custom name; split and merge rooms; set floor types
 - **Furniture** — on robots that report furniture support, see the furniture on the map and add, move and remove it (robots with one saved map)
 - **Map management** — rename and delete maps, back up and restore a map, and send the robot out to map the home again (for example after moving the dock)
@@ -167,7 +167,7 @@ The app is **local‑only by design**: there is no Roborock‑cloud login, no se
 > [!NOTE]
 > Video is **experimental and off by default**. Turn on **Settings → Experimental video** on the robot's settings page to show it.
 
-- **S7 MaxV** (`roborock.vacuum.a27`) is the tested model: live video, driving, Pin & Go and, on iPhone, two‑way audio calls.
+- **S7 MaxV** (`roborock.vacuum.a27`) is the tested model: live video, driving, Pin & Go and two‑way audio calls.
 - Nine other models with Roborock remote viewing can try video and audio under a per‑visit testing opt‑in; driving stays off on them. The list is in [docs/camera-live-view.md](docs/camera-live-view.md).
 - Remote viewing must have been activated in the official Roborock app **before** the robot moved to the local server. Keep your existing camera PIN or pattern.
 - The robot, phone and server must all reach your server's **TURN** endpoint, and the server needs its camera support.

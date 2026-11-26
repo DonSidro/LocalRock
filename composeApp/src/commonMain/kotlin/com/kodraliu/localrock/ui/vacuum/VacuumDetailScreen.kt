@@ -111,6 +111,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -241,6 +242,10 @@ fun VacuumDetailScreen(
     onHistory: () -> Unit,
 ) {
     val status by viewModel.status.collectAsState()
+    DisposableEffect(viewModel) {
+        viewModel.repository.setLiveMapRate(true)
+        onDispose { viewModel.repository.setLiveMapRate(false) }
+    }
     val busy by viewModel.busy.collectAsState()
     val mapRotation by viewModel.mapRotation.collectAsState()
     val map3DYaw by viewModel.map3DYaw.collectAsState()

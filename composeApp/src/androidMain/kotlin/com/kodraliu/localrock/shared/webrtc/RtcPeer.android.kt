@@ -1,10 +1,14 @@
 package com.kodraliu.localrock.shared.webrtc
 
+import android.content.Context
+import android.media.AudioManager
 import com.kodraliu.localrock.shared.protocol.appContextOrNull
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.webrtc.AudioSource
+import org.webrtc.AudioTrack
 import org.webrtc.DataChannel
 import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
@@ -56,6 +60,13 @@ internal class AndroidRtcPeer(iceServers: List<RtcIceServer>) : RtcPeer {
 
     val videoTrack = MutableStateFlow<VideoTrack?>(null)
 
+    private var audioTransceiver: RtpTransceiver? = null
+    private var micSource: AudioSource? = null
+    private var micTrack: AudioTrack? = null
+    private var remoteAudio: AudioTrack? = null
+    private var savedMode: Int? = null
+    private var savedSpeaker: Boolean? = null
+
     private val pc: PeerConnection
 
     init {
@@ -91,6 +102,7 @@ internal class AndroidRtcPeer(iceServers: List<RtcIceServer>) : RtcPeer {
                 "Required video offer codecs unavailable"
             }
             transceiver.setCodecPreferences(codecs)
+            if (kind == audio) audioTransceiver = transceiver
         }
         val offer = suspendCancellableCoroutine<SessionDescription> { cont ->
             pc.createOffer(object : SdpObserverAdapter() {
@@ -151,11 +163,59 @@ internal class AndroidRtcPeer(iceServers: List<RtcIceServer>) : RtcPeer {
         }
     }
 
+    override val supportsVoiceCall: Boolean = true
+
+    override suspend fun requestMicrophonePermission(): Boolean = MicrophoneAccess.request()
+
+    override suspend fun startVoiceCall() {
+        val sender = requireNotNull(audioTransceiver) { "No audio line" }.sender
+        if (micTrack == null) {
+            val source = peerConnectionFactory.createAudioSource(MediaConstraints())
+            micSource = source
+            micTrack = peerConnectionFactory.createAudioTrack("mic", source)
+            sender.setTrack(micTrack, false)
+        }
+        micTrack?.setEnabled(true)
+        remoteAudio?.setEnabled(true)
+        routeToSpeaker(true)
+    }
+
+    override fun setMicrophoneMuted(muted: Boolean) { micTrack?.setEnabled(!muted) }
+
+    override fun setRemoteAudioMuted(muted: Boolean) { remoteAudio?.setEnabled(!muted) }
+
+    override fun stopVoiceCall() {
+        micTrack?.setEnabled(false)
+        remoteAudio?.setEnabled(false)
+        routeToSpeaker(false)
+    }
+
+    // A call plays through the loudspeaker, not the earpiece; the phone's audio is put back afterwards.
+    private fun routeToSpeaker(on: Boolean) {
+        val audio = appContextOrNull()?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (on) {
+            if (savedMode == null) {
+                savedMode = audio.mode
+                savedSpeaker = audio.isSpeakerphoneOn
+            }
+            audio.mode = AudioManager.MODE_IN_COMMUNICATION
+            audio.isSpeakerphoneOn = true
+        } else {
+            savedMode?.let { audio.mode = it }
+            savedSpeaker?.let { audio.isSpeakerphoneOn = it }
+            savedMode = null
+            savedSpeaker = null
+        }
+    }
+
     override fun close() {
+        stopVoiceCall()
         videoTrack.value = null
         _connectionState.value = RtcConnectionState.CLOSED
         runCatching { pc.close() }
         runCatching { pc.dispose() }
+        runCatching { micTrack?.dispose() }
+        runCatching { micSource?.dispose() }
     }
 
     private inner class Observer : PeerConnection.Observer {
@@ -167,6 +227,11 @@ internal class AndroidRtcPeer(iceServers: List<RtcIceServer>) : RtcPeer {
 
         override fun onTrack(transceiver: RtpTransceiver) {
             (transceiver.receiver.track() as? VideoTrack)?.let { videoTrack.value = it }
+            // Robot audio stays silent until a call starts.
+            (transceiver.receiver.track() as? AudioTrack)?.let {
+                remoteAudio = it
+                it.setEnabled(false)
+            }
         }
 
         override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) {

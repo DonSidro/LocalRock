@@ -183,6 +183,25 @@ class VacuumRepository(
     val unresponsive: StateFlow<Boolean> = unansweredPolls.unresponsive
 
     private var pollJob: Job? = null
+
+    private val _petSearchActive = MutableStateFlow(false)
+
+    /** True while a patrol that this app started as a pet search is running, so it can say "Searching for pets". */
+    val petSearchActive: StateFlow<Boolean> = _petSearchActive
+
+    init {
+        // The flag lives from the start of the pet search until the robot has patrolled and stopped.
+        scope.launch {
+            var seenPatrolling = false
+            _status.collect {
+                if (it.state == VacuumStateCodes.PATROLLING) seenPatrolling = true
+                else if (seenPatrolling) {
+                    seenPatrolling = false
+                    _petSearchActive.value = false
+                }
+            }
+        }
+    }
     private var dpsJob: Job? = null
     private var mapPollJob: Job? = null
     private var floorSwitchRefreshJob: Job? = null
@@ -253,7 +272,7 @@ class VacuumRepository(
                     .onFailure { println("[VacLocal] fetchMap FAILED: ${it::class.simpleName}: ${it.message}") }
                 // Until a map has arrived, ask again soon: sitting out the idle minute after a
                 // failed first request left the screen without a map for up to two minutes.
-                delay(
+                waitForNextMapPoll(
                     when {
                         !loaded -> MAP_RETRY_MS
                         _status.value.state in ACTIVE_STATES -> MAP_FAST_POLL_MS
@@ -264,6 +283,28 @@ class VacuumRepository(
         }
     }
 
+
+    @kotlin.concurrent.Volatile
+    private var liveMapViewers = 0
+
+    /**
+     * A screen that shows the map calls this with true while it is open and false when it closes, so the
+     * robot's icon keeps up while the robot is moving. The official app asks for a map diff about every
+     * 1.2 s; screens that overlap (one opens as another closes) are counted.
+     */
+    fun setLiveMapRate(on: Boolean) {
+        liveMapViewers = (liveMapViewers + if (on) 1 else -1).coerceAtLeast(0)
+    }
+
+    private suspend fun waitForNextMapPoll(normalMs: Long) {
+        var waited = 0L
+        while (true) {
+            val live = liveMapViewers > 0 && _status.value.state in ACTIVE_STATES
+            if (waited >= (if (live) LIVE_MAP_POLL_MS else normalMs)) break
+            delay(250)
+            waited += 250
+        }
+    }
 
     suspend fun forceReconnect() {
         runCatching { mqttClient.forceReconnect() }
@@ -529,6 +570,7 @@ class VacuumRepository(
             throw IllegalStateException("Dock the robot and finish its current task before looking for your pet")
         }
         session.startPetSearch().requireOk("app_start_pet_patrol")
+        _petSearchActive.value = true
     }
 
     suspend fun fetchMatterStatus(): MatterInfo? =
@@ -1436,6 +1478,7 @@ class VacuumRepository(
         val HEX = charArrayOf('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f')
         val ConsumableJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
         const val MAP_FAST_POLL_MS = 8_000L
+        const val LIVE_MAP_POLL_MS = 1_200L
         const val MAP_IDLE_POLL_MS = 60_000L
         const val MAP_RETRY_MS = 5_000L
         /** Map requests after a floor switch, [MAP_FAST_POLL_MS] apart: about a minute and a half. */
@@ -1475,6 +1518,7 @@ class VacuumRepository(
             VacuumStateCodes.ZONED_CLEANING,
             VacuumStateCodes.SEGMENT_CLEANING,
             VacuumStateCodes.MAPPING,
+            VacuumStateCodes.PATROLLING,
         )
     }
 }

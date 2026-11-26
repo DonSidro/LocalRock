@@ -12,7 +12,7 @@ model list. Both entries also require a build with WebRTC enabled.
 
 | Model | Model ID | LocalRock access |
 | --- | --- | --- |
-| S7 MaxV (including + / Ultra dock bundles) | `roborock.vacuum.a27` | Tested; existing video, driving and iPhone call controls |
+| S7 MaxV (including + / Ultra dock bundles) | `roborock.vacuum.a27` | Tested; existing video, driving and call controls |
 | [S6 MaxV](https://support.roborock.com/hc/en-us/articles/900002181746-How-do-I-access-the-remote-viewing-feature-of-S6-MaxV-on-Roborock-APP) | `roborock.vacuum.a10` | Video testing opt-in |
 | [S8 MaxV Ultra](https://us.roborock.com/products/roborock-s8-maxv-ultra/) | `roborock.vacuum.a97` | Video testing opt-in |
 | [Qrevo MaxV](https://help.roborock.com/us/product/roborock-qrevo-maxv-message?category=faqs) | `roborock.vacuum.a87` | Video testing opt-in |
@@ -22,6 +22,7 @@ model list. Both entries also require a build with WebRTC enabled.
 | [Qrevo Edge](https://us.roborock.com/pages/roborock-qrevo-edge-series) | `roborock.vacuum.a156` | Video testing opt-in |
 | [Saros 10](https://ca.roborock.com/pages/roborock-saros-10) | `roborock.vacuum.a147` | Video testing opt-in |
 | [Saros 10R](https://support.roborock.com/hc/en-us/articles/43407368729497-Does-Saros-10R-support-obstacle-avoidance-and-video-call-features) | `roborock.vacuum.a144` | Video testing opt-in |
+| Qrevo Curv 2 Flow | `roborock.vacuum.a245` | Video testing opt-in; video has been seen working on one robot with the local server |
 
 This is a conservative list of recognized IDs, not a complete catalog of every
 Roborock regional variant or newer model. Unknown IDs remain hidden. A camera or
@@ -36,7 +37,7 @@ credential check and clears the entry. No credential check or video connection i
 started without opting in. Retries and connection tests use the same permission.
 
 Experimental models have video viewing, fullscreen framing and
-audio calls on iPhone under the same opt-in. Opening video leaves audio off; tap
+audio calls under the same opt-in. Opening video leaves audio off; tap
 the microphone icon to start a call explicitly. Microphone, robot-audio mute and
 speaker-volume controls are available during the call. Audio behavior can differ
 by model, so report video and audio results separately. Driving, Pin-and-Go,
@@ -122,10 +123,10 @@ not taken over by a direction press.
 Open **Options** to see received frame dimensions when available, updating while
 the settings dialog is open.
 If HD cannot connect, choose **Retry in SD**.
-## Voice calls on iPhone
+## Voice calls
 
 Audio is off when video starts. Tap the **green microphone icon** after video connects to hear the
-robot and speak through its speaker. Allow microphone access if iOS asks. The call
+robot and speak through its speaker. Allow microphone access if your phone asks. The call
 uses the existing video connection; audio is not saved. The icon becomes a red
 hang-up button during a call; tap it to stop audio while keeping video open.
 The same Start/End call actions are also available as labeled buttons in video settings.
@@ -136,9 +137,9 @@ change the volume heard at the robot only when selected; starting a call does no
 change that volume. Exiting or backgrounding video ends the call. An interruption
 mutes the microphone; unmute it explicitly to resume speaking.
 
-Voice calls are experimental. They are currently
-available in the iPhone build, including opted-in untested models; Android call
-controls remain unavailable. Video and audio calls have only been tested on S7 MaxV.
+Voice calls are experimental. They are available on iPhone and Android, including
+opted-in untested models. Video and audio calls have only been tested on S7 MaxV; the
+Android call has not been run against a robot yet.
 
 **Activate Remote Viewing** and **Deactivate Remote Viewing** remain disabled and
 send no commands. Stopping a viewer does not deactivate remote viewing. LocalRock

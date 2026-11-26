@@ -37,6 +37,7 @@ import com.kodraliu.localrock.shared.vacuum.camera.experimentalCameraSupported
 import com.kodraliu.localrock.shared.vacuum.camera.CameraModelSupport
 import com.kodraliu.localrock.shared.vacuum.camera.cameraModelSupport
 import com.kodraliu.localrock.shared.webrtc.liveViewSupported
+import com.kodraliu.localrock.ui.MicrophonePermissionHost
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
@@ -50,6 +51,7 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     val live = remember(viewModel) {
         CameraLiveSession(viewModel.repository.session, accessAllowed = { canConnectNow })
     }
+    MicrophonePermissionHost()
     val entryScope = rememberCoroutineScope()
     val entry = remember(live, entryScope) { CameraCredentialEntry(live::checkCredential, entryScope) }
     val checkingCredential by entry.checking.collectAsState()
@@ -73,6 +75,10 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     val docked = robotStatus.state in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE)
     val dockedNow by rememberUpdatedState(docked)
     LaunchedEffect(ready) { if (!ready) motion.release() }
+    DisposableEffect(viewModel) {
+        viewModel.repository.setLiveMapRate(true)
+        onDispose { viewModel.repository.setLiveMapRate(false) }
+    }
     val diagnostics by live.diagnostics.collectAsState()
     val confirmedQuality by live.quality.collectAsState()
     val qualityBusy by live.qualityBusy.collectAsState()
@@ -232,7 +238,7 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
                             Spacer(Modifier.width(8.dp))
                             Text("Enable video and audio testing for this robot")
                         }
-                        Text("Testing enables video viewing and audio calls on iPhone. Driving and cleaning controls are unavailable on this model.",
+                        Text("Testing enables video viewing and audio calls. Driving and cleaning controls are unavailable on this model.",
                             style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
                         TextButton(onClick = { uriHandler.openUri("https://github.com/DonSidro/LocalRock/pull/95") }) {
                             Text("Report your result", color = Color.White)

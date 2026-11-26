@@ -14,6 +14,9 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.random.Random
 
+private const val TURN_ATTEMPTS = 5
+private const val TURN_RETRY_MS = 500L
+
 internal fun interface CameraRpc {
     suspend fun call(method: String, params: JsonElement): V1Response
 }
@@ -215,7 +218,7 @@ class CameraLiveSession internal constructor(
                 withTimeout(10_000) {
                     attempt.previewRequested = true
                     val response = try {
-                        command("start_camera_preview", buildJsonObject {
+                        startPreview(buildJsonObject {
                             put("client_id", attempt.id); put("quality", attempt.quality.name); put("password", hash)
                         })
                     } catch (e: CameraFailure) {
@@ -232,8 +235,7 @@ class CameraLiveSession internal constructor(
                 throw CameraFailure("Camera ownership could not be confirmed. Close other viewers and retry.")
             }
             stage("Obtaining TURN configuration")
-            val turn = objectResult(command("get_turn_server").result)
-                ?: throw CameraFailure("The robot returned no TURN configuration. Check the server's camera support.")
+            val turn = awaitTurnConfiguration()
             val url = (turn["url"] as? JsonPrimitive)?.contentOrNull
                 ?.takeIf { it.startsWith("turn:") || it.startsWith("turns:") }
                 ?: throw CameraFailure("The robot returned an unsupported TURN configuration.")
@@ -369,19 +371,51 @@ class CameraLiveSession internal constructor(
                 "Wait for the robot to release it before retrying."
     }
 
+    /** The robot answers "retry" until its relay is ready; the official app asks up to 5 times, 500 ms apart. */
+    private suspend fun awaitTurnConfiguration(): JsonObject {
+        repeat(TURN_ATTEMPTS) { n ->
+            val turn = objectResult(command("get_turn_server").result)
+            val url = (turn?.get("url") as? JsonPrimitive)?.contentOrNull
+            if (turn != null && url != null && url != "retry") return turn
+            if (n < TURN_ATTEMPTS - 1) delay(TURN_RETRY_MS)
+        }
+        throw CameraFailure("The robot returned no TURN configuration. Check the server's camera support.")
+    }
+
+    /** Refusals are shown with the official app's error code and fix text; transient ones are retried first. */
+    private suspend fun startPreview(params: JsonElement): V1Response {
+        var accepted: V1Response? = null
+        val error = CameraStartRetry.run {
+            val response = rpc.call("start_camera_preview", params)
+            val code = (response.error?.get("code") as? JsonPrimitive)?.intOrNull
+            // These keep their own explanations and are never retried.
+            if (code == -1007 || code == -10012 || code == -10014) throw CameraFailure(codeHint("start_camera_preview", code))
+            if (response.error == null) { accepted = response; CameraStartRetry.Attempt.Ok }
+            else CameraStartRetry.Attempt.Refused(code)
+        }
+        if (error != null) throw CameraFailure(error.display())
+        return requireNotNull(accepted)
+    }
+
     private suspend fun command(method: String, params: JsonElement = JsonArray(emptyList())): V1Response {
         val response = rpc.call(method, params)
         response.error?.let { error ->
             val code = (error["code"] as? JsonPrimitive)?.intOrNull
-            val hint = when (code) {
-                -1007 -> "This robot reports its camera PIN feature is disabled. Check its existing remote-view settings."
-                -10012 -> "This robot denied camera preview. Check its existing camera activation and permissions."
-                -10014 -> "The robot could not obtain TURN configuration. Keep TURN enabled and check the server's camera support."
-                else -> "$method was refused by the robot (code ${code ?: "unavailable"})."
+            val hint = when {
+                method == "check_homesec_password" && (code == -10009 || code == -10010) ->
+                    CameraStartErrors.fromRobotCode(code).display()
+                else -> codeHint(method, code)
             }
             throw CameraFailure(hint)
         }
         return response
+    }
+
+    private fun codeHint(method: String, code: Int?): String = when (code) {
+        -1007 -> "This robot reports its camera PIN feature is disabled. Check its existing remote-view settings."
+        -10012 -> "This robot denied camera preview. Check its existing camera activation and permissions."
+        -10014 -> "The robot could not obtain TURN configuration. Keep TURN enabled and check the server's camera support."
+        else -> "$method was refused by the robot (code ${code ?: "unavailable"})."
     }
 
     private fun owner(result: JsonElement?): String =

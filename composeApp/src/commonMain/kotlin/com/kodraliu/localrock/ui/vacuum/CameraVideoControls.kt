@@ -83,7 +83,9 @@ internal fun CameraVideoControls(
     // Navigation is independent of video: a docked robot must be able to leave through Go.
     val enabled = controlsAllowed && !busy
     val docked = status.state in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE)
+    val petSearch by viewModel.repository.petSearchActive.collectAsState()
     val headline = if (status.state == VacuumStateCodes.CHARGING_COMPLETE) "Charged"
+        else if (status.state == VacuumStateCodes.PATROLLING && (status.isPetPatrol || petSearch)) "Searching for pets"
         else status.state?.let { VacuumStateCodes.describe(it) } ?: "Robot status unavailable"
     fun interact() { controlsVisible = true; interaction++ }
     val callLabel = if (callBusy) "Cancel call" else if (callActive) "End call" else "Start call"
@@ -314,7 +316,7 @@ internal fun CameraVideoControls(
                     }
                 }
                 Text("Use your phone's volume buttons for the sound you hear. Calls are experimental and audio is not saved.")
-            } else Text("Voice calls are available in the iPhone test build once video connects.")
+            } else Text("Voice calls are not available on this device.")
             callError?.let {Text(it,color=MaterialTheme.colorScheme.error)}
             Button(onClick={},enabled=false,modifier=Modifier.fillMaxWidth()) {Text("Activate Remote Viewing")}
             Button(onClick={},enabled=false,modifier=Modifier.fillMaxWidth()) {Text("Deactivate Remote Viewing")}
