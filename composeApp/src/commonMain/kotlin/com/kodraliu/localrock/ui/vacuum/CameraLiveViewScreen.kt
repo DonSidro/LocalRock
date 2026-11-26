@@ -73,6 +73,10 @@ fun CameraLiveViewScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
     val docked = robotStatus.state in setOf(VacuumStateCodes.CHARGING, VacuumStateCodes.CHARGING_COMPLETE)
     val dockedNow by rememberUpdatedState(docked)
     LaunchedEffect(ready) { if (!ready) motion.release() }
+    DisposableEffect(viewModel) {
+        viewModel.repository.setLiveMapRate(true)
+        onDispose { viewModel.repository.setLiveMapRate(false) }
+    }
     val diagnostics by live.diagnostics.collectAsState()
     val confirmedQuality by live.quality.collectAsState()
     val qualityBusy by live.qualityBusy.collectAsState()
