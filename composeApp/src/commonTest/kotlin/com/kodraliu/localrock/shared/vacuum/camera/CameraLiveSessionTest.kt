@@ -66,8 +66,15 @@ class CameraLiveSessionTest {
         var failResult: JsonElement? = null
         var cleanupUnavailable = false
         var candidates: JsonElement = JsonArray(emptyList())
+        var turnNotReady = 0
+        var startRefusals = 0
+        var startRefusalCode = -10015
         override suspend fun call(method: String, params: JsonElement): V1Response {
             calls += method
+            if (method == "start_camera_preview" && startRefusals > 0) {
+                startRefusals--
+                return V1Response(null, null, buildJsonObject { put("code", startRefusalCode) })
+            }
             if (method == failMethod) return V1Response(null, failResult, buildJsonObject {
                 put("code", failCode); put("message", "private-robot-payload")
             })
@@ -97,7 +104,7 @@ class CameraLiveSessionTest {
                     delay(voiceStopDelay)
                     JsonArray(listOf(JsonPrimitive("ok")))
                 }
-                "get_turn_server" -> buildJsonObject {
+                "get_turn_server" -> if (turnNotReady-- > 0) buildJsonObject { put("url", "retry") } else buildJsonObject {
                     put("url", "turn:example.test:3478"); put("user", "test"); put("pwd", "test")
                 }
                 "get_device_sdp" -> buildJsonObject {
@@ -462,6 +469,31 @@ class CameraLiveSessionTest {
         assertFalse(text.contains("cloud"))
         assertFalse(rpc.calls.any { it.startsWith("set_") || it.startsWith("reset_") })
         assertTrue(rpc.stoppedIds.isEmpty())
+        live.dispose()
+    }
+
+    @Test fun transientStartRefusalIsRetriedBeforeStreaming() = runTest(timeout = 10.seconds) {
+        val rpc = FakeRpc().apply { startRefusals = 2 }; val live = live(rpc)
+        live.start("1234"); runCurrent(); advanceTimeBy(1_100); runCurrent()
+        assertEquals(3, rpc.calls.count { it == "start_camera_preview" })
+        assertEquals(CameraLiveSession.State.Streaming, live.state.value)
+        live.dispose()
+    }
+
+    @Test fun permanentStartRefusalShowsTheOfficialTextOnce() = runTest(timeout = 10.seconds) {
+        val rpc = FakeRpc().apply { startRefusals = 1; startRefusalCode = -10011 }; val live = live(rpc)
+        live.start("1234"); runCurrent()
+        val text = assertIs<CameraLiveSession.State.Failed>(live.state.value).message
+        assertEquals("Please move the device away from the charging dock to view the video. (error -101)", text)
+        assertEquals(1, rpc.calls.count { it == "start_camera_preview" })
+        live.dispose()
+    }
+
+    @Test fun turnServerRetryAnswerIsPolledUntilTheRelayIsReady() = runTest(timeout = 10.seconds) {
+        val rpc = FakeRpc().apply { turnNotReady = 2 }; val live = live(rpc)
+        live.start("1234"); runCurrent(); advanceTimeBy(1_100); runCurrent()
+        assertEquals(3, rpc.calls.count { it == "get_turn_server" })
+        assertEquals(CameraLiveSession.State.Streaming, live.state.value)
         live.dispose()
     }
 
