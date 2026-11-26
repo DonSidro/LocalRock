@@ -30,6 +30,7 @@ import com.kodraliu.localrock.shared.vacuum.VacuumErrorCodes
 import com.kodraliu.localrock.shared.vacuum.VacuumRepository
 import com.kodraliu.localrock.shared.vacuum.isMatterSupported
 import com.kodraliu.localrock.shared.vacuum.isPetSearchSupported
+import com.kodraliu.localrock.shared.vacuum.isFastRouteSupported
 import com.kodraliu.localrock.shared.vacuum.isSmartPlanSupported
 import com.kodraliu.localrock.shared.vacuum.isWaterSlideSupported
 import com.kodraliu.localrock.shared.vacuum.newFeatureBit
@@ -81,6 +82,7 @@ class VacuumViewModel(
     private val newFeatureSet: StateFlow<String?> = repository.robotFeatureSet
         .map { it ?: serverFeatureSet }
         .stateIn(viewModelScope, SharingStarted.Eagerly, serverFeatureSet)
+    val supportsFastRoute: Boolean get() = isFastRouteSupported(newFeatureSet.value)
     val dockCapabilities: StateFlow<DockCapabilities> =
         combine(newFeatureSet, repository.robotNewFeatureInfo) { flags, info ->
             DockCapabilities(modelName, info?.toString() ?: serverFeatureInfo, flags)

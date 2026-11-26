@@ -8,6 +8,10 @@ import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.put
+import io.ktor.client.request.delete
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.content.TextContent
 import io.ktor.http.HttpHeaders
 import io.ktor.http.parameters
 import kotlinx.coroutines.test.runTest
@@ -74,8 +78,26 @@ class HawkAuthPluginTest {
         assertEquals("X48lQ9deBiTvJy6d/0jLhSObKeZr72IlvtijWz9hT0M=", macOf(auth))
     }
 
+    // Independent vectors using Python hashlib/hmac and the server's raw JSON body rule.
+    @Test
+    fun json_put_signs_exact_utf8_bytes() = runTest {
+        var auth: String? = null
+        client { auth = it }.put("/user/devices/robot/jobs/42") {
+            setBody(TextContent("""{"enabled":false,"label":"Pièce à vivre"}""", ContentType.Application.Json))
+        }
+        assertEquals("FfrrgyDWcBwOAcLKRBkt2FdSIi+tF3buu+W1ea3KxzA=", macOf(auth))
+    }
+
+    @Test
+    fun bodyless_delete_is_signed() = runTest {
+        var auth: String? = null
+        client { auth = it }.delete("/user/devices/robot/jobs/42")
+        assertEquals("tTOA8Tqky/Zd2ops6CoGVVXo/R3qpKBy12eCrZEBDkE=", macOf(auth))
+    }
+
     @Test
     fun other_bodies_fail_instead_of_being_signed_wrongly() = runTest {
         assertFails { client { }.put("/user/homes/1234/rooms") }
     }
 }
+
