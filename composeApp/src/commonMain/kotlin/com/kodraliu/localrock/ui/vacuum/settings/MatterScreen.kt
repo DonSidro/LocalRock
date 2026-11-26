@@ -52,6 +52,7 @@ import com.kodraliu.localrock.shared.vacuum.matterCodeAgeKnown
 import com.kodraliu.localrock.shared.vacuum.matterNeedsKey
 import com.kodraliu.localrock.shared.vacuum.matterPollIsDone
 import com.kodraliu.localrock.ui.adaptive.CenteredContent
+import com.kodraliu.localrock.ui.strings.SettingsStrings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.minutes
@@ -159,7 +160,7 @@ internal fun MatterScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Matter") },
+                title = { Text(SettingsStrings.MATTER) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -296,4 +297,15 @@ private fun MatterCodeCard(label: String, value: String, onCopy: () -> Unit) {
             IconButton(onClick = onCopy) { Icon(Icons.Default.ContentCopy, contentDescription = "Copy") }
         }
     }
+}
+
+@Composable
+fun VacuumMatterScreen(viewModel: VacuumViewModel, onBack: () -> Unit) {
+    val repository = viewModel.repository
+    MatterScreen(
+        loadStatus = { repository.fetchMatterStatus() },
+        requestKey = { repository.requestMatterKey() },
+        reset = { repository.resetMatter() },
+        onBack = onBack,
+    )
 }

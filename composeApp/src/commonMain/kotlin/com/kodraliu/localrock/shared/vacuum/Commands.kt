@@ -82,6 +82,12 @@ internal val EMPTY_INBUILT_WATER_TANK_PARAMS: JsonObject = JsonObject(emptyMap()
 suspend fun VacuumSession.emptyInbuiltWaterTank(): V1Response =
     sendCommandRaw(APP_EMPTY_INBUILT_WATER_TANK, EMPTY_INBUILT_WATER_TANK_PARAMS)
 
+// The official Start Self-Cleaning button for the dock's cleaning tray sends this with {} (p223 L196167, L1298663).
+internal const val APP_AMETHYST_SELF_CHECK = "app_amethyst_self_check"
+
+suspend fun VacuumSession.startTraySelfClean(): V1Response =
+    sendCommandRaw(APP_AMETHYST_SELF_CHECK, JsonObject(emptyMap()))
+
 suspend fun VacuumSession.appRcStart(): V1Response = sendCommand("app_rc_start")
 
 suspend fun VacuumSession.appRcMove(velocity: Double, omega: Double, durationMs: Int): V1Response =

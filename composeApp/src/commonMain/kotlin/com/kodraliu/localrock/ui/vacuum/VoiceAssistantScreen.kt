@@ -68,6 +68,7 @@ import com.kodraliu.localrock.shared.vacuum.voiceLanguageName
 import com.kodraliu.localrock.shared.vacuum.voiceTimestampsShown
 import com.kodraliu.localrock.ui.AppColors
 import com.kodraliu.localrock.ui.adaptive.CenteredContent
+import com.kodraliu.localrock.ui.strings.SettingsStrings
 import com.kodraliu.localrock.ui.strings.VoiceCommandStrings
 import com.kodraliu.localrock.ui.strings.VoiceStrings
 import kotlinx.coroutines.launch
@@ -101,9 +102,11 @@ private fun VoiceAssistantScreen(viewModel: VacuumViewModel, onBack: () -> Unit,
     val voice by viewModel.voice.settings.collectAsState()
     val robotSettings by viewModel.repository.robotSettings.collectAsState()
     var showVolumeDialog by remember { mutableStateOf(false) }
+    // A robot without the assistant keeps only the volume, as its old Robot settings page did.
+    val assistant by viewModel.supportsVoiceAssistant.collectAsState()
 
-    VoicePageScaffold(VoiceStrings.VOICE_ASSISTANT, onBack) {
-        switch?.let { s ->
+    VoicePageScaffold(if (assistant) VoiceStrings.VOICE_ASSISTANT else SettingsStrings.ROBOT_VOICE, onBack) {
+        if (assistant) switch?.let { s ->
             item {
                 SettingRowSwitch(
                     icon = Icons.Default.Mic,
@@ -115,10 +118,10 @@ private fun VoiceAssistantScreen(viewModel: VacuumViewModel, onBack: () -> Unit,
                 )
             }
         }
-        item { VoiceExamples(onMore = { onOpen(VoicePage.COMMANDS) }) }
-        item { Footnote(VoiceStrings.VOICE_POLICY) }
-        item { HorizontalDivider(Modifier.padding(top = 8.dp)) }
-        voice.languageCode?.let { code ->
+        if (assistant) item { VoiceExamples(onMore = { onOpen(VoicePage.COMMANDS) }) }
+        if (assistant) item { Footnote(VoiceStrings.VOICE_POLICY) }
+        if (assistant) item { HorizontalDivider(Modifier.padding(top = 8.dp)) }
+        voice.languageCode?.takeIf { assistant }?.let { code ->
             item {
                 SettingRowClickable(
                     icon = Icons.Default.Language,
@@ -139,7 +142,7 @@ private fun VoiceAssistantScreen(viewModel: VacuumViewModel, onBack: () -> Unit,
                 onClick = { showVolumeDialog = true },
             )
         }
-        if (voice.summary != null) {
+        if (assistant && voice.summary != null) {
             item { HorizontalDivider(Modifier.padding(start = 72.dp)) }
             item {
                 SettingRowClickable(

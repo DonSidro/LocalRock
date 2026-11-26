@@ -31,10 +31,31 @@ import com.kodraliu.localrock.ui.vacuum.VacuumDetailScreen
 import com.kodraliu.localrock.ui.vacuum.VacuumHistoryScreen
 import com.kodraliu.localrock.ui.vacuum.VacuumPinGoScreen
 import com.kodraliu.localrock.ui.vacuum.VacuumRemoteScreen
-import com.kodraliu.localrock.ui.vacuum.VacuumSettingsScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumSettingsScreen
 import com.kodraliu.localrock.ui.vacuum.VacuumViewModel
 import com.kodraliu.localrock.ui.vacuum.MapEditScreen
 import com.kodraliu.localrock.ui.vacuum.ZoneCleanScreen
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraphBuilder
+import androidx.navigation.NavHostController
+import com.kodraliu.localrock.ui.vacuum.FirmwareUpdateScreen
+import com.kodraliu.localrock.ui.vacuum.VacuumMaintenanceDetailScreen
+import com.kodraliu.localrock.ui.vacuum.VacuumMaintenanceScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumBetaFeaturesScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumCarpetScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumChargingModeScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumDndScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumDockMaintenanceScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumDockSettingsScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumDrainTankScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumFloorSettingsScreen
+import com.kodraliu.localrock.ui.vacuum.VacuumMatterScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumMoreOptionsScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumObstacleSettingsScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumProductInfoScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumSettingsScreen
+import com.kodraliu.localrock.ui.vacuum.settings.VacuumWashingModeScreen
+import com.kodraliu.localrock.ui.vacuum.VoiceAssistantSettings
 import com.kodraliu.localrock.ui.whatsnew.WhatsNewSheet
 import com.kodraliu.localrock.ui.whatsnew.shouldShowWhatsNew
 import com.kodraliu.localrock.ui.whatsnew.whatsNewFor
@@ -157,6 +178,8 @@ fun AppNavHost() {
         }
 
         navigation<VacuumGraph>(startDestination = VacuumMain) {
+            val back: () -> Unit = { navController.popBackStack() }
+            val open: (Any) -> Unit = { navController.navigate(it) }
 
             composable<VacuumMain> { entry ->
                 val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
@@ -216,15 +239,30 @@ fun AppNavHost() {
                 )
             }
 
-            composable<VacuumSettings> { entry ->
-                val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
-                val duid = graphEntry.toRoute<VacuumGraph>().duid
-                val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
-                VacuumSettingsScreen(
-                    viewModel = viewModel,
-                    onBack = { navController.popBackStack() },
-                )
+            vacuumComposable<VacuumSettings>(navController, container) {
+                VacuumSettingsScreen(viewModel = it, onBack = back, onNavigate = open)
             }
+            vacuumComposable<VacuumMaintenance>(navController, container) {
+                VacuumMaintenanceScreen(viewModel = it, onBack = back, onOpen = { name -> open(VacuumMaintenanceDetail(name)) })
+            }
+            vacuumComposable<VacuumMaintenanceDetail>(navController, container) { viewModel ->
+                VacuumMaintenanceDetailScreen(viewModel = viewModel, consumable = toRoute<VacuumMaintenanceDetail>().consumable, onBack = back)
+            }
+            vacuumComposable<VacuumFirmware>(navController, container) { FirmwareUpdateScreen(viewModel = it, onBack = back) }
+            vacuumComposable<VacuumSettingsDock>(navController, container) { VacuumDockSettingsScreen(viewModel = it, onBack = back, onNavigate = open) }
+            vacuumComposable<VacuumSettingsWashingMode>(navController, container) { VacuumWashingModeScreen(viewModel = it, onBack = back) }
+            vacuumComposable<VacuumSettingsDockMaintenance>(navController, container) { VacuumDockMaintenanceScreen(viewModel = it, onBack = back) }
+            vacuumComposable<VacuumSettingsDrainTank>(navController, container) { VacuumDrainTankScreen(viewModel = it, onBack = back) }
+            vacuumComposable<VacuumSettingsFloor>(navController, container) { VacuumFloorSettingsScreen(viewModel = it, onBack = back) }
+            vacuumComposable<VacuumSettingsCarpet>(navController, container) { VacuumCarpetScreen(viewModel = it, onBack = back) }
+            vacuumComposable<VacuumSettingsObstacle>(navController, container) { VacuumObstacleSettingsScreen(viewModel = it, onBack = back) }
+            vacuumComposable<VacuumSettingsMoreOptions>(navController, container) { VacuumMoreOptionsScreen(viewModel = it, onBack = back, onNavigate = open) }
+            vacuumComposable<VacuumSettingsDnd>(navController, container) { VacuumDndScreen(viewModel = it, onBack = back) }
+            vacuumComposable<VacuumSettingsChargingMode>(navController, container) { VacuumChargingModeScreen(viewModel = it, onBack = back) }
+            vacuumComposable<VacuumSettingsBeta>(navController, container) { VacuumBetaFeaturesScreen(viewModel = it, onBack = back) }
+            vacuumComposable<VacuumSettingsMatter>(navController, container) { VacuumMatterScreen(viewModel = it, onBack = back) }
+            vacuumComposable<VacuumSettingsRobotVoice>(navController, container) { VoiceAssistantSettings(viewModel = it, onBack = back) }
+            vacuumComposable<VacuumSettingsProductInfo>(navController, container) { VacuumProductInfoScreen(viewModel = it, onBack = back) }
 
             composable<VacuumZoneClean> { entry ->
                 val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
@@ -256,6 +294,20 @@ fun AppNavHost() {
                 )
             }
         }
+    }
+}
+
+/** A destination inside VacuumGraph; every one shares the graph entry's VacuumViewModel. */
+private inline fun <reified T : Any> NavGraphBuilder.vacuumComposable(
+    navController: NavHostController,
+    container: AppContainer,
+    noinline content: @Composable NavBackStackEntry.(VacuumViewModel) -> Unit,
+) {
+    composable<T> { entry ->
+        val graphEntry = remember(entry) { navController.getBackStackEntry<VacuumGraph>() }
+        val duid = graphEntry.toRoute<VacuumGraph>().duid
+        val viewModel: VacuumViewModel = viewModel(graphEntry) { VacuumViewModel(duid, container) }
+        entry.content(viewModel)
     }
 }
 

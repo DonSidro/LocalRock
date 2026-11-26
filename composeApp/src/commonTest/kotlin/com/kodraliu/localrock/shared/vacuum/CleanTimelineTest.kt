@@ -120,4 +120,42 @@ class CleanTimelineTest {
         assertEquals("An error occurs.", CleanTimelineLabels.title(CleanTimelineStep.Error(0L, 0, 0)))
         assertEquals("5-1", CleanTimelineLabels.errorCodeText(5, 1))
     }
+
+    private fun event(time: Long, type: Int, vararg f: Pair<Int, Int>) =
+        CleanTimelineEvent(time, type, f.associate { it.first to kotlinx.serialization.json.JsonPrimitive(it.second) })
+
+    @Test
+    fun a_room_event_with_path_abnormal_becomes_an_unreachable_node_that_keeps_the_room_tag() {
+        val steps = CleanTimeline.build(
+            listOf(event(10, 42, 2 to 3, 421 to 1, 422 to 7), event(20, 42, 2 to 3, 424 to 0)),
+            endEpoch = 0L,
+        ).filterIsInstance<CleanTimelineStep.Room>()
+        assertEquals(listOf(false, true), steps.map { it.unreachable })
+        assertEquals(7, steps[1].roomTypeTag)
+        assertEquals("Cleaning path abnormal.", CleanTimelineLabels.detail(steps[1]))
+    }
+
+    @Test
+    fun a_room_event_carries_its_own_clean_settings() {
+        val room = CleanTimeline.build(listOf(event(10, 42, 2 to 3, 421 to 1, 3 to 3, 4 to 2, 5 to 1, 6 to 2)), endEpoch = 0L)
+            .filterIsInstance<CleanTimelineStep.Room>().single()
+        assertEquals(CleanStartSettings(suction = 3, water = 2, route = 1, repeat = 2), room.settings)
+    }
+
+    @Test
+    fun only_start_room_extra_clean_and_finished_are_major_nodes() {
+        assertTrue(CleanTimeline.isMajor(CleanTimelineStep.Start(0L, 1, null)))
+        assertTrue(CleanTimeline.isMajor(CleanTimelineStep.Room(0L, 1, null)))
+        assertTrue(CleanTimeline.isMajor(CleanTimelineStep.Finished(0L)))
+        assertFalse(CleanTimeline.isMajor(CleanTimelineStep.WashMop(0L, 1)))
+        assertFalse(CleanTimeline.isMajor(CleanTimelineStep.MopLiftedForCarpet(0L)))
+    }
+
+    @Test
+    fun the_mode_chip_names_the_mode_and_pads_the_repeat() {
+        assertEquals(listOf("Vacuum", "Standard", "Off", "Standard", "x1"), CleanTimelineLabels.chipParts(CleanStartSettings(2, 0, 0, 0)))
+        assertEquals("Mop", CleanTimelineLabels.modeName(CleanStartSettings(5, 2, 0, 1)))
+        assertEquals("Vac & Mop", CleanTimelineLabels.modeName(CleanStartSettings(2, 35, 0, 1)))
+        assertEquals("Level 15", CleanTimelineLabels.chipParts(CleanStartSettings(2, 35, 0, 1))[2])
+    }
 }
