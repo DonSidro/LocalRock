@@ -1,0 +1,8 @@
+New in 1.5.0:
+• A new map, drawn like the official app: rotate, tilt in 3D, move and resize zones
+• Furniture on the map: add, move and remove it on supported robots
+• Experimental video, off by default; S7 MaxV can drive and Pin & Go from the video
+• Firmware updates, Matter QR code, Find my pet and Voice Assistant
+• Settings, maintenance and history like the official app
+• Two-pane layout on foldables and tablets
+• Opens straight into your robot, with more reliable pairing and reconnecting

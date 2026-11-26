@@ -1,0 +1,22 @@
+LocalRock controls Roborock robot vacuums over your own network. It talks to a self-hosted <a href="https://github.com/Python-roborock/local_roborock_server">local_roborock_server</a> instead of Roborock's cloud, so your robot, its maps and your home stay off the internet. There is no cloud login and no telemetry.
+
+<b>You need a running local_roborock_server.</b> LocalRock is the app; the server stands in for Roborock's cloud on your network.
+
+<b>Features</b>
+<ul>
+<li><b>Live map:</b> rooms coloured by floor type, room names you can tap to select, the cleaning path, obstacles with their photos, no-go zones, walls and carpets. Rotate the map or tilt it in 3D.</li>
+<li><b>Cleaning:</b> start, pause, stop and dock; clean chosen rooms in your order, or draw zones; Pin &amp; Go and manual driving.</li>
+<li><b>Cleaning modes:</b> suction, water flow, route and cleaning count, SmartPlan and vacuum-then-mop on robots that support them, and settings per room.</li>
+<li><b>Map editor:</b> no-go zones, invisible walls, carpets and thresholds; split, merge and rename rooms; floor types and furniture on robots that support it.</li>
+<li><b>Maps and floors:</b> rename, delete, back up and restore maps, and keep a map per floor.</li>
+<li><b>Dock:</b> empty, wash and dry, and the dock's own settings, offered per model.</li>
+<li><b>Robot settings:</b> volume, child lock, carpet modes, Do Not Disturb and the options newer robots advertise, plus maintenance and cleaning history the way the official app shows them.</li>
+<li><b>Firmware updates, Matter setup code, Find my pet and the Voice Assistant page</b> on robots that have them.</li>
+<li><b>Video (experimental, off by default):</b> the robot's camera on supported models.</li>
+<li><b>Add a new vacuum</b> to your network from the phone.</li>
+<li><b>Robot alerts:</b> optional notifications when a robot gets stuck, finishes or needs attention.</li>
+</ul>
+
+Some features need a newer local_roborock_server. The project README lists which.
+
+LocalRock is an independent community project. It is not affiliated with, endorsed by or sponsored by Roborock. All product names and trademarks are the property of their respective owners.
