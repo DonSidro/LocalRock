@@ -316,7 +316,7 @@ internal fun CameraVideoControls(
                     }
                 }
                 Text("Use your phone's volume buttons for the sound you hear. Calls are experimental and audio is not saved.")
-            } else Text("Voice calls are available in the iPhone test build once video connects.")
+            } else Text("Voice calls are not available on this device.")
             callError?.let {Text(it,color=MaterialTheme.colorScheme.error)}
             Button(onClick={},enabled=false,modifier=Modifier.fillMaxWidth()) {Text("Activate Remote Viewing")}
             Button(onClick={},enabled=false,modifier=Modifier.fillMaxWidth()) {Text("Deactivate Remote Viewing")}
